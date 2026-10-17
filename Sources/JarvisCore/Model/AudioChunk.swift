@@ -39,7 +39,7 @@ public enum AudioSource {
 }
 
 /// Who is speaking, as far as Jarvis can tell from the source.
-public enum SpeakerLabel: String {
+public enum SpeakerLabel: String, Codable {
     case me = "Me"
     case others = "Others"
 }

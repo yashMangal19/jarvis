@@ -96,4 +96,65 @@ import JarvisCore
         // 10:15 in Kolkata (+05:30) is 04:45 UTC.
         #expect(first == ["time": "2026-10-17T04:45:00Z", "label": "Me", "text": "Line one\nstill one."])
     }
+
+    @Test func tornLastLineIsSkippedOnReadAndDroppedByDelete() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore()
+        let kept = TranscriptLine(time: at(2026, 10, 17, 10, 5), label: .me, text: "Keep me.")
+        let forgotten = TranscriptLine(time: at(2026, 10, 17, 10, 40), label: .others, text: "Forget me.")
+        try store.append(kept)
+        try store.append(forgotten)
+        let file = paths.transcripts.appending(path: "2026-10-17.jsonl")
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"time":"2026-10-17T05:20:00Z","lab"#.utf8))  // crash mid-write
+        try handle.close()
+
+        let hour = DateInterval(start: at(2026, 10, 17, 10), end: at(2026, 10, 17, 11))
+        #expect(try store.lines(in: hour) == [kept, forgotten])
+
+        try store.deleteLines(in: DateInterval(start: at(2026, 10, 17, 10, 30), end: at(2026, 10, 17, 11)))
+        #expect(try store.lines(in: hour) == [kept])
+        let rows = try String(contentsOf: file, encoding: .utf8).split(separator: "\n")
+        #expect(rows.count == 1)
+    }
+
+    @Test func lineAppendedAfterTornLineIsNotGluedOntoIt() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore()
+        try paths.ensureLayout()
+        let file = paths.transcripts.appending(path: "2026-10-17.jsonl")
+        try Data(#"{"time":"2026-10-17T04:40:00Z","lab"#.utf8).write(to: file)  // crash mid-write
+        let good = TranscriptLine(time: at(2026, 10, 17, 10, 15), label: .me, text: "After the crash.")
+
+        try store.append(good)
+
+        #expect(try store.lines(in: DateInterval(start: at(2026, 10, 17, 10), end: at(2026, 10, 17, 11))) == [good])
+    }
+
+    @Test func lineWrittenInAnotherTimeZoneIsFoundAndDeleted() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        // 00:20 on the 17th in Kolkata is 18:50 on the 16th in UTC: written to the 17th's file.
+        let line = TranscriptLine(time: at(2026, 10, 17, 0, 20), label: .me, text: "Travelled.")
+        try makeStore().append(line)
+
+        let utcStore = TranscriptStore(paths: paths, calendar: utc)
+        let utcHour = DateInterval(start: utc.date(from: DateComponents(year: 2026, month: 10, day: 16, hour: 18))!,
+                                   duration: 3600)
+        #expect(try utcStore.lines(in: utcHour) == [line])
+        try utcStore.deleteLines(in: utcHour)
+        #expect(try makeStore().lines(in: DateInterval(start: at(2026, 10, 16, 0), end: at(2026, 10, 18, 0))).isEmpty)
+    }
+
+    @Test func fractionalSecondLineRoundTripsEqual() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore()
+        let line = TranscriptLine(time: at(2026, 10, 17, 10, 15).addingTimeInterval(0.75), label: .me, text: "Mid-second.")
+
+        try store.append(line)
+
+        #expect(try store.lines(in: DateInterval(start: at(2026, 10, 17, 10), end: at(2026, 10, 17, 11))) == [line])
+    }
 }

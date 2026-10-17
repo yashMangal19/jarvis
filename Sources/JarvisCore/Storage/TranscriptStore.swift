@@ -1,19 +1,18 @@
 import Foundation
 
-/// One labelled line of a transcript.
+/// One labelled line of a transcript. `time` is truncated to the whole second, the precision
+/// the day file stores, so a line read back equals the line appended.
 public struct TranscriptLine: Codable, Equatable {
     public let time: Date
     public let label: SpeakerLabel
     public let text: String
 
     public init(time: Date, label: SpeakerLabel, text: String) {
-        self.time = time
+        self.time = Date(timeIntervalSince1970: time.timeIntervalSince1970.rounded(.down))
         self.label = label
         self.text = text
     }
 }
-
-extension SpeakerLabel: Codable {}
 
 /// `transcripts/YYYY-MM-DD.jsonl`: one JSON object per line, one file per local calendar day.
 /// Times are stored as ISO-8601 to the whole second.
@@ -46,9 +45,16 @@ public final class TranscriptStore {
             try data.write(to: file)
             return
         }
-        let handle = try FileHandle(forWritingTo: file)
+        let handle = try FileHandle(forUpdating: file)
         defer { try? handle.close() }
-        try handle.seekToEnd()
+        let end = try handle.seekToEnd()
+        // A line torn by a crash has no newline; end it so this line is not glued onto it.
+        if end > 0 {
+            try handle.seek(toOffset: end - 1)
+            if try handle.read(upToCount: 1) != Data([UInt8(ascii: "\n")]) {
+                try handle.write(contentsOf: Data([UInt8(ascii: "\n")]))
+            }
+        }
         try handle.write(contentsOf: data)
     }
 
@@ -111,11 +117,14 @@ public final class TranscriptStore {
         return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 
-    /// Existing day files from the window's first local day through the day holding its end.
+    /// Existing day files from the day before the window's first local day through the day after
+    /// the one holding its end: a line was filed by the zone at append time, which may differ from
+    /// today's. Callers filter lines by exact time, so the extra days cost nothing in correctness.
     private func dayFiles(touching window: DateInterval) -> [URL] {
         var files: [URL] = []
-        var day = calendar.startOfDay(for: window.start)
-        while day <= window.end {
+        guard var day = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: window.start)),
+              let last = calendar.date(byAdding: .day, value: 1, to: window.end) else { return [] }
+        while day <= last {
             let file = dayFile(for: day)
             if FileManager.default.fileExists(atPath: file.path) { files.append(file) }
             guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
@@ -124,10 +133,12 @@ public final class TranscriptStore {
         return files
     }
 
+    /// The file's decodable lines. A line that does not decode (a write torn by a crash) is
+    /// skipped, so the rest of the day stays readable, and a later delete-rewrite drops it.
     private func read(_ file: URL) throws -> [TranscriptLine] {
         try Data(contentsOf: file)
             .split(separator: UInt8(ascii: "\n"))
-            .map { try decoder.decode(TranscriptLine.self, from: Data($0)) }
+            .compactMap { try? decoder.decode(TranscriptLine.self, from: Data($0)) }
     }
 
     private func encodeLine(_ line: TranscriptLine) throws -> Data {
