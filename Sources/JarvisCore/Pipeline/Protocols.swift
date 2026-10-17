@@ -22,7 +22,7 @@ public protocol CommandRunner {
     func draft(_ command: String) async throws -> String
 
     /// Callers must invoke `execute` only after the user has explicitly
-    /// confirmed the draft — never on a timeout or a "no". Nothing here
-    /// enforces that; the obligation is the caller's.
+    /// confirmed the draft — never on a timeout or a "no". `CommandSession`
+    /// is the gate that enforces this.
     func execute(_ draft: String) async throws -> String
 }
