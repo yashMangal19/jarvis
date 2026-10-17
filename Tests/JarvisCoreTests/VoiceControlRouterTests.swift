@@ -10,6 +10,17 @@ private final class RouterRecordingRunner: CommandRunner {
     func execute(_ draft: String) async throws -> String { executed.append(draft); return "Done." }
 }
 
+/// Runs `during` while the answer is being written, then throws `error` or returns the answer.
+private final class RouterScriptedWriter: NoteWriter {
+    var during: () -> Void = {}
+    var error: Error?
+    func note(from transcript: String, prompt: String) async throws -> String {
+        during()
+        if let error { throw error }
+        return "You cut the travel line (2026-10-17-09)."
+    }
+}
+
 private final class RouterLog {
     var spoken: [String] = []
     var answers: [MemoryAnswer] = []
@@ -33,7 +44,8 @@ private final class RouterLog {
         let index: NoteIndex
     }
 
-    private func make(state: ListeningState = .listening) -> Fixture {
+    private func make(state: ListeningState = .listening,
+                      writer: any NoteWriter = MemoryRecordingWriter()) -> Fixture {
         let session = ListeningSession(clock: clock, sleepGuard: SessionTestSleepGuard())
         switch state {
         case .listening: session.start()
@@ -44,7 +56,6 @@ private final class RouterLog {
         let notes = NoteStore(paths: paths)
         let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword")
         index.attach(to: notes)
-        let writer = MemoryRecordingWriter()
         let search = MemorySearch(index: index, notes: notes, writer: { writer }, prompts: PromptStore(paths: paths))
         let forget = ForgetLastHour(transcripts: transcripts, notes: notes, index: index)
         let log = self.log, runner = self.runner
@@ -113,7 +124,6 @@ private final class RouterLog {
 
         #expect(runner.executed == ["plan: email Asha the deck"])
         #expect(log.spoken.last == "Done.")
-        #expect(f.session.storesMemory == false)
     }
 
     // QA-30/31: forget is read back with live counts and nothing is deleted until a yes.
@@ -154,7 +164,7 @@ private final class RouterLog {
         #expect(log.spoken.last == "Cancelled.")
     }
 
-    // Paused: a memory question is answered aloud and handed to the panel, and nothing is stored.
+    // Paused: a memory question is answered aloud and handed to the panel.
     @Test func aMemoryQuestionWhilePausedIsSpokenAndHandedOn() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let f = make(state: .paused(.user))
@@ -168,8 +178,40 @@ private final class RouterLog {
         #expect(log.answers == [expected])
         #expect(log.spoken == [expected.text])
         #expect(f.session.state == .paused(.user))
-        #expect(f.session.storesMemory == false)
         #expect(log.runnerRequests == 0)
+    }
+
+    private var budgetNote: Note {
+        Note(kind: .hourly, id: "2026-10-17-09", period: DateInterval(start: clock.now, duration: 3600),
+             body: "Budget review: we cut the travel line")
+    }
+
+    // F-5: a cancelled search ends quietly, like a cancelled command.
+    @Test func aCancelledMemorySearchSaysNothing() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = RouterScriptedWriter()
+        writer.error = CancellationError()
+        let f = make(writer: writer)
+        try f.notes.write(budgetNote)
+
+        await f.router.handle("Jarvis, what did we decide about the budget?")
+
+        #expect(log.spoken.isEmpty)
+        #expect(log.answers.isEmpty)
+    }
+
+    // F-5: Stop said while the answer is being written wins; the answer is neither spoken nor shown.
+    @Test func aStopDuringTheMemorySearchDropsTheAnswer() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = RouterScriptedWriter()
+        let f = make(writer: writer)
+        writer.during = { f.session.stop(.user) }
+        try f.notes.write(budgetNote)
+
+        await f.router.handle("Jarvis, what did we decide about the budget?")
+
+        #expect(log.spoken.isEmpty)
+        #expect(log.answers.isEmpty)
     }
 
     @Test(arguments: [StopReason.user, .screenLock, .quietHours])
@@ -189,6 +231,73 @@ private final class RouterLog {
         #expect(log.answers.isEmpty)
         #expect(log.runnerRequests == 0)
         #expect(f.commands.phase == .idle)
+    }
+
+    // F-1: once the read-back has timed out, what is heard next is a new utterance, not a lost reply.
+    @Test func aReplyAfterTheReadBackTimedOutIsRoutedAsANewUtterance() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+
+        await f.router.handle("Jarvis, email Asha the deck")
+        clock.now = clock.now.addingTimeInterval(16)
+        await f.router.heardReply("Jarvis, email Ravi")
+
+        #expect(runner.drafts == ["email Asha the deck", "email Ravi"])
+        #expect(runner.executed.isEmpty)
+        #expect(log.spoken == ["plan: email Asha the deck", "plan: email Ravi"])
+        #expect(f.commands.phase == .awaitingConfirmation(draft: "plan: email Ravi", corrections: 0))
+    }
+
+    // F-2 (decision): a built-in control said during a read-back cancels the command, says so, then runs.
+    @Test func aControlDuringAReadBackCancelsTheCommandThenRuns() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+
+        await f.router.handle("Jarvis, email Asha the deck")
+        await f.router.heardReply("Jarvis, pause listening.")
+
+        #expect(f.session.state == .paused(.voice))
+        #expect(log.spoken == ["plan: email Asha the deck", "Cancelled.", "Paused."])
+        #expect(runner.drafts == ["email Asha the deck"])
+        #expect(f.commands.phase == .idle)
+
+        await f.router.heardReply("yes")
+        #expect(runner.executed.isEmpty)
+    }
+
+    @Test func anythingElseDuringAReadBackIsACorrection() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+
+        await f.router.handle("Jarvis, email Asha the deck")
+        await f.router.heardReply("send it to Ravi instead")
+
+        #expect(runner.drafts == ["email Asha the deck",
+                                  "email Asha the deck\nCorrections so far:\n- send it to Ravi instead"])
+        #expect(f.session.state == .listening)
+    }
+
+    // F-6 (decision): voice resume is honoured after the headset drops; it says the MacBook mic is in use,
+    // and the headset is picked up again when it reconnects.
+    @Test func resumeAfterTheHeadsetDropsListensThroughTheMacBookMic() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+        let headset = InputDevice(name: "AirPods", isBluetoothHeadset: true)
+        let builtIn = InputDevice(name: "MacBook Pro Microphone", isBluetoothHeadset: false)
+        f.session.handle(.inputChanged(headset))
+        f.session.handle(.inputLost(headset))
+        f.session.handle(.inputChanged(builtIn))
+        #expect(f.session.state == .paused(.routeLost))
+
+        await f.router.handle("Jarvis, resume")
+
+        #expect(f.session.state == .listening)
+        #expect(f.session.input == builtIn)
+        #expect(log.spoken == ["Listening through the MacBook mic."])
+
+        f.session.handle(.inputChanged(headset))
+        #expect(f.session.state == .listening)
+        #expect(f.session.input == headset)
     }
 
     @Test func aReplyWithNothingPendingIsANewUtterance() async {

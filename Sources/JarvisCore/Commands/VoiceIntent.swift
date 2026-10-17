@@ -33,27 +33,28 @@ public enum VoiceIntentParser {
     /// `nil` when nothing is left once the wake word and fillers are removed ("Jarvis?").
     public static func parse(_ utterance: String) -> VoiceIntent? {
         var words = utterance.split(whereSeparator: \.isWhitespace).map(String.init)
-        while let first = words.first, normalise(first).isEmpty || leadingFillers.contains(normalise(first)) {
+        while let first = words.first, normaliseHeard(first).isEmpty || leadingFillers.contains(normaliseHeard(first)) {
             words.removeFirst()
         }
-        while let last = words.last, normalise(last).isEmpty || normalise(last) == "please" {
+        while let last = words.last, normaliseHeard(last).isEmpty || normaliseHeard(last) == "please" {
             words.removeLast()
         }
         let heard = words.joined(separator: " ").trimmingCharacters(in: CharacterSet(charactersIn: ",;:"))
-        let key = normalise(heard)
+        let key = normaliseHeard(heard)
         guard !key.isEmpty else { return nil }
         if let control = controls[key] { return control }
         if questionPrefixes.contains(where: { key == $0 || key.hasPrefix($0 + " ") }) { return .memoryQuestion(heard) }
         return .toolCommand(heard)
     }
+}
 
-    /// Lowercased, dashes to spaces, other punctuation removed, whitespace collapsed:
-    /// "Meeting-mode ON!" → "meeting mode on". Same rule as `CommandSession`'s yes/no matching.
-    static func normalise(_ text: String) -> String {
-        let scalars = text.lowercased().unicodeScalars.compactMap { c -> Unicode.Scalar? in
-            if c.properties.generalCategory == .dashPunctuation { return " " }
-            return CharacterSet.punctuationCharacters.contains(c) ? nil : c
-        }
-        return String(String.UnicodeScalarView(scalars)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+/// The one rule for matching heard words, used by both `VoiceIntentParser` (controls) and
+/// `CommandSession` (yes/no replies). Lowercased, dashes to spaces, other punctuation removed,
+/// whitespace collapsed: "Meeting-mode ON!" → "meeting mode on", "Go-ahead!" → "go ahead".
+func normaliseHeard(_ text: String) -> String {
+    let scalars = text.lowercased().unicodeScalars.compactMap { c -> Unicode.Scalar? in
+        if c.properties.generalCategory == .dashPunctuation { return " " }
+        return CharacterSet.punctuationCharacters.contains(c) ? nil : c
     }
+    return String(String.UnicodeScalarView(scalars)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
 }

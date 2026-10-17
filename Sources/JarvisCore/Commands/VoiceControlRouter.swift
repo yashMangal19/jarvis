@@ -2,7 +2,8 @@ import Foundation
 
 /// Routes what was heard after the wake word: built-in controls act on the session directly, memory
 /// questions are answered from notes, and everything else goes through the confirmation loop.
-/// Works while Paused, so nothing is stored; does nothing while Stopped.
+/// Works while Paused (nothing heard is stored then; `ListeningSession.storesMemory` gates that in the
+/// capture pipeline, not here); does nothing while Stopped.
 @MainActor
 public final class VoiceControlRouter {
     private let session: ListeningSession
@@ -27,13 +28,36 @@ public final class VoiceControlRouter {
     public func handle(_ utterance: String) async {
         if case .stopped = session.state { return }
         guard let intent = VoiceIntentParser.parse(utterance) else { return }
+        await act(on: intent)
+    }
+
+    /// A reply to a pending read-back goes to the confirmation loop, unless it is a built-in control:
+    /// then the pending command is cancelled aloud and the control runs. Anything else is a new utterance.
+    /// The timeout is applied first, so a read-back that went unanswered does not swallow what comes next.
+    public func heardReply(_ text: String) async {
+        if case .stopped = session.state { return }
+        commands.tick(now: clock.now)
+        guard case .awaitingConfirmation = commands.phase else { return await handle(text) }
+        if let intent = VoiceIntentParser.parse(text), intent.isBuiltInControl {
+            commands.reset()
+            speak("Cancelled.")
+            await act(on: intent)
+        } else {
+            await commands.heard(text)
+        }
+    }
+
+    private func act(on intent: VoiceIntent) async {
         switch intent {
         case .pause:
             session.pause(.voice)
             speak("Paused.")
         case .resume:
+            // A route-lost pause is ended by voice too: capture carries on from the MacBook mic, and the
+            // headset is picked up again when it reconnects.
+            let headsetWasLost = session.state == .paused(.routeLost)
             session.resume()
-            speak("Listening.")
+            speak(headsetWasLost ? "Listening through the MacBook mic." : "Listening.")
         case .meetingMode(let on):
             session.modes.meetingMode = on
             speak(on ? "Meeting mode on." : "Meeting mode off.")
@@ -43,25 +67,28 @@ public final class VoiceControlRouter {
         case .forgetLastHour:
             await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
         case .memoryQuestion(let question):
+            // A Stop said while the answer is written wins, and a cancelled search ends quietly.
             do {
                 let answer = try await search.answer(question)
+                if case .stopped = session.state { return }
                 speak(answer.text)
                 onAnswer(answer)
+            } catch is CancellationError {
             } catch {
+                if case .stopped = session.state { return }
                 speak("I couldn't search my notes.")
             }
         case .toolCommand(let command):
             await commands.submit(command)
         }
     }
+}
 
-    /// A reply to a pending read-back goes to the confirmation loop; anything else is a new utterance.
-    public func heardReply(_ text: String) async {
-        if case .stopped = session.state { return }
-        if case .awaitingConfirmation = commands.phase {
-            await commands.heard(text)
-        } else {
-            await handle(text)
+private extension VoiceIntent {
+    var isBuiltInControl: Bool {
+        switch self {
+        case .pause, .resume, .meetingMode, .demoMode, .forgetLastHour: return true
+        case .memoryQuestion, .toolCommand: return false
         }
     }
 }

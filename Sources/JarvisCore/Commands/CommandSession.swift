@@ -25,9 +25,9 @@ public final class CommandSession: ObservableObject {
     @Published public private(set) var phase: CommandPhase = .idle
 
     private static let yes = Set(["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm",
-                                  "go ahead", "do it", "haan"].map(normalise))
+                                  "go ahead", "do it", "haan"].map(normaliseHeard))
     /// Matched against the whole reply only: "no, send it to Prashant" is a correction.
-    private static let no = Set(["no", "nope", "nah", "cancel", "stop", "nahi", "don't"].map(normalise))
+    private static let no = Set(["no", "nope", "nah", "cancel", "stop", "nahi", "don't"].map(normaliseHeard))
 
     private let runner: () -> (any CommandRunner)?
     private let clock: any TimeSource
@@ -69,7 +69,7 @@ public final class CommandSession: ObservableObject {
     public func heard(_ reply: String) async {
         tick(now: clock.now)
         guard case let .awaitingConfirmation(draft, _) = phase, let runner = active else { return }
-        let r = Self.normalise(reply)
+        let r = normaliseHeard(reply)
         if Self.yes.contains(r) {
             let current = generation
             phase = .executing
@@ -129,16 +129,6 @@ public final class CommandSession: ObservableObject {
     private func fail(_ message: String) {
         speak(message)
         phase = .cancelled(.failed(message))
-    }
-
-    /// Lowercased, dashes to spaces, other punctuation removed, whitespace collapsed:
-    /// "Go-ahead!" → "go ahead".
-    private static func normalise(_ text: String) -> String {
-        let scalars = text.lowercased().unicodeScalars.compactMap { c -> Unicode.Scalar? in
-            if c.properties.generalCategory == .dashPunctuation { return " " }
-            return CharacterSet.punctuationCharacters.contains(c) ? nil : c
-        }
-        return String(String.UnicodeScalarView(scalars)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     private static func spell(_ n: Int) -> String {
