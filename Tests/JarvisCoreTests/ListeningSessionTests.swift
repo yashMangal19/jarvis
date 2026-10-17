@@ -47,7 +47,7 @@ private let builtIn = InputDevice(name: "MacBook Pro Microphone", isBluetoothHea
                 == ["14:05–14:40: not listening (AirPods disconnected)"])
     }
 
-    @Test func userPauseIsStickyAgainstEveryAutomaticRule() {
+    @Test func userPauseComesBackAfterEveryAutomaticRule() {
         var quiet = false
         let session = makeSession(quiet: { _ in quiet })
         session.start()
@@ -56,6 +56,7 @@ private let builtIn = InputDevice(name: "MacBook Pro Microphone", isBluetoothHea
         session.handle(.inputChanged(airPods))
         quiet = true
         session.tick(now: at(22, 0))
+        #expect(session.state == .stopped(.quietHours))
         quiet = false
         session.tick(now: at(7, 0))
         session.screenLocked()
@@ -117,6 +118,79 @@ private let builtIn = InputDevice(name: "MacBook Pro Microphone", isBluetoothHea
         #expect(session.state == .listening)
     }
 
+    @Test func quietHoursStopAVoicePauseWakeWordIncludedAndGiveItBack() {
+        var quiet = false
+        let session = makeSession(quiet: { _ in quiet })
+        session.start()
+        session.pause(.voice)
+        quiet = true
+        session.tick(now: at(22, 0))
+        #expect(session.state == .stopped(.quietHours))
+        #expect(!session.wakeWordActive)
+        quiet = false
+        session.tick(now: at(7, 0))
+        #expect(session.state == .paused(.voice))
+    }
+
+    @Test func routeLossOutlivesQuietHoursUnlessTheHeadsetReturns() {
+        var quiet = false
+        let session = makeSession(quiet: { _ in quiet })
+        session.start()
+        session.handle(.inputLost(airPods))
+        quiet = true
+        session.tick(now: at(22, 0))
+        #expect(session.state == .stopped(.quietHours))
+        quiet = false
+        session.tick(now: at(7, 0))
+        #expect(session.state == .paused(.routeLost))
+
+        quiet = true
+        session.tick(now: at(22, 0))
+        session.handle(.inputChanged(airPods))
+        quiet = false
+        session.tick(now: at(7, 0))
+        #expect(session.state == .listening)
+
+        quiet = true
+        session.tick(now: at(22, 0))
+        session.handle(.inputLost(airPods))
+        quiet = false
+        session.tick(now: at(7, 0))
+        #expect(session.state == .paused(.routeLost))
+    }
+
+    @Test func lockDuringQuietHoursRestoresThePreQuietState() {
+        var quiet = false
+        let session = makeSession(quiet: { _ in quiet })
+        session.start()
+        session.pause(.user)
+        quiet = true
+        session.tick(now: at(22, 0))
+        session.screenLocked()
+        session.screenUnlocked()
+        #expect(session.state == .stopped(.quietHours))
+        session.screenLocked()
+        quiet = false
+        session.tick(now: at(7, 0))
+        #expect(session.state == .stopped(.screenLock))
+        session.screenUnlocked()
+        #expect(session.state == .paused(.user))
+    }
+
+    @Test func routeLossWhileLockedOutlivesAnUnlockDuringQuietHours() {
+        var quiet = false
+        let session = makeSession(quiet: { _ in quiet })
+        session.start()
+        session.handle(.inputLost(airPods))
+        session.screenLocked()
+        quiet = true
+        session.screenUnlocked()
+        #expect(session.state == .stopped(.quietHours))
+        quiet = false
+        session.tick(now: at(7, 0))
+        #expect(session.state == .paused(.routeLost))
+    }
+
     @Test func lockTakesPrecedenceOverQuietHoursRestart() {
         var quiet = true
         let session = makeSession(quiet: { _ in quiet })
@@ -163,6 +237,23 @@ private let builtIn = InputDevice(name: "MacBook Pro Microphone", isBluetoothHea
         session.handle(.inputChanged(airPods))
         session.screenUnlocked()
         #expect(session.state == .listening)
+    }
+
+    @Test func airPodsLostWhileLockedPausesOnUnlock() {
+        let session = makeSession()
+        session.start()
+        session.handle(.inputChanged(airPods))
+        clock.now = at(14, 10)
+        session.screenLocked()
+        session.handle(.inputLost(airPods))
+        clock.now = at(14, 20)
+        session.screenUnlocked()
+        #expect(session.state == .paused(.routeLost))
+        clock.now = at(14, 30)
+        #expect(session.gapMarkers(in: DateInterval(start: at(14, 0), end: at(14, 30))) == [
+            "14:10–14:20: not listening (screen locked)",
+            "14:20–14:30: not listening (AirPods disconnected)",
+        ])
     }
 
     @Test func everyNotListeningIntervalIsAMarkerClippedToTheWindow() {

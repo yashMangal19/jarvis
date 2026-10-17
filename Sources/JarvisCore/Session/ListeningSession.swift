@@ -20,14 +20,6 @@ public enum ListeningState: Equatable {
         case .stopped(.user): return "stopped"
         }
     }
-
-    /// Set by the user (menu or voice); nothing automatic overrides it.
-    var isUserHeld: Bool {
-        switch self {
-        case .paused(.user), .paused(.voice), .stopped(.user): return true
-        default: return false
-        }
-    }
 }
 
 public struct Modes: Equatable {
@@ -50,10 +42,10 @@ public enum RouteEvent {
     case inputLost(InputDevice)
 }
 
-/// One interval Jarvis was not listening. `end == nil` while still open.
+/// One interval Jarvis was not listening, as `gaps(in:)` returns it: always closed.
 public struct GapRecord: Equatable {
     public let start: Date
-    public let end: Date?
+    public let end: Date
     public let reason: String
 }
 
@@ -68,12 +60,17 @@ public final class ListeningSession: ObservableObject {
     private let clock: any TimeSource
     private let sleepGuard: any SleepGuard
     private let isQuietTime: (Date) -> Bool
-    private var gapLog: [GapRecord] = []
-    /// What `screenUnlocked` returns to.
-    private var stateBeforeLock: ListeningState = .listening
+    /// The gap log; the last entry has `end == nil` while that gap is still open.
+    private var gapLog: [(start: Date, end: Date?, reason: String)] = []
+    /// What the session returns to when a screen-lock or quiet-hours stop ends. Only one of the two
+    /// stops is ever the current state, so one remembered state serves both. This is what keeps a
+    /// user or voice pause: lock and quiet hours stop it, and their end gives it back unchanged. A
+    /// user Stop is never taken over, because `screenLocked` and `tick` leave `.stopped` states alone.
+    private var stateToRestore: ListeningState = .listening
 
-    /// `isQuietTime` stands in for the blueprint's `quietHours: () -> QuietHours?` until T-24 wires
-    /// it to `QuietHours.contains` (T-3 lands `QuietHours` in the same wave).
+    /// `isQuietTime` is a closure rather than the blueprint's `quietHours: () -> QuietHours?` so tests
+    /// can say "quiet now" without building a schedule and a calendar. T-24 passes
+    /// `{ settings.quietHours?.contains($0, calendar: .current) ?? false }`.
     public init(clock: any TimeSource = SystemClock(),
                 sleepGuard: any SleepGuard,
                 isQuietTime: @escaping (Date) -> Bool = { _ in false }) {
@@ -95,20 +92,22 @@ public final class ListeningSession: ObservableObject {
         switch event {
         case .inputLost(let device):
             if input == device { input = nil }
-            if device.isBluetoothHeadset && state == .listening { transition(to: .paused(.routeLost)) }
+            guard device.isBluetoothHeadset else { return }
+            if state == .listening { transition(to: .paused(.routeLost)) }
+            if isAutoStopped && stateToRestore == .listening { stateToRestore = .paused(.routeLost) }
         case .inputChanged(let device):
             input = device
             guard device.isBluetoothHeadset else { return }
             if state == .paused(.routeLost) { transition(to: .listening) }
-            if state == .stopped(.screenLock) && stateBeforeLock == .paused(.routeLost) { stateBeforeLock = .listening }
+            if isAutoStopped && stateToRestore == .paused(.routeLost) { stateToRestore = .listening }
         }
     }
 
     public func screenLocked() {
         switch state {
-        case .listening, .paused: stateBeforeLock = state
-        // Quiet hours would have restarted listening; the lock now owns that restart.
-        case .stopped(.quietHours): stateBeforeLock = .listening
+        case .listening, .paused: stateToRestore = state
+        // `stateToRestore` already holds the pre-quiet state; the lock now owns that restore.
+        case .stopped(.quietHours): break
         case .stopped: return
         }
         transition(to: .stopped(.screenLock))
@@ -116,17 +115,26 @@ public final class ListeningSession: ObservableObject {
 
     public func screenUnlocked() {
         guard state == .stopped(.screenLock) else { return }
-        let quiet = !stateBeforeLock.isUserHeld && isQuietTime(clock.now)
-        transition(to: quiet ? .stopped(.quietHours) : stateBeforeLock)
+        transition(to: isQuietTime(clock.now) ? .stopped(.quietHours) : stateToRestore)
     }
 
+    /// Quiet hours stop everything but a user Stop and a screen lock, wake word included, and give
+    /// back the state from before they began.
     public func tick(now: Date) {
         if isQuietTime(now) {
-            if !state.isUserHeld && state != .stopped(.screenLock) { transition(to: .stopped(.quietHours), at: now) }
+            switch state {
+            case .listening, .paused:
+                stateToRestore = state
+                transition(to: .stopped(.quietHours), at: now)
+            case .stopped: break
+            }
         } else if state == .stopped(.quietHours) {
-            transition(to: .listening, at: now)
+            transition(to: stateToRestore, at: now)
         }
     }
+
+    /// Stopped by screen lock or quiet hours, with `stateToRestore` to return to.
+    private var isAutoStopped: Bool { state == .stopped(.screenLock) || state == .stopped(.quietHours) }
 
     // MARK: gaps
 
@@ -146,7 +154,7 @@ public final class ListeningSession: ObservableObject {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
         return gaps(in: window).map { gap in
-            "\(formatter.string(from: gap.start))–\(formatter.string(from: gap.end!)): not listening (\(gap.reason))"
+            "\(formatter.string(from: gap.start))–\(formatter.string(from: gap.end)): not listening (\(gap.reason))"
         }
     }
 
@@ -191,10 +199,10 @@ public final class ListeningSession: ObservableObject {
         let now = now ?? clock.now
         let wasListening = state == .listening
         if let open = gapLog.last, open.end == nil {
-            gapLog[gapLog.count - 1] = GapRecord(start: open.start, end: now, reason: open.reason)
+            gapLog[gapLog.count - 1].end = now
         }
         if next != .listening {
-            gapLog.append(GapRecord(start: now, end: nil, reason: next.gapReason))
+            gapLog.append((start: now, end: nil, reason: next.gapReason))
         }
         if next == .listening && !wasListening { sleepGuard.hold() }
         if wasListening && next != .listening { sleepGuard.release() }
