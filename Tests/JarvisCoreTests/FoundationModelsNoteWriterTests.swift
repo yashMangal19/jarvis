@@ -27,9 +27,11 @@ struct FoundationModelsNoteWriterTests {
 
     @available(macOS 26, *)
     @Test func writesANoteFromATranscriptOverTheBudget() async throws {
-        // A budget of two lines forces two chunks and a merge call.
-        let writer = FoundationModelsNoteWriter(maxCharacters: 130)
-        let note = try await writer.note(from: transcript, prompt: prompt)
+        // Eight copies (~1,800 characters) over a 1,000-character budget force chunks and a merge;
+        // the budget stays above one note's length so the partial notes can fit the merge.
+        let long = Array(repeating: transcript, count: 8).joined(separator: "\n")
+        let writer = FoundationModelsNoteWriter(maxCharacters: 1_000)
+        let note = try await writer.note(from: long, prompt: prompt)
         #expect(!note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 }

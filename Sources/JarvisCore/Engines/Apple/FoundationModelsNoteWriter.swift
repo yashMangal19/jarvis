@@ -21,15 +21,9 @@ public struct FoundationModelsNoteWriter: NoteWriter {
     }
 
     public func note(from transcript: String, prompt: String) async throws -> String {
-        guard transcript.count > maxCharacters else {
-            return try await respond(prompt: prompt, to: transcript)
+        try await TranscriptChunker.reduce(transcript, maxCharacters: maxCharacters) {
+            try await respond(prompt: prompt, to: $0)
         }
-        var partials: [String] = []
-        for chunk in TranscriptChunker.chunks(transcript, maxCharacters: maxCharacters) {
-            partials.append(try await respond(prompt: prompt, to: chunk))
-        }
-        // One merge call. Ceiling: assumes the partial notes together fit the context.
-        return try await respond(prompt: prompt, to: partials.joined(separator: "\n\n"))
     }
 
     /// A fresh session per call, so earlier chunks do not fill the context.
