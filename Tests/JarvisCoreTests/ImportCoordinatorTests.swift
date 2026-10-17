@@ -57,8 +57,14 @@ final class ImportFailingTranscriber: Transcriber {
 
     func makeCoordinator(transcriber: any Transcriber = ImportFakeTranscriber(), settleDelay: TimeInterval = 2,
                          onImported: @escaping (DateInterval) async -> Void = { _ in }) -> (ImportCoordinator, TranscriptStore) {
+        makeCoordinator(installed: { transcriber }, settleDelay: settleDelay, onImported: onImported)
+    }
+
+    /// `installed` is read per chunk, as the facade's swappable transcriber is (DEC-5).
+    func makeCoordinator(installed: @escaping () -> (any Transcriber)?, settleDelay: TimeInterval = 2,
+                         onImported: @escaping (DateInterval) async -> Void = { _ in }) -> (ImportCoordinator, TranscriptStore) {
         let store = TranscriptStore(paths: paths)
-        let pipeline = CapturePipeline(transcriber: transcriber, store: store)
+        let pipeline = CapturePipeline(transcriber: installed, store: store)
         return (ImportCoordinator(pipeline: pipeline, settleDelay: settleDelay, onImported: onImported), store)
     }
 
@@ -101,19 +107,62 @@ final class ImportFailingTranscriber: Transcriber {
         #expect(abs((imported.first?.duration ?? 0) - 65) < 0.5)
     }
 
-    // A failure after the first stored line still deletes the copy, so a retry cannot duplicate lines,
-    // and the stored part is still reported so its hourly note gets written.
-    @Test func failureAfterTheFirstLineStillDeletesTheFileAndReportsTheStoredSpan() async throws {
+    // DEC-23: a failure after the first stored line keeps the file, and the stored part is still reported
+    // so its hourly note gets written. The retry carries on after the stored part, so no line is doubled.
+    @Test func failureAfterTheFirstLineKeepsTheFileAndTheRetryStoresOnlyTheRest() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let url = try importWAV(seconds: 65)
         var imported: [DateInterval] = []
-        let (coordinator, store) = makeCoordinator(transcriber: ImportFailingTranscriber(succeeding: 1)) { imported.append($0) }
+        var installed: any Transcriber = ImportFailingTranscriber(succeeding: 1)
+        let (coordinator, store) = makeCoordinator(installed: { installed }) { imported.append($0) }
 
         await #expect(throws: ImportFailingTranscriber.Failure.self) { try await coordinator.importFile(url) }
 
         #expect(try allLines(store).map(\.time) == [recordedAt])
-        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(FileManager.default.fileExists(atPath: url.path))
         #expect(imported == [DateInterval(start: recordedAt, duration: 30)])
+
+        installed = ImportFakeTranscriber()
+        try await coordinator.importFile(url)
+
+        #expect(try allLines(store).map(\.time) == [recordedAt, recordedAt.addingTimeInterval(30),
+                                                    recordedAt.addingTimeInterval(60)])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    // DEC-23: with no transcriber installed nothing is heard, so the recording is kept, not deleted, and
+    // imports once speech exists.
+    @Test func noTranscriberKeepsTheFileUntilOneIsInstalled() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = try importWAV(seconds: 5)
+        var imported: [DateInterval] = []
+        var installed: (any Transcriber)?
+        let (coordinator, store) = makeCoordinator(installed: { installed }) { imported.append($0) }
+
+        await #expect(throws: ImportCoordinator.NoTranscriber.self) { try await coordinator.importFile(url) }
+
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(try allLines(store).isEmpty)
+        #expect(imported.isEmpty)
+
+        installed = ImportFakeTranscriber()
+        try await coordinator.importFile(url)
+
+        #expect(try allLines(store).map(\.time) == [recordedAt])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    // DEC-23: an empty result (a silent recording) is a successful transcription, so the file is deleted.
+    @Test func anEmptyTranscriptionStillDeletesTheFile() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = try importWAV(seconds: 5)
+        let (coordinator, store) = makeCoordinator(transcriber: CapturePipelineFakeTranscriber(reply: ""))
+
+        let report = try await coordinator.importFile(url)
+
+        #expect(report.lines == 0)
+        #expect(try allLines(store).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
     }
 
     // A failure before any line is stored keeps the file, so the next scan can try again.

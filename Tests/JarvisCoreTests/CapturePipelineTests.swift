@@ -45,12 +45,30 @@ final class CapturePipelineFakeTranscriber: Transcriber {
         return AudioChunk(samples: samples, sampleRate: sampleRate, start: start, source: source)
     }
 
+    // F-H3 (DEC-5 amended): the transcriber is read per chunk. With none installed the chunk is dropped
+    // and nothing is stored; one installed later (the whisper model finished downloading) is used at once.
+    @Test func noTranscriberDropsTheChunkAndOneInstalledLaterIsUsed() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore()
+        var installed: CapturePipelineFakeTranscriber?
+        let pipeline = CapturePipeline(transcriber: { installed }, store: store)
+
+        #expect(try await pipeline.process(speech()) == .noTranscriber)
+        #expect(try everything(in: store).isEmpty)
+
+        installed = CapturePipelineFakeTranscriber()
+        let outcome = try await pipeline.process(speech())
+
+        #expect(outcome == .transcribed(TranscriptLine(time: start, label: .me, text: "Ship it Friday.")))
+        #expect(try everything(in: store).map(\.text) == ["Ship it Friday."])
+    }
+
     // QA-7: a silent chunk is dropped before transcription and leaves no line.
     @Test func silentChunkIsDroppedWithoutCallingTheTranscriber() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let transcriber = CapturePipelineFakeTranscriber()
         let store = makeStore()
-        let pipeline = CapturePipeline(transcriber: transcriber, store: store)
+        let pipeline = CapturePipeline(transcriber: { transcriber }, store: store)
 
         let outcome = try await pipeline.process(silence())
 
@@ -67,7 +85,7 @@ final class CapturePipelineFakeTranscriber: Transcriber {
         defer { try? FileManager.default.removeItem(at: root) }
         let transcriber = CapturePipelineFakeTranscriber(reply: "Ship it Friday.")
         let store = makeStore()
-        let pipeline = CapturePipeline(transcriber: transcriber, store: store)
+        let pipeline = CapturePipeline(transcriber: { transcriber }, store: store)
 
         let outcome = try await pipeline.process(speech(source))
 
@@ -83,7 +101,7 @@ final class CapturePipelineFakeTranscriber: Transcriber {
         defer { try? FileManager.default.removeItem(at: root) }
         let transcriber = CapturePipelineFakeTranscriber(reply: reply)
         let store = makeStore()
-        let pipeline = CapturePipeline(transcriber: transcriber, store: store)
+        let pipeline = CapturePipeline(transcriber: { transcriber }, store: store)
 
         let outcome = try await pipeline.process(speech())
 
@@ -96,7 +114,7 @@ final class CapturePipelineFakeTranscriber: Transcriber {
     func quietChunkIsDroppedOnlyBelowTheThreshold(dbFS: Double, dropped: Bool) async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let transcriber = CapturePipelineFakeTranscriber()
-        let pipeline = CapturePipeline(transcriber: transcriber, store: makeStore())
+        let pipeline = CapturePipeline(transcriber: { transcriber }, store: makeStore())
 
         let outcome = try await pipeline.process(speech(dbFS: dbFS))
 
@@ -109,7 +127,7 @@ final class CapturePipelineFakeTranscriber: Transcriber {
         defer { try? FileManager.default.removeItem(at: root) }
         let transcriber = CapturePipelineFakeTranscriber(reply: " [Music] Ship it\n Friday. ")
         let store = makeStore()
-        let pipeline = CapturePipeline(transcriber: transcriber, store: store)
+        let pipeline = CapturePipeline(transcriber: { transcriber }, store: store)
 
         let outcome = try await pipeline.process(speech())
 
@@ -124,7 +142,7 @@ final class CapturePipelineFakeTranscriber: Transcriber {
         let store = makeStore()
         let forgotten = ForgottenWindows(paths: JarvisPaths(root: root))
         try forgotten.record(DateInterval(start: start.addingTimeInterval(-10), duration: 20), now: start)
-        let pipeline = CapturePipeline(transcriber: CapturePipelineFakeTranscriber(), store: store, forgotten: forgotten)
+        let pipeline = CapturePipeline(transcriber: { CapturePipelineFakeTranscriber() }, store: store, forgotten: forgotten)
 
         #expect(try await pipeline.process(speech()) == .dropped)
         #expect(try everything(in: store).isEmpty)

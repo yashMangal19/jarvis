@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Makes the capture streams `Jarvis` runs, one of each per instance. The live one opens real devices;
@@ -33,3 +34,17 @@ public protocol RouteEventSource: AnyObject {
 }
 
 extension AudioRouteMonitor: RouteEventSource {}
+
+/// Whether the screen is locked right now, read once at launch (DEC-25); `ScreenLockObserving` only
+/// reports changes.
+public protocol ScreenLockState: AnyObject {
+    var isScreenLocked: Bool { get }
+}
+
+extension DistributedScreenLockObserver: ScreenLockState {
+    /// From the login session's dictionary. Ceiling: `CGSSessionScreenIsLocked` is not a documented key;
+    /// if it ever goes away this reads `false`, and a launch while locked is caught at the next lock event.
+    public var isScreenLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
+}

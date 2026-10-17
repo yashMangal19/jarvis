@@ -3,7 +3,7 @@ import Foundation
 /// Routes what was heard after the wake word: built-in controls act on the session directly, memory
 /// questions are answered from notes, and everything else goes through the confirmation loop.
 /// Works while Paused (nothing heard is stored then; `ListeningSession.storesMemory` gates that in the
-/// capture pipeline, not here); does nothing while Stopped.
+/// capture pipeline, not here). While Stopped only a held command routes (DEC-22).
 @MainActor
 public final class VoiceControlRouter {
     private let session: ListeningSession
@@ -25,19 +25,41 @@ public final class VoiceControlRouter {
         self.clock = clock
     }
 
+    /// What was heard after the wake word. Does nothing while Stopped.
     public func handle(_ utterance: String) async {
-        if case .stopped = session.state { return }
-        guard let intent = VoiceIntentParser.parse(utterance) else { return }
-        await act(on: intent)
+        if isStopped { return }
+        await route(utterance)
+    }
+
+    /// What was said during a hold (⌥Space, story 8a). Routes in every state, Stopped and quiet hours
+    /// included: a hold is a deliberate command, not listening (DEC-22). With a read-back pending it is
+    /// the reply, because while Stopped the mic runs only for a hold.
+    public func handleHeld(_ utterance: String) async {
+        await reply(utterance)
     }
 
     /// A reply to a pending read-back goes to the confirmation loop, unless it is a built-in control:
     /// then the pending command is cancelled aloud and the control runs. Anything else is a new utterance.
     /// The timeout is applied first, so a read-back that went unanswered does not swallow what comes next.
+    /// Does nothing while Stopped.
     public func heardReply(_ text: String) async {
-        if case .stopped = session.state { return }
+        if isStopped { return }
+        await reply(text)
+    }
+
+    private var isStopped: Bool {
+        if case .stopped = session.state { return true }
+        return false
+    }
+
+    private func route(_ utterance: String) async {
+        guard let intent = VoiceIntentParser.parse(utterance) else { return }
+        await act(on: intent)
+    }
+
+    private func reply(_ text: String) async {
         commands.tick(now: clock.now)
-        guard case .awaitingConfirmation = commands.phase else { return await handle(text) }
+        guard case .awaitingConfirmation = commands.phase else { return await route(text) }
         if let intent = VoiceIntentParser.parse(text), intent.isBuiltInControl {
             commands.reset()
             speak("Cancelled.")
@@ -67,15 +89,17 @@ public final class VoiceControlRouter {
         case .forgetLastHour:
             await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
         case .memoryQuestion(let question):
-            // A Stop said while the answer is written wins, and a cancelled search ends quietly.
+            // A Stop said while the answer is written wins, and a cancelled search ends quietly. A question
+            // held while already Stopped is still answered.
+            let stoppedBefore = isStopped
             do {
                 let answer = try await search.answer(question)
-                if case .stopped = session.state { return }
+                if isStopped, !stoppedBefore { return }
                 speak(answer.text)
                 onAnswer(answer)
             } catch is CancellationError {
             } catch {
-                if case .stopped = session.state { return }
+                if isStopped, !stoppedBefore { return }
                 speak("I couldn't search my notes.")
             }
         case .toolCommand(let command):

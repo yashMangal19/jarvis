@@ -131,7 +131,8 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 
 ### DEC-25 · Jarvis checks quiet hours and the lock screen the moment it starts
 - **Decided by:** review (T-24 F-2)
-- **What:** no 30 s window of listening at launch.
+- **What:** no 30 s window of listening at launch. The lock check reads the session's `CGSSessionScreenIsLocked` key, which Apple doesn't
+  document. **Hardware check pending:** launch while the screen is locked. If the key is missing, the lock is caught at the next lock event.
 - **Checked against:** DEC-14.
 
 ## Imports
@@ -150,6 +151,8 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **What:** if transcription fails, or no transcriber is available, the file stays and is retried. An empty
   result from a silent recording counts as success.
 - **Affects:** `Import/ImportCoordinator.swift`.
+- **Known limit:** a retry resumes after the chunks already stored, but only within one run. After a relaunch, a
+  partly imported file is retried from the start and can duplicate lines.
 
 ### DEC-26 · An import re-notes only finished hours
 - **Decided by:** review (T-24 F-1)

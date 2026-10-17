@@ -7,7 +7,9 @@ import Foundation
 @MainActor
 public final class Jarvis: ObservableObject {
     public let session: ListeningSession
-    public let engines: Engines
+    /// The engines in use. The speech pair can change once after launch, when whisper's model finishes
+    /// downloading (DEC-5 amended); the rest stay as chosen at launch.
+    @Published public private(set) var engines: Engines
     /// Called with every sentence Jarvis says (read-backs, results, answers). The app sets it (T-27).
     public var speak: (String) -> Void = { _ in }
     /// The wake word was heard.
@@ -24,9 +26,10 @@ public final class Jarvis: ObservableObject {
     private let clock: any TimeSource
     private let screenLock: any ScreenLockObserving
     private let routes: any RouteEventSource
-    private let mic: any AudioSourceStream
-    private let systemAudio: any AudioSourceStream
-    private let roomMic: any AudioSourceStream
+    private let speech: SpeechSlot
+    private let mic: SourceDriver
+    private let systemAudio: SourceDriver
+    private let roomMic: SourceDriver
     private let notes: NoteStore
     private let index: NoteIndex
     private let pipeline: CapturePipeline
@@ -37,33 +40,45 @@ public final class Jarvis: ObservableObject {
     private let wakeWord: WakeWordListener
     private let inbox: InboxImporter
     private let voiceMemos: VoiceMemosImporter
+    private let tickInterval: TimeInterval
     private lazy var commands = CommandSession(runner: { [engines] in engines.commandRunner }, clock: clock,
                                                speak: { [unowned self] in speak($0) })
     private lazy var router = VoiceControlRouter(session: session, search: search, forget: forget,
                                                  commands: commands, speak: { [unowned self] in speak($0) },
                                                  onAnswer: { [unowned self] in onMemoryAnswer($0) }, clock: clock)
+    private var started = false
+    private var importersStarted = false
     private var wakeWordOn = false
     private var holding = false
-    private var timer: Task<Void, Never>?
+    /// Set by a hold, so the command it captures routes even while Stopped (DEC-22). Ceiling: a hold that
+    /// captures nothing leaves it set, and the next wake-word command is then routed as a held one.
+    private var heldCommandPending = false
+    private(set) var timer: Task<Void, Never>?
     private var lastMaintenance = Date.distantPast
-    /// Stops the child processes `live()` started.
-    private var stopProcesses: () -> Void = {}
+    private var servers: [WhisperServerProcess] = []
+    private var serverStarts: [Task<Void, Never>] = []
     private var subscriptions: Set<AnyCancellable> = []
 
+    /// `tickInterval` is the timer's period, 30 s; tests shorten it.
     public init(paths: JarvisPaths, engines: Engines, settings: SettingsStore, clock: any TimeSource,
                 sources: any SourceFactory, screenLock: any ScreenLockObserving, sleepGuard: any SleepGuard,
-                routes: any RouteEventSource, voiceMemos locator: @escaping () -> VoiceMemosAccess) {
+                routes: any RouteEventSource, voiceMemos locator: @escaping () -> VoiceMemosAccess,
+                tickInterval: TimeInterval = 30) {
         self.paths = paths
         self.engines = engines
         self.clock = clock
         self.screenLock = screenLock
         self.routes = routes
+        self.tickInterval = tickInterval
         session = ListeningSession(clock: clock, sleepGuard: sleepGuard,
                                    isQuietTime: { settings.load().quietHours?.contains($0, calendar: .current) ?? false })
         let (mic, frames) = sources.makeMic()
-        self.mic = mic
-        systemAudio = sources.makeSystemAudio()
-        roomMic = sources.makeRoomMic()
+        self.mic = SourceDriver(mic, label: "jarvis.drive.mic")
+        systemAudio = SourceDriver(sources.makeSystemAudio(), label: "jarvis.drive.system-audio")
+        roomMic = SourceDriver(sources.makeRoomMic(), label: "jarvis.drive.room-mic")
+        // DEC-5 amended: speech is read per use, so a transcriber installed after launch is used at once.
+        let speech = SpeechSlot(main: engines.transcriber, wake: engines.wakeWordTranscriber)
+        self.speech = speech
 
         let transcripts = TranscriptStore(paths: paths)
         let notes = NoteStore(paths: paths)
@@ -74,8 +89,7 @@ public final class Jarvis: ObservableObject {
         // DEC-8: the index is keyed by the search name on the Engines line.
         let index = NoteIndex(paths: paths, embedder: engines.embedder, embedderID: engines.description.search)
         index.attach(to: notes)
-        let pipeline = CapturePipeline(transcriber: engines.transcriber ?? NoSpeech(), store: transcripts,
-                                       forgotten: forgotten)
+        let pipeline = CapturePipeline(transcriber: { speech.main }, store: transcripts, forgotten: forgotten)
         let hourlyNotes = HourlyNoteScheduler(transcripts: transcripts, session: session, writer: writer,
                                               prompts: prompts, notes: notes, forgotten: forgotten)
         self.notes = notes
@@ -87,30 +101,37 @@ public final class Jarvis: ObservableObject {
         search = MemorySearch(index: index, notes: notes, writer: writer, prompts: prompts)
         forget = ForgetLastHour(transcripts: transcripts, notes: notes, index: index, forgotten: forgotten)
         wakeWord = WakeWordListener(
-            mic: frames, wakeWordTranscriber: { engines.wakeWordTranscriber },
-            capture: CommandCapture(buffer: RollingAudioBuffer(seconds: 8), transcriber: { engines.transcriber },
+            mic: frames, wakeWordTranscriber: { speech.wake },
+            capture: CommandCapture(buffer: RollingAudioBuffer(seconds: 8), transcriber: { speech.main },
                                     gate: SilenceGate(), clock: clock))
 
+        // DEC-26: the scheduler decides which hours an import notes again.
         let coordinator = ImportCoordinator(pipeline: pipeline) { period in
-            // Every clock hour the recording touches gets its note written again, now with its lines.
-            var hour = Calendar.current.dateInterval(of: .hour, for: period.start)
-            while let current = hour, current.start < period.end {
-                _ = try? await hourlyNotes.writeNote(for: current)
-                hour = Calendar.current.dateInterval(of: .hour, for: current.end)
-            }
+            try? await hourlyNotes.renote(touching: period, now: clock.now)
         }
         inbox = InboxImporter(paths: paths, coordinator: coordinator)
         voiceMemos = VoiceMemosImporter(locator: locator, coordinator: coordinator, ledger: ImportLedger(paths: paths),
                                         paths: paths)
 
+        for driver in [self.mic, systemAudio, roomMic] {
+            driver.onChunk = { [weak self] chunk, listening in
+                Task { @MainActor in await self?.store(chunk, heardWhileListening: listening) }
+            }
+        }
         wakeWord.onDetected = { [unowned self] in onChime() }
-        wakeWord.onCommand = { [unowned self] text in Task { await router.handle(text) } }
+        wakeWord.onCommand = { [unowned self] text in
+            let held = heldCommandPending
+            heldCommandPending = false
+            Task { held ? await router.handleHeld(text) : await router.handle(text) }
+        }
         screenLock.onLock = { [weak self] in Task { @MainActor in self?.session.screenLocked() } }
         screenLock.onUnlock = { [weak self] in Task { @MainActor in self?.session.screenUnlocked() } }
         routes.onEvent = { [weak self] event in Task { @MainActor in self?.routeChanged(event) } }
         voiceMemos.$needsFullDiskAccess.sink { [weak self] in self?.voiceMemosNeedFullDiskAccess = $0 }
             .store(in: &subscriptions)
-        // `@Published` announces a change before it lands, so the sources follow one hop later.
+        // `@Published` announces a change before it lands: the cut comes first, while the state is still
+        // the old one, and the sources follow one hop later.
+        session.$state.sink { [weak self] in self?.cutIfListeningChanges(to: $0) }.store(in: &subscriptions)
         let follow: (Any) -> Void = { [weak self] _ in Task { @MainActor in self?.follow() } }
         session.$state.sink(receiveValue: follow).store(in: &subscriptions)
         session.$modes.sink(receiveValue: follow).store(in: &subscriptions)
@@ -120,34 +141,34 @@ public final class Jarvis: ObservableObject {
 
     /// This Mac's engines and devices. Whisper servers start in the background; until one answers, its
     /// chunks fail and are dropped. With whisper.cpp installed but no model, `small` downloads in the
-    /// background. Ceiling: the engines are chosen once, so speech starts at the next launch after it.
+    /// background, and speech starts as soon as it is there, without a relaunch (DEC-5 amended).
     public static func live() async throws -> Jarvis {
         let paths = JarvisPaths.standard
         try paths.ensureLayout()
         let settings = SettingsStore(paths: paths)
-        let probes = await EngineProbes.live(paths: paths,
-                                             preferredLocales: Locale.preferredLanguages.map(Locale.init(identifier:)))
-        let engines = EngineSelector.select(probes, settings: settings.load)
+        let locales = Locale.preferredLanguages.map(Locale.init(identifier:))
+        let engines = EngineSelector.select(await EngineProbes.live(paths: paths, preferredLocales: locales),
+                                            settings: settings.load)
         let clock = SystemClock()
         let jarvis = Jarvis(paths: paths, engines: engines, settings: settings, clock: clock,
                             sources: LiveSourceFactory(clock: clock), screenLock: DistributedScreenLockObserver(),
                             sleepGuard: IOKitSleepGuard(), routes: AudioRouteMonitor(),
                             voiceMemos: { VoiceMemosLocator.probe() })
-        // EngineSelector creates the servers stopped (pidfiles per role, DEC-6); `stop` waits boundedly (DEC-10).
-        let servers = [engines.transcriber, engines.wakeWordTranscriber].compactMap { engine -> WhisperServerProcess? in
-            guard let whisper = engine as? WhisperTranscriber, case .server(let server) = whisper.backend else { return nil }
-            return server
-        }
-        jarvis.stopProcesses = { servers.forEach { $0.stop() } }
-        Task { for server in servers { try? await server.start() } }
+        jarvis.startServers(of: [engines.transcriber, engines.wakeWordTranscriber])
         let install = WhisperInstall.locate()
         if engines.transcriber == nil, (install.server ?? install.cli) != nil {
             jarvis.modelDownloadProgress = 0
             Task { [weak jarvis] in
-                _ = try? await WhisperModelDownloader().ensureSmall(in: paths.models) { progress in
+                let model = try? await WhisperModelDownloader().ensureSmall(in: paths.models) { progress in
                     Task { @MainActor in jarvis?.modelDownloadProgress = progress }
                 }
                 jarvis?.modelDownloadProgress = nil
+                guard model != nil else { return }
+                // Only the speech pair is taken; the rest of this second selection is discarded unstarted.
+                let found = EngineSelector.select(await EngineProbes.live(paths: paths, preferredLocales: locales),
+                                                  settings: settings.load)
+                guard let main = found.transcriber, let wake = found.wakeWordTranscriber else { return }
+                await jarvis?.installSpeech(main: main, wakeWord: wake, name: found.description.speech)
             }
         }
         return jarvis
@@ -156,36 +177,46 @@ public final class Jarvis: ObservableObject {
     public var notesAvailable: Bool { engines.noteWriter != nil }
     public var openNotesURL: URL { paths.notesHourly.deletingLastPathComponent() }
 
-    /// Lays out `~/Jarvis`, runs maintenance, refreshes the index, starts listening and the importers,
-    /// then ticks every 30 s.
+    /// Lays out `~/Jarvis`, runs maintenance, refreshes the index, starts listening (stopped at once in
+    /// quiet hours or with the screen locked, DEC-25) and, once speech exists, the importers; then ticks
+    /// every 30 s. A second call does nothing.
     public func start() async {
+        guard !started else { return }
+        started = true
         try? paths.ensureLayout()
         lastMaintenance = clock.now
         await maintenance.run(now: lastMaintenance)
         try? index.rebuild(from: notes)
         if let input = routes.current { session.handle(.inputChanged(input)) }
         session.start()
-        // With speech off an import would transcribe nothing and still delete the recording.
-        if engines.transcriber != nil {
-            try? inbox.start()
-            try? await voiceMemos.start()
-        }
-        timer = Task { [weak self] in
+        if (screenLock as? any ScreenLockState)?.isScreenLocked == true { session.screenLocked() }
+        session.tick(now: clock.now)
+        await startImporters()
+        timer = Task { [weak self, tickInterval] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
-                await self?.tick()
+                try? await Task.sleep(nanoseconds: UInt64(tickInterval * 1_000_000_000))
+                guard let self else { return }
+                await self.tick()
             }
         }
     }
 
     /// Stops the timer, every source, the importers and the whisper servers. The app calls it at quit.
+    /// A server still starting is cancelled and awaited first, so none is launched after this returns;
+    /// the servers stop off the main actor, together (each waits up to ~3 s, DEC-10).
     public func shutdown() async {
         timer?.cancel()
         session.stop(.user)
         follow()
         await inbox.stop()
         await voiceMemos.stop()
-        stopProcesses()
+        for driver in [mic, systemAudio, roomMic] { await driver.settle() }
+        serverStarts.forEach { $0.cancel() }
+        for start in serverStarts { await start.value }
+        let servers = servers
+        await withTaskGroup(of: Void.self) { group in
+            for server in servers { group.addTask { server.stop() } }
+        }
     }
 
     /// The 30 s tick. Maintenance comes after the hourly note, so a roll-up includes the hour just written.
@@ -200,6 +231,20 @@ public final class Jarvis: ObservableObject {
         await maintenance.run(now: now)
     }
 
+    /// Speech found after launch (whisper's model finished downloading): capture, the wake word and
+    /// commands use it at once, its whisper servers start, and so do the importers. The search embedder
+    /// stays as chosen at launch (DEC-5 amended).
+    func installSpeech(main: any Transcriber, wakeWord: any Transcriber, name: String) async {
+        speech.install(main: main, wake: wakeWord)
+        let old = engines
+        engines = Engines(transcriber: main, wakeWordTranscriber: wakeWord, noteWriter: old.noteWriter,
+                          embedder: old.embedder, commandRunner: old.commandRunner,
+                          description: EnginesDescription(speech: name, notes: old.description.notes,
+                                                          search: old.description.search))
+        startServers(of: [main, wakeWord])
+        await startImporters()
+    }
+
     public func askMemory(_ question: String) async -> MemoryAnswer {
         do { return try await search.answer(question) } catch {
             return MemoryAnswer(text: "I couldn't search my notes.", usedNoteIDs: [])
@@ -212,9 +257,11 @@ public final class Jarvis: ObservableObject {
     @discardableResult
     public func forgetLastHour() throws -> ForgetReport { try forget.perform(now: clock.now) }
 
-    /// Works while Stopped too: the mic runs for the hold only, and what it hears is not stored (story 8a).
+    /// Works while Stopped too: the mic runs for the hold only, what it hears is not stored, and the
+    /// command routes as usual (story 8a, DEC-22).
     public func beginHoldCommand() {
         holding = true
+        heldCommandPending = true
         follow()
         wakeWord.beginHold()
     }
@@ -227,19 +274,54 @@ public final class Jarvis: ObservableObject {
 
     public func stemPressed() { wakeWord.pressToTalk() }
 
+    // MARK: engines
+
+    /// With speech off a recording would only be kept and retried for nothing, so the importers wait for it.
+    private func startImporters() async {
+        guard started, !importersStarted, speech.main != nil else { return }
+        importersStarted = true
+        try? inbox.start()
+        try? await voiceMemos.start()
+    }
+
+    /// Starts the whisper servers behind `transcribers` in the background (EngineSelector creates them
+    /// stopped, pidfiles per role, DEC-6). `shutdown` cancels and awaits these starts before stopping them.
+    private func startServers(of transcribers: [(any Transcriber)?]) {
+        let started = transcribers.compactMap { engine -> WhisperServerProcess? in
+            guard let whisper = engine as? WhisperTranscriber, case .server(let server) = whisper.backend else { return nil }
+            return server
+        }
+        guard !started.isEmpty else { return }
+        servers += started
+        serverStarts.append(Task.detached {
+            for server in started where !Task.isCancelled { try? await server.start() }
+        })
+    }
+
     // MARK: routing
 
     /// Runs what the session's state calls for and listens for the reply to a read-back.
     private func follow() {
-        run(mic, session.wakeWordActive || holding)
-        run(systemAudio, session.storesMemory)
-        run(roomMic, session.storesMemory && session.modes.meetingMode)
+        mic.run(session.wakeWordActive || holding)
+        systemAudio.run(session.storesMemory)
+        roomMic.run(session.storesMemory && session.modes.meetingMode)
         let wake = session.wakeWordActive && !isSpeaking
         if wake != wakeWordOn {
             wakeWordOn = wake
             wake ? wakeWord.start() : wakeWord.stop()
         }
         listenForReplyIfAwaited()
+    }
+
+    /// DEC-24: at every listening boundary (pause, resume, stop, start, quiet hours, lock) each stream
+    /// ends its chunk before the new state applies, so every chunk lies wholly inside or outside
+    /// listening. The room stream runs only while listening and has no cut, so it stops instead.
+    private func cutIfListeningChanges(to next: ListeningState) {
+        let listening = next == .listening
+        guard listening != session.storesMemory else { return }
+        mic.cut(listening: listening)
+        systemAudio.cut(listening: listening)
+        roomMic.cut(listening: listening, byStopping: true)
     }
 
     /// The room stream is pinned to the built-in mic, so a route change may have made it redundant: it is
@@ -251,25 +333,19 @@ public final class Jarvis: ObservableObject {
         follow()
     }
 
-    /// `start` is a no-op on a running source and fails quietly without permission, or when the room mic
-    /// would duplicate the input.
-    private func run(_ source: any AudioSourceStream, _ running: Bool) {
-        guard running else { return source.stop() }
-        try? source.start { [weak self] chunk in Task { @MainActor in await self?.store(chunk) } }
-    }
-
-    /// Stores a chunk only if all of it was heard while listening: one that overlaps a pause or stop is
-    /// dropped whole (story 25b). Ceiling: up to 30 s of listening speech is lost at each such boundary,
-    /// because `MicSource` cannot cut its chunk there.
-    private func store(_ chunk: AudioChunk) async {
-        let heard = DateInterval(start: chunk.start, duration: chunk.duration)
-        guard session.storesMemory, session.gaps(in: heard).isEmpty else { return }
+    /// Stores a chunk only if it was heard while listening (story 25b). The cut at each boundary makes
+    /// that true of the whole chunk.
+    private func store(_ chunk: AudioChunk, heardWhileListening: Bool) async {
+        guard heardWhileListening else { return }
         _ = try? await pipeline.process(chunk)
     }
 
-    /// A second call while one listens gets `nil` at once, and the tick it causes changes nothing.
+    /// Listens for the yes or no after a read-back. Not while Stopped: the mic runs only for a hold
+    /// there, so the next hold is the reply (DEC-22). A second call while one listens gets `nil` at once;
+    /// the `commands.tick` that follows cancels nothing early, because `CommandSession.tick` cancels a
+    /// read-back only once its `replyTimeout` has passed.
     private func listenForReplyIfAwaited() {
-        guard case .awaitingConfirmation = commands.phase, !isSpeaking else { return }
+        guard case .awaitingConfirmation = commands.phase, !isSpeaking, session.wakeWordActive else { return }
         Task {
             if let reply = await wakeWord.listenForReply() {
                 await router.heardReply(reply)
@@ -280,7 +356,85 @@ public final class Jarvis: ObservableObject {
     }
 }
 
-/// `CapturePipeline` takes a transcriber rather than D-4's optional one; with speech off, nothing is heard.
-private struct NoSpeech: Transcriber {
-    func transcribe(_ chunk: AudioChunk) async throws -> String { "" }
+/// The speech engines in use, read by capture, the importers and the wake word from any thread.
+private final class SpeechSlot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _main: (any Transcriber)?
+    private var _wake: (any Transcriber)?
+
+    init(main: (any Transcriber)?, wake: (any Transcriber)?) {
+        _main = main
+        _wake = wake
+    }
+
+    var main: (any Transcriber)? { lock.withLock { _main } }
+    var wake: (any Transcriber)? { lock.withLock { _wake } }
+
+    func install(main: any Transcriber, wake: any Transcriber) {
+        lock.withLock { _main = main; _wake = wake }
+    }
+}
+
+/// One capture stream, driven off the main actor: `SystemAudioSource.start` can block for up to 20 s on
+/// ScreenCaptureKit (F-3). A serial queue per stream keeps its starts, stops and cuts in the order asked.
+/// Each chunk is tagged with whether Jarvis was listening when the stream delivered it.
+private final class SourceDriver: @unchecked Sendable {
+    /// Set once, before the first `run`; the queue hop orders it before any delivery.
+    var onChunk: (AudioChunk, _ heardWhileListening: Bool) -> Void = { _, _ in }
+
+    private let source: any AudioSourceStream
+    private let queue: DispatchQueue
+    private let lock = NSLock()
+    private var wanted = false
+    private var applyQueued = false
+    private var listening = false
+
+    init(_ source: any AudioSourceStream, label: String) {
+        self.source = source
+        queue = DispatchQueue(label: label)
+    }
+
+    /// Starts or stops the stream to match `on`. Only the latest wish is applied, so a slow, failing
+    /// start never queues up behind itself; a failed start is tried again at the next call. `start` is a
+    /// no-op on a running stream and fails quietly without permission, or when the room mic would
+    /// duplicate the input.
+    func run(_ on: Bool) {
+        let queueApply = lock.withLock { () -> Bool in
+            wanted = on
+            defer { applyQueued = true }
+            return !applyQueued
+        }
+        guard queueApply else { return }
+        queue.async { [self] in
+            let on = lock.withLock { () -> Bool in
+                applyQueued = false
+                return wanted
+            }
+            if on {
+                try? source.start { [weak self] chunk in self?.deliver(chunk) }
+            } else {
+                source.stop()
+            }
+        }
+    }
+
+    func stop() { queue.async { [self] in source.stop() } }
+
+    /// Ends the chunk being recorded (through `onChunk`, still tagged with the old state), then
+    /// records whether Jarvis now listens.
+    func cut(listening now: Bool, byStopping: Bool = false) {
+        queue.async { [self] in
+            byStopping ? source.stop() : source.cut()
+            lock.withLock { listening = now }
+        }
+    }
+
+    /// Returns once everything asked so far has run.
+    func settle() async {
+        await withCheckedContinuation { done in queue.async { done.resume() } }
+    }
+
+    private func deliver(_ chunk: AudioChunk) {
+        onChunk(chunk, lock.withLock { listening })
+    }
 }

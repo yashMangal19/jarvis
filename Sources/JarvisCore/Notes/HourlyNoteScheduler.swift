@@ -11,6 +11,8 @@ public final class HourlyNoteScheduler {
     private let calendar: Calendar
     /// Ids whose note is being written now, so an overlapping tick for the same window is a no-op.
     private var inFlight: Set<String> = []
+    /// Ids a `renote` asked for while they were in flight: written once more when that write ends.
+    private var writeAgain: Set<String> = []
     private let lock = NSLock()
 
     /// `writer` returning `nil` means no note writer is installed: notes are skipped quietly and
@@ -38,18 +40,39 @@ public final class HourlyNoteScheduler {
     public func tick(now: Date) async throws {
         try prompts.seedDefaults()
         guard let window = lastCompletedWindow(before: now) else { return }
+        try await write(window, onlyIfMissing: true)
+    }
+
+    /// Writes again the note of every finished window `period` touches (an import stored lines there),
+    /// in the windows `tick` uses: hours, or 2-minute slots in Demo mode. The window still in progress
+    /// at `now` is left to `tick`, so its note is written once, after it ends, from every line (DEC-26).
+    /// A window being written right now is written once more when that write ends, never raced.
+    public func renote(touching period: DateInterval, now: Date) async throws {
+        var window = self.window(containing: period.start)
+        while let current = window, current.start < period.end, current.end <= now {
+            try await write(current, onlyIfMissing: false)
+            window = self.window(containing: current.end)
+        }
+    }
+
+    /// Claims `window` so no two writes of it overlap. A tick (`onlyIfMissing`) skips a window that
+    /// has a note or is in flight; a re-note of an in-flight window asks its writer to write it again.
+    private func write(_ window: DateInterval, onlyIfMissing: Bool) async throws {
         let id = notes.id(.hourly, period: window)
         let claimed = lock.withLock {
-            !notes.allIDs(kind: .hourly).contains(id) && inFlight.insert(id).inserted
+            if onlyIfMissing, notes.allIDs(kind: .hourly).contains(id) { return false }
+            if inFlight.insert(id).inserted { return true }
+            if !onlyIfMissing { writeAgain.insert(id) }
+            return false
         }
         guard claimed else { return }
-        defer { lock.withLock { _ = inFlight.remove(id) } }
-        try await writeNote(for: window)
+        defer { lock.withLock { inFlight.remove(id); writeAgain.remove(id) } }
+        repeat { try await writeNote(for: window) } while lock.withLock { writeAgain.remove(id) != nil }
     }
 
     /// The note for `window` from its transcript lines, with the window's gap markers appended
     /// under `## Gaps` when there are any; `nil` (and no file) when the window had
-    /// no speech or no note writer is installed. Public so importers can note a past hour.
+    /// no speech or no note writer is installed. Importers go through `renote`, which claims the window.
     /// Forgotten lines are never sent to the writer, and a note is not written (`nil`) if any line
     /// it was written from was forgotten while the writer ran; a later tick writes it from what is left.
     @discardableResult
@@ -70,13 +93,17 @@ public final class HourlyNoteScheduler {
     }
 
     private func lastCompletedWindow(before now: Date) -> DateInterval? {
-        guard let hour = calendar.dateInterval(of: .hour, for: now) else { return nil }
-        guard session.modes.demoMode else {
-            return calendar.date(byAdding: .hour, value: -1, to: hour.start)
-                .map { DateInterval(start: $0, end: hour.start) }
+        window(containing: now).map { current in
+            DateInterval(start: current.start.addingTimeInterval(-current.duration), end: current.start)
         }
-        let slotEnd = hour.start.addingTimeInterval(Double(Int(now.timeIntervalSince(hour.start)) / 120 * 120))
-        return DateInterval(start: slotEnd.addingTimeInterval(-120), end: slotEnd)
+    }
+
+    /// The hour holding `date`, or in Demo mode its 2-minute slot of the clock (:00–:02, :02–:04, …).
+    private func window(containing date: Date) -> DateInterval? {
+        guard let hour = calendar.dateInterval(of: .hour, for: date) else { return nil }
+        guard session.modes.demoMode else { return hour }
+        let slotStart = hour.start.addingTimeInterval(Double(Int(date.timeIntervalSince(hour.start)) / 120 * 120))
+        return DateInterval(start: slotStart, duration: 120)
     }
 
     /// `HH:MM Me: text`, one per line, local time of `calendar`.

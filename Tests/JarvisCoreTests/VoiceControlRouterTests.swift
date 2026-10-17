@@ -233,6 +233,26 @@ private final class RouterLog {
         #expect(f.commands.phase == .idle)
     }
 
+    // F-H1, DEC-22 (story 8a): a held command routes while Stopped. Its read-back is answered by holding
+    // again, since the mic runs only for a hold; a held question is answered aloud.
+    @Test(arguments: [StopReason.user, .screenLock, .quietHours])
+    func aHeldCommandRoutesWhileStopped(reason: StopReason) async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make(state: .stopped(reason))
+        try f.notes.write(budgetNote)
+
+        await f.router.handleHeld("email Asha the deck")
+        #expect(log.spoken == ["plan: email Asha the deck"])
+        await f.router.handleHeld("Yes.")
+        #expect(runner.executed == ["plan: email Asha the deck"])
+        #expect(log.spoken.last == "Done.")
+
+        await f.router.handleHeld("what did we decide about the budget?")
+        #expect(log.spoken.last == "You cut the travel line (2026-10-17-09).")
+        #expect(log.answers.map(\.usedNoteIDs) == [["2026-10-17-09"]])
+        #expect(f.session.state == .stopped(reason))
+    }
+
     // F-1: once the read-back has timed out, what is heard next is a new utterance, not a lost reply.
     @Test func aReplyAfterTheReadBackTimedOutIsRoutedAsANewUtterance() async {
         defer { try? FileManager.default.removeItem(at: root) }

@@ -2,16 +2,20 @@
 public final class CapturePipeline {
     public enum Outcome: Equatable {
         case dropped
+        /// No transcriber is installed (D-4 `nil`, e.g. whisper's model is still downloading): the chunk
+        /// is dropped like `.dropped`, but a caller that keeps the audio (an import) knows to retry.
+        case noTranscriber
         case empty
         case transcribed(TranscriptLine)
     }
 
-    private let transcriber: any Transcriber
+    private let transcriber: () -> (any Transcriber)?
     private let store: TranscriptStore
     private let gate: SilenceGate
     private let forgotten: ForgottenWindows?
 
-    public init(transcriber: any Transcriber, store: TranscriptStore, gate: SilenceGate = .init(),
+    /// `transcriber` is read for every chunk, so one installed after launch is used at once (DEC-5).
+    public init(transcriber: @escaping () -> (any Transcriber)?, store: TranscriptStore, gate: SilenceGate = .init(),
                 forgotten: ForgottenWindows? = nil) {
         self.transcriber = transcriber
         self.store = store
@@ -23,6 +27,7 @@ public final class CapturePipeline {
     /// A line whose time the user forgot while it was transcribing is `.dropped`, never stored.
     public func process(_ chunk: AudioChunk) async throws -> Outcome {
         if gate.isSilent(chunk) { return .dropped }
+        guard let transcriber = transcriber() else { return .noTranscriber }
         let text = TranscriptText.clean(try await transcriber.transcribe(chunk))
         if text.isEmpty { return .empty }
         let line = TranscriptLine(time: chunk.start, label: chunk.source.label, text: text)

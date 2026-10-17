@@ -14,17 +14,23 @@ public struct ScanReport {
     public let waiting: Int
 }
 
-/// Transcribes recordings dropped into a folder, dated by when they were recorded, and deletes them.
+/// Transcribes recordings dropped into a folder, dated by when they were recorded, and deletes each once
+/// it is fully transcribed.
 public final class ImportCoordinator {
+    /// No transcriber is installed yet; the recording is kept for a later scan (DEC-23).
+    public struct NoTranscriber: Error {}
+
     private let pipeline: CapturePipeline
     private let onImported: (DateInterval) async -> Void
     private let settleDelay: TimeInterval
     private let lock = NSLock()
     /// Files whose lines are stored but whose delete failed; never imported again, deleted on a later scan.
     private var undeleted: Set<FileStamp> = []
+    /// Files kept after a failure, with how many of their chunks are already stored.
+    private var resumeAt: [FileStamp: Int] = [:]
 
-    /// `onImported` receives the stored period of the recording; the facade routes it to the
-    /// hourly note for each clock hour it touches.
+    /// `onImported` receives the stored period of the recording; the facade hands it to
+    /// `HourlyNoteScheduler.renote`, which notes again the finished hours it touched.
     /// `settleDelay` is how long a file's size must stay unchanged before `scanAndImport` takes it.
     public init(pipeline: CapturePipeline, settleDelay: TimeInterval = 2,
                 onImported: @escaping (DateInterval) async -> Void) {
@@ -35,11 +41,12 @@ public final class ImportCoordinator {
 
     /// Decodes `url`, transcribes every chunk, reports the period, then deletes `url`.
     ///
-    /// Deviation from the blueprint ("nothing of the audio survives"): user audio is only deleted
-    /// once a line of it is stored. So:
-    /// - a later chunk failing after a line is stored still deletes the file (a retry cannot
-    ///   duplicate lines), and the stored part (start to the end of the last stored chunk) is reported;
-    /// - a failure before any line is stored keeps the file for the next scan;
+    /// User audio is deleted only after its whole transcription succeeded (DEC-23); an empty result
+    /// (a silent recording) counts as success. So:
+    /// - a chunk failing, or no transcriber installed (`NoTranscriber`), keeps the file for the next scan;
+    ///   the stored part (start to the end of the last stored chunk) is still reported, and the next try
+    ///   of the same file carries on after the chunks already stored, so no line is stored twice.
+    ///   Ceiling: that place is kept in memory, so a retry after a relaunch starts from the beginning;
     /// - a file that cannot be decoded is moved to `failed/` beside it, so it is not retried forever,
     ///   and `ImportError.undecodable` says where it went;
     /// - a failed delete throws `ImportError.notDeleted`, and the file is never imported again.
@@ -51,21 +58,23 @@ public final class ImportCoordinator {
         do { chunks = try AudioFileDecoder.chunks(from: url, recordedAt: recordedAt) } catch {
             throw ImportError.undecodable(movedTo: moveToFailed(url), error)
         }
+        let alreadyStored = lock.withLock { resumeAt[stamp] ?? 0 }
         var lines = 0
         var storedEnd = recordedAt
-        do {
-            for chunk in chunks {
-                if case .transcribed = try await pipeline.process(chunk) {
+        for (index, chunk) in chunks.enumerated().dropFirst(alreadyStored) {
+            do {
+                switch try await pipeline.process(chunk) {
+                case .noTranscriber: throw NoTranscriber()
+                case .transcribed:
                     lines += 1
                     storedEnd = chunk.start.addingTimeInterval(chunk.duration)
+                case .dropped, .empty: break
                 }
+            } catch {
+                lock.withLock { resumeAt[stamp] = index }
+                if lines > 0 { await onImported(DateInterval(start: recordedAt, end: storedEnd)) }
+                throw error
             }
-        } catch {
-            if lines > 0 {
-                await onImported(DateInterval(start: recordedAt, end: storedEnd))
-                try delete(url, stamp)
-            }
-            throw error
         }
         let period = DateInterval(start: recordedAt, duration: chunks.reduce(0) { $0 + $1.duration })
         await onImported(period)
@@ -94,7 +103,10 @@ public final class ImportCoordinator {
     private func delete(_ url: URL, _ stamp: FileStamp) throws {
         do {
             try FileManager.default.removeItem(at: url)
-            _ = lock.withLock { undeleted.remove(stamp) }
+            lock.withLock {
+                undeleted.remove(stamp)
+                resumeAt[stamp] = nil
+            }
         } catch {
             _ = lock.withLock { undeleted.insert(stamp) }
             throw ImportError.notDeleted(url, error)

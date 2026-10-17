@@ -45,6 +45,12 @@ public final class MicSource: AudioSourceStream {
         queue.sync(execute: tearDown)
     }
 
+    /// Hands over the partial chunk now (`ChunkAssembler.flush`); the next chunk starts with the next
+    /// samples. A no-op while stopped (DEC-24).
+    public func cut() {
+        queue.sync { if let partial = chunks.flush() { onChunk?(partial) } }
+    }
+
     // MARK: on `queue`
 
     private func tearDown() {

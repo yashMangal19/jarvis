@@ -196,6 +196,64 @@ final class HNSSleepGuard: SleepGuard {
         #expect(NoteStore(paths: paths, calendar: calendar).allIDs(kind: .hourly) == ["2026-10-17-10"])
     }
 
+    // F-1, DEC-26: an import re-notes the finished hours it touched, but never the hour in progress: that
+    // note is written once the hour ends, from the imported and the live lines together.
+    @Test func anImportRenotesTheFinishedHoursItTouchedButNotTheHourInProgress() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try say("Live at nine.", at: at(9, 50))
+        let scheduler = makeScheduler()
+        try await scheduler.tick(now: at(10, 5))
+        try say("Imported at nine.", at: at(9, 45))
+        try say("Imported at ten.", at: at(10, 10))
+
+        try await scheduler.renote(touching: DateInterval(start: at(9, 40), end: at(10, 20)), now: at(10, 25))
+
+        let nine = try String(contentsOf: hourlyFile("2026-10-17-09"), encoding: .utf8)
+        #expect(nine.contains("09:45 Me: Imported at nine.") && nine.contains("09:50 Me: Live at nine."))
+        #expect(!FileManager.default.fileExists(atPath: hourlyFile("2026-10-17-10").path))
+
+        try say("Live at ten.", at: at(10, 40))
+        try await scheduler.tick(now: at(11, 5))
+
+        let ten = try String(contentsOf: hourlyFile("2026-10-17-10"), encoding: .utf8)
+        #expect(ten.contains("10:10 Me: Imported at ten.") && ten.contains("10:40 Me: Live at ten."))
+    }
+
+    // F-1: in Demo mode an import re-notes the finished 2-minute slots it touched, not the one in progress.
+    @Test func inDemoModeAnImportRenotesItsFinishedSlots() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = ListeningSession(clock: HNSClock(at(10)), sleepGuard: HNSSleepGuard())
+        session.modes.demoMode = true
+        try say("First slot.", at: at(10, 1))
+        try say("Second slot.", at: at(10, 3))
+        try say("Current slot.", at: at(10, 6, 5))
+
+        try await makeScheduler(session: session)
+            .renote(touching: DateInterval(start: at(10, 0, 30), end: at(10, 6, 20)), now: at(10, 6, 30))
+
+        #expect(NoteStore(paths: paths, calendar: calendar).allIDs(kind: .hourly) == ["2026-10-17-1000",
+                                                                                      "2026-10-17-1002"])
+    }
+
+    // F-1: a re-note asked for while a tick writes the same window does not race it: the window is
+    // written once more after that write ends, so the imported lines reach the note.
+    @Test func aRenoteDuringATickForTheSameHourWritesItAgainAfterTheTick() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try say("Ship it Friday.", at: at(10, 15))
+        let gated = HNSGatedNoteWriter()
+        let scheduler = makeScheduler(writer: { gated })
+        let first = Task { try await scheduler.tick(now: at(11, 5)) }
+        while !gated.isWaiting { try await Task.sleep(nanoseconds: 1_000_000) }
+
+        try say("Imported line.", at: at(10, 20))
+        try await scheduler.renote(touching: DateInterval(start: at(10, 20), duration: 30), now: at(11, 6))
+        #expect(gated.calls == 1)
+        gated.open()
+        try await first.value
+
+        #expect(gated.calls == 2)
+    }
+
     @Test func aNoteFileThatNoLongerParsesIsStillNeverRewritten() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         try say("Ship it Friday.", at: at(10, 15))

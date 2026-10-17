@@ -2,6 +2,14 @@
 public protocol AudioSourceStream {
     func start(onChunk: @escaping (AudioChunk) -> Void) throws
     func stop()
+    /// Ends the chunk being recorded now and delivers it through `onChunk`, so no chunk spans a
+    /// listening boundary (DEC-24). Recording carries on into a new chunk.
+    func cut()
+}
+
+extension AudioSourceStream {
+    /// No cut of its own (`RoomMicSource`): the caller stops the stream at a boundary instead.
+    public func cut() {}
 }
 
 public enum AudioError: Error, Equatable {

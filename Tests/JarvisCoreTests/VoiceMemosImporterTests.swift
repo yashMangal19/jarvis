@@ -41,7 +41,7 @@ import JarvisCore
                       transcriber: any Transcriber = ImportFakeTranscriber(),
                       ledger: ImportLedger? = nil, retryDelay: TimeInterval = 60) -> (VoiceMemosImporter, TranscriptStore) {
         let store = TranscriptStore(paths: paths)
-        let coordinator = ImportCoordinator(pipeline: CapturePipeline(transcriber: transcriber, store: store),
+        let coordinator = ImportCoordinator(pipeline: CapturePipeline(transcriber: { transcriber }, store: store),
                                             onImported: { _ in })
         let access = access ?? .readable(recordings)
         let importer = VoiceMemosImporter(locator: { access }, watcherFactory: { _ in watcher },
@@ -180,7 +180,7 @@ import JarvisCore
         let ledger = ImportLedger(paths: paths)
         var access = VoiceMemosAccess.absent
         let store = TranscriptStore(paths: paths)
-        let coordinator = ImportCoordinator(pipeline: CapturePipeline(transcriber: transcriber, store: store),
+        let coordinator = ImportCoordinator(pipeline: CapturePipeline(transcriber: { transcriber }, store: store),
                                             onImported: { _ in })
         let importer = VoiceMemosImporter(locator: { access }, watcherFactory: { _ in watcher },
                                           coordinator: coordinator, ledger: ledger, paths: paths,
