@@ -62,11 +62,12 @@ public final class NoteIndex {
         }
     }
 
+    /// Saves whenever anything is unsaved, so a call after a failed save (even for an id already
+    /// gone from memory) still writes the removal to `vectors.json`.
     public func remove(noteID: String) throws {
         try lock.withLock {
-            guard file.entries.removeValue(forKey: noteID) != nil else { return }
-            unsaved = true
-            try save()
+            if file.entries.removeValue(forKey: noteID) != nil { unsaved = true }
+            if unsaved { try save() }
         }
     }
 

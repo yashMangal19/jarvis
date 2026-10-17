@@ -92,4 +92,78 @@ import JarvisCore
         try transcripts.append(TranscriptLine(time: forgetAt(13, 40), label: .others, text: "Two."))
         #expect(try forget.describe(now: now) == "Delete the last hour, 13:05 to 14:05: 2 transcript lines and 1 note?")
     }
+
+    // F-3: a save that fails part-way is written by the rerun, so a relaunch never finds the vector.
+    @Test func aRerunAfterAFailedIndexSavePersistsTheRemoval() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transcripts = TranscriptStore(paths: paths, calendar: Self.calendar)
+        let notes = NoteStore(paths: paths, calendar: Self.calendar)
+        let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword")
+        let hour = DateInterval(start: forgetAt(13), end: forgetAt(14))
+        let note = Note(kind: .hourly, id: notes.id(.hourly, period: hour), period: hour, body: "Budget talk")
+        try notes.write(note)
+        try index.add(noteID: note.id, text: note.body)
+        let forget = ForgetLastHour(transcripts: transcripts, notes: notes, index: index, calendar: Self.calendar)
+        let fm = FileManager.default
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: paths.index.path)
+        #expect(throws: (any Error).self) { try forget.perform(now: forgetAt(14, 5)) }
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.index.path)
+
+        let report = try forget.perform(now: forgetAt(14, 5))
+
+        #expect(report.noteIDs == [note.id])
+        #expect(notes.note(id: note.id) == nil)
+        let relaunched = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword")
+        #expect(!relaunched.contains(noteID: note.id))
+    }
+
+    // F-4: an hourly file whose front matter does not parse is matched by the period in its name.
+    @Test func anUnreadableHourlyFileOfTheHourGoesWithItsVector() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transcripts = TranscriptStore(paths: paths, calendar: Self.calendar)
+        let notes = NoteStore(paths: paths, calendar: Self.calendar)
+        let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword")
+        try FileManager.default.createDirectory(at: paths.notesHourly, withIntermediateDirectories: true)
+        func broken(_ id: String) throws -> String {
+            try "no front matter, budget".write(to: paths.notesHourly.appending(path: "\(id).md"), atomically: true, encoding: .utf8)
+            try index.add(noteID: id, text: "budget")
+            return id
+        }
+        let hour = try broken("2026-10-17-13")
+        let demo = try broken("2026-10-17-1400")
+        let before = try broken("2026-10-17-12")
+        let demoBefore = try broken("2026-10-17-1302")
+        let forget = ForgetLastHour(transcripts: transcripts, notes: notes, index: index, calendar: Self.calendar)
+        #expect(try forget.describe(now: forgetAt(14, 5)).hasSuffix("0 transcript lines and 2 notes?"))
+
+        let report = try forget.perform(now: forgetAt(14, 5))
+
+        #expect(report.noteIDs == [hour, demo])
+        #expect(notes.allIDs(kind: .hourly) == [before, demoBefore])
+        #expect(Set(try index.search("budget", k: 10).map(\.noteID)) == [before, demoBefore])
+    }
+
+    // F-1/F-2: the window is recorded before anything is deleted, survives a relaunch, and is pruned
+    // once its transcripts would have been purged anyway.
+    @Test func performRecordsTheWindowWhichPersistsAndIsPrunedAfterRetention() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transcripts = TranscriptStore(paths: paths, calendar: Self.calendar)
+        let notes = NoteStore(paths: paths, calendar: Self.calendar)
+        let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword")
+        let forgotten = ForgottenWindows(paths: paths)
+        let forget = ForgetLastHour(transcripts: transcripts, notes: notes, index: index,
+                                    forgotten: forgotten, calendar: Self.calendar)
+        let now = forgetAt(14, 5)
+
+        _ = try forget.perform(now: now)
+
+        #expect(forgotten.contains(forgetAt(13, 5)))
+        #expect(forgotten.contains(now))
+        #expect(!forgotten.contains(forgetAt(13, 5).addingTimeInterval(-1)))
+        #expect(!forgotten.contains(forgetAt(14, 6)))
+        #expect(ForgottenWindows(paths: paths).contains(forgetAt(13, 30)))
+
+        try forgotten.record(DateInterval(start: now, duration: 1), now: now.addingTimeInterval(9 * 86_400))
+        #expect(!ForgottenWindows(paths: paths).contains(forgetAt(13, 30)))
+    }
 }

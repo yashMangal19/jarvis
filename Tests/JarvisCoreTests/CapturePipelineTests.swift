@@ -117,4 +117,16 @@ final class CapturePipelineFakeTranscriber: Transcriber {
         #expect(outcome == .transcribed(expected))
         #expect(try everything(in: store) == [expected])
     }
+
+    // F-2: a chunk still transcribing when its time is forgotten leaves no line.
+    @Test func aLineWhoseTimeIsForgottenIsDroppedNotAppended() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore()
+        let forgotten = ForgottenWindows(paths: JarvisPaths(root: root))
+        try forgotten.record(DateInterval(start: start.addingTimeInterval(-10), duration: 20), now: start)
+        let pipeline = CapturePipeline(transcriber: CapturePipelineFakeTranscriber(), store: store, forgotten: forgotten)
+
+        #expect(try await pipeline.process(speech()) == .dropped)
+        #expect(try everything(in: store).isEmpty)
+    }
 }

@@ -157,4 +157,28 @@ import JarvisCore
 
         #expect(try store.lines(in: DateInterval(start: at(2026, 10, 17, 10), end: at(2026, 10, 17, 11))) == [line])
     }
+
+    // F-5: an append racing a delete-rewrite of the same day file is never lost.
+    @Test func appendsDuringDeleteLinesAreNeverLost() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let forgotten = DateInterval(start: at(2026, 10, 17, 13), end: at(2026, 10, 17, 14))
+        let count = 300
+        let appender = Task.detached { [paths] in
+            let store = TranscriptStore(paths: paths, calendar: Self.calendar)
+            for i in 0..<count {
+                try store.append(TranscriptLine(time: forgotten.start.addingTimeInterval(Double(i)), label: .me, text: "gone"))
+                try store.append(TranscriptLine(time: forgotten.end.addingTimeInterval(Double(i)), label: .me, text: "kept \(i)"))
+            }
+        }
+        let deleter = Task.detached { [paths] in
+            let store = TranscriptStore(paths: paths, calendar: Self.calendar)
+            for _ in 0..<count { try store.deleteLines(in: forgotten) }
+        }
+        try await appender.value
+        try await deleter.value
+        let store = makeStore()
+        try store.deleteLines(in: forgotten)
+
+        #expect(try store.lines(in: DateInterval(start: forgotten.end, duration: 3600)).count == count)
+    }
 }

@@ -54,7 +54,8 @@ final class HNSSleepGuard: SleepGuard {
     }
 
     func makeScheduler(session: ListeningSession? = nil,
-                       writer: (() -> (any NoteWriter)?)? = nil) -> HourlyNoteScheduler {
+                       writer: (() -> (any NoteWriter)?)? = nil,
+                       forgotten: ForgottenWindows? = nil) -> HourlyNoteScheduler {
         let echo = self.echo
         return HourlyNoteScheduler(
             transcripts: TranscriptStore(paths: paths, calendar: calendar),
@@ -62,6 +63,7 @@ final class HNSSleepGuard: SleepGuard {
             writer: writer ?? { echo },
             prompts: PromptStore(paths: paths),
             notes: NoteStore(paths: paths, calendar: calendar),
+            forgotten: forgotten,
             calendar: calendar)
     }
 
@@ -214,5 +216,42 @@ final class HNSSleepGuard: SleepGuard {
         for name in ["hourly", "daily", "weekly", "answer"] {
             #expect(FileManager.default.fileExists(atPath: paths.prompts.appending(path: "\(name).md").path))
         }
+    }
+
+    // F-1: the hour forgotten while its note is with the writer gets no note, before or after.
+    @Test func aNoteWhoseHourIsForgottenMidWriteIsNeverWritten() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try say("Ship it Friday.", at: at(10, 15))
+        let gated = HNSGatedNoteWriter()
+        let forgotten = ForgottenWindows(paths: paths)
+        let scheduler = makeScheduler(writer: { gated }, forgotten: forgotten)
+        let notes = NoteStore(paths: paths, calendar: calendar)
+        let forget = ForgetLastHour(transcripts: TranscriptStore(paths: paths, calendar: calendar), notes: notes,
+                                    index: NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword"),
+                                    forgotten: forgotten, calendar: calendar)
+        let first = Task { try await scheduler.tick(now: at(11, 0, 30)) }
+        while !gated.isWaiting { try await Task.sleep(nanoseconds: 1_000_000) }
+
+        _ = try forget.perform(now: at(11, 0, 30))
+        gated.open()
+        try await first.value
+        try await scheduler.tick(now: at(11, 1))
+
+        #expect(notes.allIDs(kind: .hourly).isEmpty)
+    }
+
+    // F-1: lines of a forgotten window still on disk never reach the writer.
+    @Test func forgottenLinesAreNotSentToTheWriter() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try say("Keep this.", at: at(10, 5))
+        try say("Forget this.", at: at(10, 40))
+        let forgotten = ForgottenWindows(paths: paths)
+        try forgotten.record(DateInterval(start: at(10, 30), end: at(10, 50)), now: at(11))
+
+        try await makeScheduler(forgotten: forgotten).tick(now: at(11, 5))
+
+        let text = try String(contentsOf: hourlyFile("2026-10-17-10"), encoding: .utf8)
+        #expect(text.contains("Keep this."))
+        #expect(!text.contains("Forget this."))
     }
 }

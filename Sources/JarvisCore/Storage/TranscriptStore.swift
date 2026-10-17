@@ -19,6 +19,9 @@ public struct TranscriptLine: Codable, Equatable {
 public final class TranscriptStore {
     private let paths: JarvisPaths
     private let calendar: Calendar
+    /// Serialises `append` and `deleteLines` across every instance: an append between a delete's
+    /// read and its atomic replace would go to the replaced file and be lost.
+    private static let writeLock = NSLock()
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -37,6 +40,8 @@ public final class TranscriptStore {
 
     /// Appends `line` to the file of its local day, creating the folder and file on first write.
     public func append(_ line: TranscriptLine) throws {
+        Self.writeLock.lock()
+        defer { Self.writeLock.unlock() }
         let data = try encodeLine(line)
         let file = dayFile(for: line.time)
         let fm = FileManager.default
@@ -69,6 +74,8 @@ public final class TranscriptStore {
 
     /// Rewrites each day file the window touches without its lines; a file left empty is removed.
     public func deleteLines(in window: DateInterval) throws {
+        Self.writeLock.lock()
+        defer { Self.writeLock.unlock() }
         for file in dayFiles(touching: window) {
             let all = try read(file)
             let kept = all.filter { !contains(window, $0.time) }

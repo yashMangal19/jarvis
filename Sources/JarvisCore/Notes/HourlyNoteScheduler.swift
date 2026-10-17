@@ -7,6 +7,7 @@ public final class HourlyNoteScheduler {
     private let writer: () -> (any NoteWriter)?
     private let prompts: PromptStore
     private let notes: NoteStore
+    private let forgotten: ForgottenWindows?
     private let calendar: Calendar
     /// Ids whose note is being written now, so an overlapping tick for the same window is a no-op.
     private var inFlight: Set<String> = []
@@ -19,12 +20,14 @@ public final class HourlyNoteScheduler {
                 writer: @escaping () -> (any NoteWriter)?,
                 prompts: PromptStore,
                 notes: NoteStore,
+                forgotten: ForgottenWindows? = nil,
                 calendar: Calendar = .current) {
         self.transcripts = transcripts
         self.session = session
         self.writer = writer
         self.prompts = prompts
         self.notes = notes
+        self.forgotten = forgotten
         self.calendar = calendar
     }
 
@@ -47,9 +50,11 @@ public final class HourlyNoteScheduler {
     /// The note for `window` from its transcript lines, with the window's gap markers appended
     /// under `## Gaps` when there are any; `nil` (and no file) when the window had
     /// no speech or no note writer is installed. Public so importers can note a past hour.
+    /// Forgotten lines are never sent to the writer, and a note is not written (`nil`) if any line
+    /// it was written from was forgotten while the writer ran; a later tick writes it from what is left.
     @discardableResult
     public func writeNote(for window: DateInterval) async throws -> URL? {
-        let lines = try transcripts.lines(in: window)
+        let lines = try transcripts.lines(in: window).filter { !(forgotten?.contains($0.time) ?? false) }
         guard !lines.isEmpty, let writer = writer() else { return nil }
         var body = try await writer.note(from: format(lines), prompt: prompts.prompt(.hourly))
         // Not `session.gapMarkers`: that formats in the device zone, these follow `calendar`.
@@ -59,8 +64,9 @@ public final class HourlyNoteScheduler {
                 "- \(hhmm($0.start))–\(hhmm($0.end)): not listening (\($0.reason))"
             }.joined(separator: "\n")
         }
-        return try notes.write(Note(kind: .hourly, id: notes.id(.hourly, period: window),
-                                    period: window, body: body))
+        let note = Note(kind: .hourly, id: notes.id(.hourly, period: window), period: window, body: body)
+        guard let forgotten else { return try notes.write(note) }
+        return try forgotten.unlessForgotten(lines.map(\.time)) { try notes.write(note) }
     }
 
     private func lastCompletedWindow(before now: Date) -> DateInterval? {
