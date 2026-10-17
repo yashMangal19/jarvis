@@ -8,6 +8,9 @@ public final class HourlyNoteScheduler {
     private let prompts: PromptStore
     private let notes: NoteStore
     private let calendar: Calendar
+    /// Ids whose note is being written now, so an overlapping tick for the same window is a no-op.
+    private var inFlight: Set<String> = []
+    private let lock = NSLock()
 
     /// `writer` returning `nil` means no note writer is installed: notes are skipped quietly and
     /// transcripts keep accumulating.
@@ -27,10 +30,17 @@ public final class HourlyNoteScheduler {
 
     /// Writes the note for the most recently completed hour — in Demo mode, the most recently
     /// completed 2-minute slot of the clock (:00–:02, :02–:04, …) — once: an existing note for that
-    /// window is never rewritten, so every later tick in the same window is a no-op.
+    /// window is never rewritten, even when it no longer parses, and a tick that overlaps one
+    /// still writing that window is a no-op. Every prompt file is seeded first, before any of that.
     public func tick(now: Date) async throws {
-        guard let window = lastCompletedWindow(before: now),
-              notes.note(id: notes.id(.hourly, period: window)) == nil else { return }
+        try prompts.seedDefaults()
+        guard let window = lastCompletedWindow(before: now) else { return }
+        let id = notes.id(.hourly, period: window)
+        let claimed = lock.withLock {
+            !notes.allIDs(kind: .hourly).contains(id) && inFlight.insert(id).inserted
+        }
+        guard claimed else { return }
+        defer { lock.withLock { _ = inFlight.remove(id) } }
         try await writeNote(for: window)
     }
 
@@ -42,9 +52,12 @@ public final class HourlyNoteScheduler {
         let lines = try transcripts.lines(in: window)
         guard !lines.isEmpty, let writer = writer() else { return nil }
         var body = try await writer.note(from: format(lines), prompt: prompts.prompt(.hourly))
-        let gaps = session.gapMarkers(in: window)
+        // Not `session.gapMarkers`: that formats in the device zone, these follow `calendar`.
+        let gaps = session.gaps(in: window)
         if !gaps.isEmpty {
-            body += "\n\n## Gaps\n" + gaps.map { "- \($0)" }.joined(separator: "\n")
+            body += "\n\n## Gaps\n" + gaps.map {
+                "- \(hhmm($0.start))–\(hhmm($0.end)): not listening (\($0.reason))"
+            }.joined(separator: "\n")
         }
         return try notes.write(Note(kind: .hourly, id: notes.id(.hourly, period: window),
                                     period: window, body: body))
@@ -62,9 +75,12 @@ public final class HourlyNoteScheduler {
 
     /// `HH:MM Me: text`, one per line, local time of `calendar`.
     private func format(_ lines: [TranscriptLine]) -> String {
-        lines.map { line in
-            let c = calendar.dateComponents([.hour, .minute], from: line.time)
-            return String(format: "%02d:%02d ", c.hour!, c.minute!) + "\(line.label.rawValue): \(line.text)"
-        }.joined(separator: "\n")
+        lines.map { "\(hhmm($0.time)) \($0.label.rawValue): \($0.text)" }.joined(separator: "\n")
+    }
+
+    /// `HH:MM`, local time of `calendar`.
+    private func hhmm(_ date: Date) -> String {
+        let c = calendar.dateComponents([.hour, .minute], from: date)
+        return String(format: "%02d:%02d", c.hour!, c.minute!)
     }
 }

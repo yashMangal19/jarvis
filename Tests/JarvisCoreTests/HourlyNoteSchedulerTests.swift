@@ -11,6 +11,21 @@ final class HNSEchoNoteWriter: NoteWriter {
     }
 }
 
+/// Suspends its first call until `open()`; later calls return at once.
+final class HNSGatedNoteWriter: NoteWriter, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private var gate: CheckedContinuation<Void, Never>?
+    var calls: Int { lock.withLock { count } }
+    var isWaiting: Bool { lock.withLock { gate != nil } }
+    func note(from transcript: String, prompt: String) async throws -> String {
+        let first = lock.withLock { count += 1; return count == 1 }
+        if first { await withCheckedContinuation { c in lock.withLock { gate = c } } }
+        return "note"
+    }
+    func open() { lock.withLock { gate }?.resume() }
+}
+
 final class HNSClock: TimeSource {
     var now: Date
     init(_ now: Date) { self.now = now }
@@ -24,8 +39,13 @@ final class HNSSleepGuard: SleepGuard {
 @Suite struct HourlyNoteSchedulerTests {
     let root = FileManager.default.temporaryDirectory.appending(path: "jarvis-\(UUID().uuidString)")
     var paths: JarvisPaths { JarvisPaths(root: root) }
-    /// The device zone: gap markers are written in it, so ids and markers agree.
-    let calendar = Calendar.current
+    /// Deliberately not the device zone: transcript times and gap markers must both follow it.
+    let calendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        let device = TimeZone.current.secondsFromGMT()
+        c.timeZone = TimeZone(secondsFromGMT: device + (device <= 36000 ? 3 : -3) * 3600)!
+        return c
+    }()
     let echo = HNSEchoNoteWriter()
 
     func at(_ hour: Int, _ minute: Int = 0, _ second: Int = 0) -> Date {
@@ -156,5 +176,43 @@ final class HNSSleepGuard: SleepGuard {
         let note = NoteStore(paths: paths, calendar: calendar).note(id: "2026-10-17-07")
         #expect(note?.period == DateInterval(start: at(7), end: at(8)))
         #expect(note?.body.contains("TRANSCRIPT:07:40 Me: Voice memo.") == true)
+    }
+
+    @Test func overlappingTicksForOneWindowCallTheWriterOnceAndWriteOneFile() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try say("Ship it Friday.", at: at(10, 15))
+        let gated = HNSGatedNoteWriter()
+        let scheduler = makeScheduler(writer: { gated })
+        let first = Task { try await scheduler.tick(now: at(11, 5)) }
+        while !gated.isWaiting { try await Task.sleep(nanoseconds: 1_000_000) }
+
+        try await scheduler.tick(now: at(11, 30))
+        gated.open()
+        try await first.value
+
+        #expect(gated.calls == 1)
+        #expect(NoteStore(paths: paths, calendar: calendar).allIDs(kind: .hourly) == ["2026-10-17-10"])
+    }
+
+    @Test func aNoteFileThatNoLongerParsesIsStillNeverRewritten() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try say("Ship it Friday.", at: at(10, 15))
+        try FileManager.default.createDirectory(at: paths.notesHourly, withIntermediateDirectories: true)
+        try "My own edit, no front matter.".write(to: hourlyFile("2026-10-17-10"), atomically: true, encoding: .utf8)
+
+        try await makeScheduler().tick(now: at(11, 5))
+
+        #expect(echo.calls == 0)
+        #expect(try String(contentsOf: hourlyFile("2026-10-17-10"), encoding: .utf8) == "My own edit, no front matter.")
+    }
+
+    @Test func theFirstTickSeedsEveryPromptEvenWithNoSpeechAndNoWriter() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try await makeScheduler(writer: { nil }).tick(now: at(11, 5))
+
+        for name in ["hourly", "daily", "weekly", "answer"] {
+            #expect(FileManager.default.fileExists(atPath: paths.prompts.appending(path: "\(name).md").path))
+        }
     }
 }

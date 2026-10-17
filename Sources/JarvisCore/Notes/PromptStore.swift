@@ -1,6 +1,6 @@
 import Foundation
 
-public enum PromptKind: String {
+public enum PromptKind: String, CaseIterable {
     case hourly, daily, weekly, answer
 
     /// Seeded into `prompts/<kind>.md` on first read; after that the file is the user's.
@@ -53,5 +53,10 @@ public struct PromptStore {
         try FileManager.default.createDirectory(at: paths.prompts, withIntermediateDirectories: true)
         try kind.defaultText.write(to: file, atomically: true, encoding: .utf8)
         return kind.defaultText
+    }
+
+    /// Writes the default of every prompt file that does not exist yet, so all are editable early.
+    public func seedDefaults() throws {
+        for kind in PromptKind.allCases { _ = try prompt(kind) }
     }
 }
