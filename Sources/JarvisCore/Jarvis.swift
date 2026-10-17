@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import Foundation
 
@@ -19,10 +20,16 @@ public final class Jarvis: ObservableObject {
     /// Set by the app around its own speech; mutes the wake word meanwhile (D-8).
     @Published public var isSpeaking = false
     @Published public private(set) var voiceMemosNeedFullDiskAccess = false
+    /// macOS has refused the microphone, so nothing is heard whatever the icon says (DEC-31).
+    @Published public private(set) var microphoneAccessOff = false
+    /// Screen Recording was asked for and not granted: call audio is off (DEC-28).
+    @Published public private(set) var callAudioNeedsScreenRecording = false
     /// 0…1 while the whisper `small` model downloads in the background; `nil` otherwise.
     @Published public private(set) var modelDownloadProgress: Double?
 
     private let paths: JarvisPaths
+    private let settings: SettingsStore
+    private let permissions: PermissionStatus
     private let clock: any TimeSource
     private let screenLock: any ScreenLockObserving
     private let routes: any RouteEventSource
@@ -47,6 +54,8 @@ public final class Jarvis: ObservableObject {
                                                  commands: commands, speak: { [unowned self] in speak($0) },
                                                  onAnswer: { [unowned self] in onMemoryAnswer($0) }, clock: clock)
     private var started = false
+    /// Set first thing by `shutdown`: a `start` still under way stops where it is (F-4).
+    private var shuttingDown = false
     private var importersStarted = false
     private var wakeWordOn = false
     private var holding = false
@@ -63,15 +72,17 @@ public final class Jarvis: ObservableObject {
     public init(paths: JarvisPaths, engines: Engines, settings: SettingsStore, clock: any TimeSource,
                 sources: any SourceFactory, screenLock: any ScreenLockObserving, sleepGuard: any SleepGuard,
                 routes: any RouteEventSource, voiceMemos locator: @escaping () -> VoiceMemosAccess,
-                tickInterval: TimeInterval = 30) {
+                permissions: PermissionStatus, tickInterval: TimeInterval = 30) {
         self.paths = paths
+        self.settings = settings
+        self.permissions = permissions
         self.engines = engines
         self.clock = clock
         self.screenLock = screenLock
         self.routes = routes
         self.tickInterval = tickInterval
         session = ListeningSession(clock: clock, sleepGuard: sleepGuard,
-                                   isQuietTime: { settings.load().quietHours?.contains($0, calendar: .current) ?? false })
+                                   quietHoursEnd: { settings.load().quietHours?.end(of: $0, calendar: .current) })
         let (mic, frames) = sources.makeMic()
         self.mic = SourceDriver(mic, label: "jarvis.drive.mic")
         systemAudio = SourceDriver(sources.makeSystemAudio(), label: "jarvis.drive.system-audio")
@@ -153,7 +164,7 @@ public final class Jarvis: ObservableObject {
         let jarvis = Jarvis(paths: paths, engines: engines, settings: settings, clock: clock,
                             sources: LiveSourceFactory(clock: clock), screenLock: DistributedScreenLockObserver(),
                             sleepGuard: IOKitSleepGuard(), routes: AudioRouteMonitor(),
-                            voiceMemos: { VoiceMemosLocator.probe() })
+                            voiceMemos: { VoiceMemosLocator.probe() }, permissions: .live)
         jarvis.startServers(of: [engines.transcriber, engines.wakeWordTranscriber])
         let install = WhisperInstall.locate()
         if engines.transcriber == nil, (install.server ?? install.cli) != nil {
@@ -179,19 +190,22 @@ public final class Jarvis: ObservableObject {
 
     /// Lays out `~/Jarvis`, runs maintenance, refreshes the index, starts listening (stopped at once in
     /// quiet hours or with the screen locked, DEC-25) and, once speech exists, the importers; then ticks
-    /// every 30 s. A second call does nothing.
+    /// every 30 s. A second call does nothing, and nothing after `shutdown` has begun is started.
     public func start() async {
-        guard !started else { return }
+        guard !started, !shuttingDown else { return }
         started = true
+        refreshPermissions()
         try? paths.ensureLayout()
         lastMaintenance = clock.now
         await maintenance.run(now: lastMaintenance)
         try? index.rebuild(from: notes)
+        guard !shuttingDown else { return }
         if let input = routes.current { session.handle(.inputChanged(input)) }
         session.start()
         if (screenLock as? any ScreenLockState)?.isScreenLocked == true { session.screenLocked() }
         session.tick(now: clock.now)
         await startImporters()
+        guard !shuttingDown else { return }
         timer = Task { [weak self, tickInterval] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(tickInterval * 1_000_000_000))
@@ -205,6 +219,7 @@ public final class Jarvis: ObservableObject {
     /// A server still starting is cancelled and awaited first, so none is launched after this returns;
     /// the servers stop off the main actor, together (each waits up to ~3 s, DEC-10).
     public func shutdown() async {
+        shuttingDown = true
         timer?.cancel()
         session.stop(.user)
         follow()
@@ -222,6 +237,7 @@ public final class Jarvis: ObservableObject {
     /// The 30 s tick. Maintenance comes after the hourly note, so a roll-up includes the hour just written.
     /// Its failures are retried by the next run (T-7), so they are not reported here.
     func tick() async {
+        refreshPermissions()
         let now = clock.now
         session.tick(now: now)
         commands.tick(now: now)
@@ -251,11 +267,46 @@ public final class Jarvis: ObservableObject {
         }
     }
 
-    /// The question the menu asks before `forgetLastHour()`, with live counts.
-    public func forgetLastHourDescription() throws -> String { try forget.describe(now: clock.now) }
+    /// The question the menu asks before `forgetLastHour(_:)`, with live counts. The hour it names is
+    /// fixed now, so a Delete clicked later removes that hour and no other (DEC-30).
+    public func askToForgetLastHour() throws -> ForgetLastHourQuestion {
+        let now = clock.now
+        return ForgetLastHourQuestion(text: try forget.describe(now: now), now: now)
+    }
 
     @discardableResult
-    public func forgetLastHour() throws -> ForgetReport { try forget.perform(now: clock.now) }
+    public func forgetLastHour(_ question: ForgetLastHourQuestion) throws -> ForgetReport {
+        try forget.perform(now: question.now)
+    }
+
+    /// The menu's top item: the session acts, and a resume after a lost headset is spoken (DEC-16).
+    public func chooseTopMenuItem() {
+        if let notice = session.chooseTopMenuItem() { speak(notice) }
+    }
+
+    // MARK: permissions
+
+    /// Screen Recording is explained and asked for once, on a launch where it is not granted (DEC-28).
+    public var shouldAskForScreenRecording: Bool {
+        !settings.load().screenRecordingAsked && !permissions.screenRecordingGranted()
+    }
+
+    /// The app calls this once it has asked, whatever the answer.
+    public func recordScreenRecordingAsked() {
+        var saved = settings.load()
+        saved.screenRecordingAsked = true
+        try? settings.save(saved)
+        refreshPermissions()
+    }
+
+    /// Read at start and every tick, so a permission granted in System Settings clears its line.
+    /// Assigned only on a change, so an unchanged tick doesn't redraw the menu.
+    private func refreshPermissions() {
+        let micOff = permissions.microphoneDenied()
+        let callAudioOff = settings.load().screenRecordingAsked && !permissions.screenRecordingGranted()
+        if micOff != microphoneAccessOff { microphoneAccessOff = micOff }
+        if callAudioOff != callAudioNeedsScreenRecording { callAudioNeedsScreenRecording = callAudioOff }
+    }
 
     /// Works while Stopped too: the mic runs for the hold only, what it hears is not stored, and the
     /// command routes as usual (story 8a, DEC-22).
@@ -278,7 +329,7 @@ public final class Jarvis: ObservableObject {
 
     /// With speech off a recording would only be kept and retried for nothing, so the importers wait for it.
     private func startImporters() async {
-        guard started, !importersStarted, speech.main != nil else { return }
+        guard started, !shuttingDown, !importersStarted, speech.main != nil else { return }
         importersStarted = true
         try? inbox.start()
         try? await voiceMemos.start()
@@ -353,6 +404,28 @@ public final class Jarvis: ObservableObject {
                 commands.tick(now: clock.now)
             }
         }
+    }
+}
+
+/// What `askToForgetLastHour` asked, with the instant that fixes its hour.
+public struct ForgetLastHourQuestion {
+    public let text: String
+    fileprivate let now: Date
+}
+
+/// What macOS has granted Jarvis, read without asking for anything or opening a device.
+public struct PermissionStatus {
+    public var microphoneDenied: () -> Bool
+    public var screenRecordingGranted: () -> Bool
+
+    public init(microphoneDenied: @escaping () -> Bool, screenRecordingGranted: @escaping () -> Bool) {
+        self.microphoneDenied = microphoneDenied
+        self.screenRecordingGranted = screenRecordingGranted
+    }
+
+    public static var live: PermissionStatus {
+        PermissionStatus(microphoneDenied: { [.denied, .restricted].contains(AVCaptureDevice.authorizationStatus(for: .audio)) },
+                         screenRecordingGranted: { SystemAudioSource.isAuthorized })
     }
 }
 

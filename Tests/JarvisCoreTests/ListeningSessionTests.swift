@@ -27,7 +27,89 @@ private let builtIn = InputDevice(name: "MacBook Pro Microphone", isBluetoothHea
     let sleepGuard = SessionTestSleepGuard()
 
     func makeSession(quiet: @escaping (Date) -> Bool = { _ in false }) -> ListeningSession {
-        ListeningSession(clock: clock, sleepGuard: sleepGuard, isQuietTime: quiet)
+        ListeningSession(clock: clock, sleepGuard: sleepGuard, quietHoursEnd: { quiet($0) ? $0 + 3600 : nil })
+    }
+
+    /// 22:00–07:00 every night, in the local zone, as `Jarvis` passes the user's setting.
+    func makeNightSession() -> ListeningSession {
+        let night = QuietHours(startMinutes: 22 * 60, endMinutes: 7 * 60)
+        return ListeningSession(clock: clock, sleepGuard: sleepGuard,
+                                quietHoursEnd: { night.end(of: $0, calendar: .current) })
+    }
+
+    // DEC-27: a menu Start in quiet hours listens until the window ends; the next window applies.
+    @Test func menuStartInQuietHoursOverridesThemUntilTheWindowEnds() {
+        let session = makeNightSession()
+        session.start()
+        clock.now = at(22, 0)
+        session.tick(now: clock.now)
+        #expect(session.state == .stopped(.quietHours))
+
+        clock.now = at(23, 0)
+        session.chooseTopMenuItem()
+        #expect(session.state == .listening)
+        #expect(session.statusLine == "Listening (quiet hours paused until 07:00)")
+        clock.now = at(23, 30)
+        session.tick(now: clock.now)
+        #expect(session.state == .listening)
+
+        let morning = at(7, 0) + 86_400
+        clock.now = morning
+        session.tick(now: morning)
+        #expect(session.state == .listening)
+        #expect(session.statusLine == "Listening")
+        clock.now = at(22, 0) + 86_400
+        session.tick(now: clock.now)
+        #expect(session.state == .stopped(.quietHours))
+    }
+
+    // DEC-14 amended: nothing automatic overrides quiet hours. Launch's `start()` and a headset coming
+    // back are automatic; an override left from a night the Mac slept through has expired.
+    @Test func automaticStartsNeverOverrideQuietHours() {
+        let session = makeNightSession()
+        clock.now = at(23, 0)
+        session.start()
+        session.tick(now: clock.now)
+        #expect(session.state == .stopped(.quietHours))
+        session.handle(.inputChanged(airPods))
+        #expect(session.state == .stopped(.quietHours))
+
+        session.chooseTopMenuItem()
+        clock.now = at(22, 30) + 86_400
+        session.tick(now: clock.now)
+        #expect(session.state == .stopped(.quietHours))
+    }
+
+    // A user Stop held into quiet hours is also started by the menu, with the same override.
+    @Test func menuStartAfterAUserStopInQuietHoursAlsoOverrides() {
+        let session = makeNightSession()
+        session.start()
+        session.stop(.user)
+        clock.now = at(23, 0)
+        session.tick(now: clock.now)
+        #expect(session.state == .stopped(.user))
+        session.chooseTopMenuItem()
+        session.tick(now: at(23, 30))
+        #expect(session.state == .listening)
+        #expect(session.statusLine == "Listening (quiet hours paused until 07:00)")
+    }
+
+    // F-5: the top item's action sits next to its label; a resume after a lost headset says what
+    // voice resume says (DEC-16).
+    @Test func topMenuItemActionMatchesItsLabel() {
+        let session = makeSession()
+        #expect(session.isStopped)
+        #expect(session.chooseTopMenuItem() == nil)
+        #expect(session.state == .listening && !session.isStopped)
+        #expect(session.chooseTopMenuItem() == nil)
+        #expect(session.state == .paused(.user) && !session.isStopped)
+        #expect(session.chooseTopMenuItem() == nil)
+        #expect(session.state == .listening)
+
+        session.handle(.inputLost(airPods))
+        #expect(session.state == .paused(.routeLost))
+        #expect(session.chooseTopMenuItem() == "Listening through the MacBook mic.")
+        #expect(session.state == .listening)
     }
 
     @Test func airPodsDisconnectPausesAndReconnectResumesWithGapMarker() {

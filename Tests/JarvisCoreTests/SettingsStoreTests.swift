@@ -130,4 +130,36 @@ import JarvisCore
             #expect(!none.contains(date, calendar: calendar))
         }
     }
+
+    // DEC-27: the menu's "quiet hours paused until HH:MM" needs the end of the window Jarvis is in.
+    @Test func quietHoursEndIsTheEndOfTheWindowHoldingTheDate() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        func at(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: 3, day: day, hour: hour, minute: minute))!
+        }
+        let night = QuietHours(startMinutes: 22 * 60, endMinutes: 7 * 60)   // 22:00–07:00
+        let lunch = QuietHours(startMinutes: 12 * 60, endMinutes: 13 * 60)
+
+        #expect(night.end(of: at(14, 23), calendar: calendar) == at(15, 7))
+        #expect(night.end(of: at(15, 6, 59), calendar: calendar) == at(15, 7))
+        #expect(night.end(of: at(15, 7), calendar: calendar) == nil)
+        #expect(lunch.end(of: at(14, 12, 30), calendar: calendar) == at(14, 13))
+        #expect(lunch.end(of: at(14, 18), calendar: calendar) == nil)
+        #expect(QuietHours(startMinutes: 0, endMinutes: 0).end(of: at(14, 0), calendar: calendar) == nil)
+    }
+
+    // DEC-28: Screen Recording is asked for once, and the answer outlives a relaunch.
+    @Test func screenRecordingAskedIsRememberedAndDefaultsToNotAsked() throws {
+        let paths = tempPaths()
+        defer { try? fm.removeItem(at: paths.root) }
+        let store = SettingsStore(paths: paths)
+        #expect(!store.load().screenRecordingAsked)
+
+        try store.save(Settings(screenRecordingAsked: true))
+
+        #expect(SettingsStore(paths: paths).load().screenRecordingAsked)
+        try Data(#"{"allowedTools":[]}"#.utf8).write(to: paths.settingsFile)
+        #expect(!store.load().screenRecordingAsked)
+    }
 }

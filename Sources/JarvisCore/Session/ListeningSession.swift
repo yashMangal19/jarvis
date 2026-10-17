@@ -59,7 +59,9 @@ public final class ListeningSession: ObservableObject {
 
     private let clock: any TimeSource
     private let sleepGuard: any SleepGuard
-    private let isQuietTime: (Date) -> Bool
+    private let quietHoursEnd: (Date) -> Date?
+    /// Set by a menu Start during quiet hours: until then they do not apply (DEC-27).
+    @Published private var quietHoursOverriddenUntil: Date?
     /// The gap log; the last entry has `end == nil` while that gap is still open.
     private var gapLog: [(start: Date, end: Date?, reason: String)] = []
     /// What the session returns to when a screen-lock or quiet-hours stop ends. Only one of the two
@@ -68,15 +70,15 @@ public final class ListeningSession: ObservableObject {
     /// user Stop is never taken over, because `screenLocked` and `tick` leave `.stopped` states alone.
     private var stateToRestore: ListeningState = .listening
 
-    /// `isQuietTime` is a closure rather than the blueprint's `quietHours: () -> QuietHours?` so tests
-    /// can say "quiet now" without building a schedule and a calendar. T-24 passes
-    /// `{ settings.quietHours?.contains($0, calendar: .current) ?? false }`.
+    /// `quietHoursEnd` says when the quiet window holding a date ends, `nil` when the date is not quiet.
+    /// It is a closure rather than the blueprint's `quietHours: () -> QuietHours?` so tests can say
+    /// "quiet now" without a schedule. `Jarvis` passes `{ settings.quietHours?.end(of: $0, calendar: .current) }`.
     public init(clock: any TimeSource = SystemClock(),
                 sleepGuard: any SleepGuard,
-                isQuietTime: @escaping (Date) -> Bool = { _ in false }) {
+                quietHoursEnd: @escaping (Date) -> Date? = { _ in nil }) {
         self.clock = clock
         self.sleepGuard = sleepGuard
-        self.isQuietTime = isQuietTime
+        self.quietHoursEnd = quietHoursEnd
     }
 
     // MARK: user actions
@@ -85,6 +87,23 @@ public final class ListeningSession: ObservableObject {
     public func resume() { transition(to: .listening) }
     public func pause(_ reason: PauseReason) { transition(to: .paused(reason)) }
     public func stop(_ reason: StopReason) { transition(to: .stopped(reason)) }
+
+    /// The action `topMenuItem` names. Only this Start overrides quiet hours, until the window ends
+    /// (DEC-27); `start()` stays automatic. Returns the line a resume after a lost headset says, as
+    /// voice resume does (DEC-16).
+    @discardableResult
+    public func chooseTopMenuItem() -> String? {
+        switch state {
+        case .listening: pause(.user)
+        case .paused(let reason):
+            resume()
+            if reason == .routeLost { return "Listening through the MacBook mic." }
+        case .stopped:
+            quietHoursOverriddenUntil = quietHoursEnd(clock.now)
+            start()
+        }
+        return nil
+    }
 
     // MARK: automatic rules
 
@@ -115,13 +134,13 @@ public final class ListeningSession: ObservableObject {
 
     public func screenUnlocked() {
         guard state == .stopped(.screenLock) else { return }
-        transition(to: isQuietTime(clock.now) ? .stopped(.quietHours) : stateToRestore)
+        transition(to: quietHoursApply(at: clock.now) ? .stopped(.quietHours) : stateToRestore)
     }
 
     /// Quiet hours stop everything but a user Stop and a screen lock, wake word included, and give
-    /// back the state from before they began.
+    /// back the state from before they began. A menu override holds them off until its window ends.
     public func tick(now: Date) {
-        if isQuietTime(now) {
+        if quietHoursApply(at: now) {
             switch state {
             case .listening, .paused:
                 stateToRestore = state
@@ -131,6 +150,16 @@ public final class ListeningSession: ObservableObject {
         } else if state == .stopped(.quietHours) {
             transition(to: stateToRestore, at: now)
         }
+    }
+
+    /// Whether quiet hours hold at `now`. An override ends with its window, so it never reaches the next.
+    private func quietHoursApply(at now: Date) -> Bool {
+        let quiet = quietHoursEnd(now) != nil
+        if let until = quietHoursOverriddenUntil {
+            if quiet && now < until { return false }
+            quietHoursOverriddenUntil = nil
+        }
+        return quiet
     }
 
     /// Stopped by screen lock or quiet hours, with `stateToRestore` to return to.
@@ -150,12 +179,16 @@ public final class ListeningSession: ObservableObject {
 
     /// `"HH:MM–HH:MM: not listening (<reason>)"`, en dash, local time.
     public func gapMarkers(in window: DateInterval) -> [String] {
+        gaps(in: window).map { gap in
+            "\(Self.hhmm(gap.start))–\(Self.hhmm(gap.end)): not listening (\(gap.reason))"
+        }
+    }
+
+    private static func hhmm(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
-        return gaps(in: window).map { gap in
-            "\(formatter.string(from: gap.start))–\(formatter.string(from: gap.end)): not listening (\(gap.reason))"
-        }
+        return formatter.string(from: date)
     }
 
     // MARK: derived
@@ -170,7 +203,11 @@ public final class ListeningSession: ObservableObject {
 
     public var statusLine: String {
         switch state {
-        case .listening: return input.map { "Listening via \($0.name)" } ?? "Listening"
+        case .listening:
+            if let until = quietHoursOverriddenUntil, clock.now < until {
+                return "Listening (quiet hours paused until \(Self.hhmm(until)))"
+            }
+            return input.map { "Listening via \($0.name)" } ?? "Listening"
         case .paused: return "Paused"
         case .stopped: return "Stopped"
         }
@@ -184,10 +221,13 @@ public final class ListeningSession: ObservableObject {
         }
     }
 
-    public var wakeWordActive: Bool {
-        if case .stopped = state { return false }
-        return true
+    /// Stop is hidden then; the menu's top item reads "Start listening".
+    public var isStopped: Bool {
+        if case .stopped = state { return true }
+        return false
     }
+
+    public var wakeWordActive: Bool { !isStopped }
 
     public var storesMemory: Bool { state == .listening }
 

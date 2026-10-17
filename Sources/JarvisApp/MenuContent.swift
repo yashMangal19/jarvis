@@ -29,9 +29,13 @@ private struct JarvisMenu: View {
         } else {
             Button("Notes off — install Claude Code or Ollama") { NSWorkspace.shared.open(Links.installGuide) }
         }
+        if jarvis.microphoneAccessOff {
+            Text("Microphone access is off")
+            Button("Open Microphone Settings…") { NSWorkspace.shared.open(Links.microphone) }
+        }
         Divider()
-        Button(session.topMenuItem, action: topMenuItemChosen)
-        if !isStopped {
+        Button(session.topMenuItem) { jarvis.chooseTopMenuItem() }
+        if !session.isStopped {
             Button("Stop") { session.stop(.user) }
         }
         Divider()
@@ -41,26 +45,18 @@ private struct JarvisMenu: View {
         Button("Ask my memory…") { show(WindowID.ask) }
         Button("Settings…") { show(WindowID.settings) }
         Divider()
-        Button("Forget last hour") { Task { confirmForgetLastHour() } }
+        Button("Forget last hour") {
+            RunLoop.main.perform(inModes: [.default]) { MainActor.assumeIsolated { confirmForgetLastHour() } }
+        }
         Button("Open notes") { NSWorkspace.shared.open(jarvis.openNotesURL) }
+        if jarvis.callAudioNeedsScreenRecording {
+            Divider()
+            Button("Call audio off — Allow Screen Recording…") { NSWorkspace.shared.open(Links.screenRecording) }
+        }
         if jarvis.voiceMemosNeedFullDiskAccess {
             Divider()
             Text("Allow Full Disk Access to import Voice Memos")
             Button("Open Full Disk Access Settings…") { NSWorkspace.shared.open(Links.fullDiskAccess) }
-        }
-    }
-
-    private var isStopped: Bool {
-        if case .stopped = session.state { return true }
-        return false
-    }
-
-    /// "Pause listening" / "Resume" / "Start listening", as `topMenuItem` names them.
-    private func topMenuItemChosen() {
-        switch session.state {
-        case .listening: session.pause(.user)
-        case .paused: session.resume()
-        case .stopped: session.start()
         }
     }
 
@@ -70,17 +66,24 @@ private struct JarvisMenu: View {
         openWindow(id: id)
     }
 
-    /// Run after the menu has closed (hence the `Task`), so the alert is not caught in menu tracking.
+    /// Run through `RunLoop.main.perform(inModes: [.default])`: the menu tracks in the event-tracking
+    /// mode, so the block waits until the menu has closed and the alert is not caught in its tracking.
+    /// The question fixes the hour, so Delete removes the hour it names however long the alert is open.
     private func confirmForgetLastHour() {
+        let question: ForgetLastHourQuestion
+        do { question = try jarvis.askToForgetLastHour() } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "Delete the last hour?"
-        alert.informativeText = (try? jarvis.forgetLastHourDescription()) ?? ""
+        alert.informativeText = question.text
         alert.addButton(withTitle: "Delete").hasDestructiveAction = true
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
-            try jarvis.forgetLastHour()
+            try jarvis.forgetLastHour(question)
         } catch {
             NSAlert(error: error).runModal()
         }
@@ -92,4 +95,8 @@ private enum Links {
     static let installGuide = URL(string: "https://yashmangal19.github.io/jarvis/guide.html#install")!
     static let fullDiskAccess =
         URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
+    static let screenRecording =
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+    static let microphone =
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
 }

@@ -128,6 +128,8 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **What:** Jarvis stays on until the current quiet window ends. The status reads "Listening (quiet hours paused
   until HH:MM)". The next window applies normally. Enforced in `ListeningSession`, not the app.
 - **Checked against:** DEC-14 (amended), DEC-22. Both are deliberate actions. Nothing automatic overrides quiet hours.
+- **Detail (T-25 fix):** an unlock during an active override goes back to listening, because the override was your choice.
+  Launch, a headset reconnect, and an override left over from a night the Mac slept through never override.
 
 ### DEC-24 · Audio chunks are cut at every listening boundary
 - **Decided by:** human (T-24 review, option A)

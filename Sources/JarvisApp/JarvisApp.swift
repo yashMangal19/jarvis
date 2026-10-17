@@ -29,13 +29,14 @@ enum WindowID {
     static let ask = "ask"
 }
 
-/// Owns `Jarvis` for the life of the process: builds and starts it after the launch permissions, and
+/// Owns `Jarvis` for the life of the process: builds it, asks for the launch permissions, starts it, and
 /// holds Quit until `shutdown()` has stopped the whisper servers (DEC-6, DEC-10).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published private(set) var jarvis: Jarvis?
     @Published private(set) var launchError: String?
     private var launch: Task<Jarvis?, Never>?
+    private var starting: Task<Void, Never>?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // No Dock icon when run as a bare binary; the bundle says the same with LSUIElement.
@@ -44,9 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         launch = Task {
-            await Permissions.requestAtLaunch()
             do {
                 let jarvis = try await Jarvis.live()
+                await Permissions.requestAtLaunch(for: jarvis)
                 Triggers.install(into: jarvis)
                 self.jarvis = jarvis
                 return jarvis
@@ -55,11 +56,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 return nil
             }
         }
-        Task { await launch?.value?.start() }
+        starting = Task { await launch?.value?.start() }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let launch else { return .terminateNow }
+        // A start still under way is cancelled; `Jarvis.start` also returns early once `shutdown` has
+        // begun, so it never opens the mic or the importers after it (F-4).
+        starting?.cancel()
         Task {
             await launch.value?.shutdown()
             sender.reply(toApplicationShouldTerminate: true)

@@ -28,6 +28,7 @@ import Testing
     deinit { try? FileManager.default.removeItem(at: root) }
 
     private let screenLock = SwapScreenLock()
+    private let permissions = SwapPermissions()
 
     /// `speechOff` starts with no transcriber, as on a Mac whose whisper model is still downloading.
     private func makeJarvis(speechOff: Bool = false, tickInterval: TimeInterval = 30) -> Jarvis {
@@ -37,7 +38,8 @@ import Testing
                                                               notes: "fake notes", search: "fake search"))
         let jarvis = Jarvis(paths: paths, engines: engines, settings: SettingsStore(paths: paths), clock: clock,
                             sources: sources, screenLock: screenLock, sleepGuard: SwapSleepGuard(),
-                            routes: routes, voiceMemos: { .absent }, tickInterval: tickInterval)
+                            routes: routes, voiceMemos: { .absent }, permissions: permissions.status,
+                            tickInterval: tickInterval)
         jarvis.speak = { [unowned self] in spoken.append($0) }
         jarvis.onChime = { [unowned self] in chimes += 1 }
         return jarvis
@@ -288,8 +290,9 @@ import Testing
         clock.now += 60
         let inFlight = clock.now.addingTimeInterval(-30)
 
-        #expect(try jarvis.forgetLastHourDescription().contains("1 transcript line"))
-        try jarvis.forgetLastHour()
+        let question = try jarvis.askToForgetLastHour()
+        #expect(question.text.contains("1 transcript line"))
+        try jarvis.forgetLastHour(question)
         sayChunk("Still in flight.", startingAt: inFlight)
         clock.now += 1
         sayChunk("After forgetting.")
@@ -443,7 +446,106 @@ import Testing
     }
 }
 
+extension SwappabilityTests {
+    // DEC-30: the menu alert fixes the hour it names; leaving it open shifts nothing.
+    @Test func forgetDeletesExactlyTheHourTheQuestionNamed() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        await swapWaitUntil { self.sources.mic.isRunning }
+        sayChunk("Named in the question.")
+        await swapWaitUntil { self.transcriptText().contains("Named in the question.") }
+        clock.now += 60
+
+        let question = try jarvis.askToForgetLastHour()
+        #expect(question.text.hasPrefix("Delete the last hour, 09:16 to 10:16:"))
+        clock.now += 30 * 60
+        sayChunk("Said while the alert was open.")
+        await swapWaitUntil { self.transcriptText().contains("Said while the alert was open.") }
+        try jarvis.forgetLastHour(question)
+
+        #expect(!transcriptText().contains("Named in the question."))
+        #expect(transcriptText().contains("Said while the alert was open."))
+        await jarvis.shutdown()
+    }
+
+    // F-4: a start still running when Quit begins, or one asked for after, never opens the mic.
+    @Test func startDoesNothingOnceShutdownHasBegun() async {
+        let jarvis = makeJarvis()
+        let starting = Task { await jarvis.start() }
+        await jarvis.shutdown()
+        await starting.value
+        #expect(jarvis.session.isStopped)
+
+        await jarvis.start()
+        #expect(jarvis.session.isStopped)
+        await jarvis.shutdown()
+        #expect(sources.mic.startCalls == 0)
+        #expect(sources.systemAudio.startCalls == 0)
+    }
+
+    // DEC-28: asked once, remembered in settings; after a no, the menu offers the way back in.
+    @Test func screenRecordingIsAskedOnceAndADeclineIsShown() async {
+        let jarvis = makeJarvis()
+        #expect(jarvis.shouldAskForScreenRecording)
+        #expect(!jarvis.callAudioNeedsScreenRecording)
+
+        jarvis.recordScreenRecordingAsked()
+        #expect(!jarvis.shouldAskForScreenRecording)
+        #expect(jarvis.callAudioNeedsScreenRecording)
+        #expect(SettingsStore(paths: paths).load().screenRecordingAsked)
+        #expect(!makeJarvis().shouldAskForScreenRecording)
+
+        permissions.screenGranted = true
+        await jarvis.tick()
+        #expect(!jarvis.callAudioNeedsScreenRecording)
+    }
+
+    @Test func screenRecordingAlreadyGrantedIsNeverAskedFor() {
+        permissions.screenGranted = true
+        #expect(!makeJarvis().shouldAskForScreenRecording)
+    }
+
+    // DEC-31: a denied microphone is shown, and the line goes once access is back.
+    @Test func deniedMicrophoneIsShown() async {
+        permissions.micDenied = true
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        #expect(jarvis.microphoneAccessOff)
+
+        permissions.micDenied = false
+        await jarvis.tick()
+        #expect(!jarvis.microphoneAccessOff)
+        await jarvis.shutdown()
+    }
+
+    // F-5, DEC-16: Resume from the menu after the headset left says what voice resume says.
+    @Test func menuResumeAfterALostHeadsetSaysItUsesTheMacBookMic() async {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        jarvis.session.handle(.inputLost(InputDevice(name: "AirPods Pro", isBluetoothHeadset: true)))
+        #expect(jarvis.session.state == .paused(.routeLost))
+
+        jarvis.chooseTopMenuItem()
+        #expect(jarvis.session.state == .listening)
+        #expect(spoken == ["Listening through the MacBook mic."])
+        jarvis.chooseTopMenuItem()
+        #expect(jarvis.session.state == .paused(.user))
+        #expect(spoken.count == 1)
+        await jarvis.shutdown()
+    }
+}
+
 // MARK: - Fakes
+
+/// What macOS has granted, as the test says; no real authorization is ever read.
+final class SwapPermissions {
+    var micDenied = false
+    var screenGranted = false
+    var status: PermissionStatus {
+        PermissionStatus(microphoneDenied: { [unowned self] in micDenied },
+                         screenRecordingGranted: { [unowned self] in screenGranted })
+    }
+}
 
 /// Polls `condition` every 20 ms for up to `timeout` seconds.
 @MainActor func swapWaitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) async {

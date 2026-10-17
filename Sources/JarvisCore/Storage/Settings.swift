@@ -12,10 +12,13 @@ public struct Settings: Codable, Equatable {
     public var allowedTools: [String]
     /// `nil` means no quiet hours.
     public var quietHours: QuietHours?
+    /// Jarvis has explained Screen Recording and asked for it; it never asks again (DEC-28).
+    public var screenRecordingAsked: Bool
 
-    public init(allowedTools: [String] = [], quietHours: QuietHours? = nil) {
+    public init(allowedTools: [String] = [], quietHours: QuietHours? = nil, screenRecordingAsked: Bool = false) {
         self.allowedTools = allowedTools
         self.quietHours = quietHours
+        self.screenRecordingAsked = screenRecordingAsked
     }
 
     public static let `default` = Settings()
@@ -25,6 +28,7 @@ public struct Settings: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         allowedTools = try c.decodeIfPresent([String].self, forKey: .allowedTools) ?? []
         quietHours = try c.decodeIfPresent(QuietHours.self, forKey: .quietHours)
+        screenRecordingAsked = try c.decodeIfPresent(Bool.self, forKey: .screenRecordingAsked) ?? false
     }
 }
 
@@ -44,6 +48,14 @@ public struct QuietHours: Codable, Equatable {
         let m = (time.hour ?? 0) * 60 + (time.minute ?? 0)
         return startMinutes <= endMinutes ? (startMinutes..<endMinutes).contains(m)
                                           : (m >= startMinutes || m < endMinutes)
+    }
+
+    /// When the window holding `date` ends; `nil` when `date` is not in quiet hours.
+    public func end(of date: Date, calendar: Calendar) -> Date? {
+        guard contains(date, calendar: calendar),
+              let end = calendar.date(bySettingHour: endMinutes / 60, minute: endMinutes % 60, second: 0, of: date)
+        else { return nil }
+        return end > date ? end : calendar.date(byAdding: .day, value: 1, to: end)
     }
 }
 

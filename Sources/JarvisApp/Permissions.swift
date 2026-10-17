@@ -2,13 +2,14 @@ import AppKit
 import AVFoundation
 import JarvisCore
 
-/// The permission requests at launch. The microphone is asked for by the system only the first time.
-/// Screen Recording is asked for only when it is not granted, after an alert saying what it is for;
-/// declining it leaves capture on the microphone only.
+/// The permission requests at launch. The microphone is asked for by the system only the first time; the
+/// answer is read back by `Jarvis` (`microphoneAccessOff`), which the menu shows (DEC-31). Screen
+/// Recording is explained and asked for once, as `Jarvis` decides (DEC-28); declining it leaves capture
+/// on the microphone only, and the menu then offers the Settings page.
 enum Permissions {
-    @MainActor static func requestAtLaunch() async {
-        _ = await AVCaptureDevice.requestAccess(for: .audio)
-        guard !SystemAudioSource.isAuthorized else { return }
+    @MainActor static func requestAtLaunch(for jarvis: Jarvis) async {
+        await AVCaptureDevice.requestAccess(for: .audio)
+        guard jarvis.shouldAskForScreenRecording else { return }
         let alert = NSAlert()
         alert.messageText = "Hear the other side of your calls?"
         alert.informativeText = """
@@ -18,7 +19,7 @@ enum Permissions {
         alert.addButton(withTitle: "Continue")
         alert.addButton(withTitle: "Not Now")
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        CGRequestScreenCaptureAccess()
+        if alert.runModal() == .alertFirstButtonReturn { CGRequestScreenCaptureAccess() }
+        jarvis.recordScreenRecordingAsked()
     }
 }
