@@ -76,4 +76,68 @@ final class WakeTestClock: TimeSource {
         held.release("send it")
         #expect(await second.value == "send it")
     }
+
+    /// A capture whose wall clock jumps forward by however long it asks to sleep.
+    private func makeCaptureWithInstantSleep() -> CommandCapture {
+        let transcriber = self.transcriber
+        let clock = WakeTestClock()
+        return CommandCapture(buffer: RollingAudioBuffer(seconds: 8), transcriber: { transcriber },
+                              gate: SilenceGate(), clock: clock, sleep: { clock.now += $0 })
+    }
+
+    // F-3: frames stop, the injected clock still ends the capture at `maxSeconds`.
+    @Test func aCaptureEndsAtItsClockDeadlineWhenFramesStop() async {
+        let capture = makeCaptureWithInstantSleep()
+
+        #expect(await capture.capture(from: 0, maxSeconds: 15) == nil)
+        #expect(transcriber.chunks.isEmpty)
+    }
+
+    // F-3: the mic stream ended — the running capture keeps what it heard, and every later one ends at once.
+    @Test func closeEndsTheRunningCaptureAndEveryLaterOne() async {
+        let capture = makeCapture()
+        let first = Task { await capture.capture(from: 0) }
+        for _ in 0..<4 { capture.append(wakeSpeechFrame()) }
+        capture.close()
+        #expect(await first.value == "jarvis what did prashant say about fpv")
+
+        #expect(await capture.capture(from: capture.buffer.end) == nil)
+    }
+
+    // F-3: cancelling the caller's task ends the capture with no text.
+    @Test func cancellingTheCallersTaskEndsTheCaptureWithoutTranscribing() async {
+        let capture = makeCapture()
+        let result = Task { await capture.capture(from: 0) }
+        for _ in 0..<4 { capture.append(wakeSpeechFrame()) }
+        await Task.yield()
+        result.cancel()
+
+        #expect(await result.value == nil)
+        #expect(transcriber.chunks.isEmpty)
+    }
+
+    // F-6: one capture at a time — a second one returns nil at once and the first is unharmed.
+    @Test func aSecondConcurrentCaptureReturnsNilAndTheFirstStillCompletes() async {
+        let capture = makeCapture()
+        let first = Task { await capture.capture(from: 0) }
+        await Task.yield()
+
+        #expect(await capture.capture(from: 0) == nil)
+
+        for _ in 0..<4 { capture.append(wakeSpeechFrame()) }
+        for _ in 0..<4 { capture.append(wakeSilenceFrame()) }
+        #expect(await first.value == "jarvis what did prashant say about fpv")
+    }
+
+    // F-4: press-to-talk's silence counts from the press — nobody speaking for 5 s ends it.
+    @Test func startSilenceEndsACaptureNobodySpokeInto() async {
+        let capture = makeCapture()
+        let result = Task { await capture.capture(from: 0, endSilence: 1, startSilence: 5) }
+        for _ in 0..<20 { capture.append(wakeSilenceFrame()) }
+        for _ in 0..<4 { capture.append(wakeSpeechFrame()) }   // too late: the capture is over
+        for _ in 0..<4 { capture.append(wakeSilenceFrame()) }  // 7 s in all, inside the 8 s buffer
+
+        #expect(await result.value == nil)
+        #expect(transcriber.chunks.isEmpty)
+    }
 }

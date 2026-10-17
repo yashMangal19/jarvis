@@ -1,11 +1,16 @@
 import AVFAudio
 import Foundation
 
-/// Writes an `AudioChunk` as the WAV whisper.cpp reads: 16 kHz, mono, 16-bit PCM, 44-byte header.
+/// Encodes an `AudioChunk` as the WAV whisper.cpp reads: 16 kHz, mono, 16-bit PCM, 44-byte header.
 public enum WAVWriter {
     static let sampleRate = 16_000.0
 
     public static func write(_ chunk: AudioChunk, to url: URL) throws {
+        try data(for: chunk).write(to: url)
+    }
+
+    /// The WAV bytes, in memory only.
+    static func data(for chunk: AudioChunk) throws -> Data {
         let samples = try resampled(chunk)
         var data = Data(capacity: 44 + samples.count * 2)
         let dataBytes = UInt32(samples.count * 2)
@@ -26,7 +31,7 @@ public enum WAVWriter {
         for sample in samples {
             append(Int16(max(-1, min(1, sample)) * Float(Int16.max)))
         }
-        try data.write(to: url)
+        return data
     }
 
     /// The chunk's samples at 16 kHz; converted with AVAudioConverter when the rate differs.

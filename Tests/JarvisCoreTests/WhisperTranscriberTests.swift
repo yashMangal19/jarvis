@@ -141,6 +141,21 @@ import Testing
         #expect(!leftovers.contains(String(sent)))
     }
 
+    // F-1: ambient mic audio never reaches the disk on the server path — the WAV is posted from memory.
+    @Test func serverBackendWritesNoTempWAV() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubInference.self]
+        StubInference.reply = "hola"
+        let server = WhisperServerProcess(binary: URL(filePath: "/bin/false"), model: URL(filePath: "/m.bin"),
+                                          port: 17_171)
+        let transcriber = WhisperTranscriber(backend: .server(server), session: URLSession(configuration: config))
+        let before = StubInference.tempWAVs()
+
+        _ = try await transcriber.transcribe(oneSecond)
+
+        #expect(StubInference.tempWAVsDuringRequest == before)
+    }
+
     // MARK: WhisperInstall
 
     private func folder(with files: [String], executable: Bool = false) throws -> URL {
@@ -439,11 +454,19 @@ final class StubInference: URLProtocol {
     nonisolated(unsafe) static var reply = ""
     nonisolated(unsafe) static var lastRequest: URLRequest?
     nonisolated(unsafe) static var lastBody = Data()
+    /// The `jarvis-*.wav` files in the temp directory while the last request was in flight.
+    nonisolated(unsafe) static var tempWAVsDuringRequest: Set<String> = []
+
+    static func tempWAVs() -> Set<String> {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)) ?? []
+        return Set(names.filter { $0.hasPrefix("jarvis-") && $0.hasSuffix(".wav") })
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.lastRequest = request
+        Self.tempWAVsDuringRequest = Self.tempWAVs()
         Self.lastBody = request.httpBody ?? request.httpBodyStream.map(Self.drain) ?? Data()
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

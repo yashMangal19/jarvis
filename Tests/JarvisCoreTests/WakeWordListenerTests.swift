@@ -12,9 +12,15 @@ import JarvisCore
 
     private var capture: CommandCapture!
 
-    private mutating func makeListener(wake: any Transcriber, command: any Transcriber) -> WakeWordListener {
-        capture = CommandCapture(buffer: RollingAudioBuffer(seconds: 8), transcriber: { command },
-                                 gate: SilenceGate(), clock: WakeTestClock())
+    /// `instantSleep`: the capture's clock jumps forward by however long it asks to sleep.
+    private mutating func makeListener(wake: any Transcriber, command: any Transcriber,
+                                       instantSleep: Bool = false) -> WakeWordListener {
+        let clock = WakeTestClock()
+        capture = instantSleep
+            ? CommandCapture(buffer: RollingAudioBuffer(seconds: 8), transcriber: { command },
+                             gate: SilenceGate(), clock: clock, sleep: { clock.now += $0 })
+            : CommandCapture(buffer: RollingAudioBuffer(seconds: 8), transcriber: { command },
+                             gate: SilenceGate(), clock: clock)
         return WakeWordListener(mic: frames, wakeWordTranscriber: { wake }, capture: capture)
     }
 
@@ -130,6 +136,71 @@ import JarvisCore
         say(speech: 2, silence: 4)
         #expect(await reply.value == "Yes.")
     }
+
+    // F-4: a hold runs until endHold — it is not cut off at 15 s.
+    @Test mutating func aHoldLongerThanFifteenSecondsIsKeptWhole() async {
+        let command = WakeScriptedTranscriber(heard)
+        let listener = makeListener(wake: WakeScriptedTranscriber(""), command: command)
+
+        let text = await withCheckedContinuation { done in
+            listener.onCommand = { done.resume(returning: $0) }
+            listener.beginHold()
+            say(speech: 80, silence: 0)
+            let capture = self.capture!
+            Task { while capture.buffer.end < 20 && !Task.isCancelled { await Task.yield() }; listener.endHold() }
+        }
+
+        #expect(text == "what did prashant say about fpv")
+        #expect(command.chunks.map(\.duration) == [20])
+    }
+
+    // F-3: the mic stream ends mid-reply — the reply window returns what it heard instead of hanging.
+    @Test mutating func aReplyWindowEndsWhenTheMicStreamEnds() async {
+        let listener = makeListener(wake: WakeScriptedTranscriber(""), command: WakeScriptedTranscriber("Yes."))
+
+        let reply = Task { await listener.listenForReply(timeout: 15) }
+        say(speech: 2, silence: 0)
+        mic.finish()
+
+        #expect(await reply.value == "Yes.")
+    }
+
+    // F-3: no frames at all — the injected clock still closes the reply window at `timeout`.
+    @Test mutating func listenForReplyIsBoundedByTheClockWhenFramesStop() async {
+        let command = WakeScriptedTranscriber("Yes.")
+        let listener = makeListener(wake: WakeScriptedTranscriber(""), command: command, instantSleep: true)
+
+        #expect(await listener.listenForReply(timeout: 15) == nil)
+        #expect(command.chunks.isEmpty)
+    }
+
+    // F-7: stop() during a capture drops it.
+    @Test mutating func stopDuringAReplyWindowReturnsNil() async {
+        let command = WakeScriptedTranscriber("Yes.")
+        let listener = makeListener(wake: WakeScriptedTranscriber(""), command: command)
+
+        let reply = Task { await listener.listenForReply(timeout: 15) }
+        say(speech: 2, silence: 0)
+        await heard(0.5)
+        listener.stop()
+
+        #expect(await reply.value == nil)
+        #expect(command.chunks.isEmpty)
+    }
+
+    // F-7: a listener that goes away stops reading — the mic stream is released, not held by a stray task.
+    @Test mutating func aDroppedListenerReleasesTheMicStream() async {
+        let released = WakeFlag()
+        mic.onTermination = { _ in released.set() }
+        var listener: WakeWordListener? = makeListener(wake: WakeScriptedTranscriber(""),
+                                                       command: WakeScriptedTranscriber(""))
+        await Task.yield()
+        #expect(listener != nil)
+
+        listener = nil
+        while !released.isSet && !Task.isCancelled { await Task.yield() }
+        #expect(released.isSet)
+    }
 }
 
 /// Holds every transcription until the test releases it.
@@ -143,4 +214,11 @@ final class WakeHeldTranscriber: Transcriber {
         held?.resume(returning: text)
         held = nil
     }
+}
+
+final class WakeFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
 }

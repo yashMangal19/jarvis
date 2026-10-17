@@ -9,7 +9,11 @@ public enum WhisperError: Error, Equatable {
     case downloadFailed(status: Int)
 }
 
-/// The baseline on-device `Transcriber`: whisper.cpp, fed a temporary 16 kHz WAV deleted as soon as it is read.
+/// The baseline on-device `Transcriber`: whisper.cpp, fed a 16 kHz WAV.
+///
+/// Raw audio and the disk: the `.server` backend builds the WAV in memory and posts the bytes, so nothing is
+/// written. The `.cli` fallback is the one exception — whisper-cli only reads `-f <path>`, so it writes a
+/// short-lived `jarvis-*.wav` in the temporary directory and deletes it as soon as the run ends.
 ///
 /// Deviations from the blueprint's signatures, on purpose:
 /// - `Backend.cli(binary:model:)` rather than `.cli(binary:)`: whisper-cli loads the model on every run (`-m`),
@@ -45,27 +49,28 @@ public final class WhisperTranscriber: Transcriber {
     }
 
     public func transcribe(_ chunk: AudioChunk) async throws -> String {
-        let wav = FileManager.default.temporaryDirectory.appending(path: "jarvis-\(UUID().uuidString).wav")
-        defer { try? FileManager.default.removeItem(at: wav) }
-        try WAVWriter.write(chunk, to: wav)
         switch backend {
         case let .server(server):
             if let failure = server.failure { throw failure }
-            return Self.clean(try await post(wav: wav, to: server.baseURL.appending(path: "inference")))
+            return Self.clean(try await post(wav: try WAVWriter.data(for: chunk),
+                                             to: server.baseURL.appending(path: "inference")))
         case let .cli(binary, model):
+            let wav = FileManager.default.temporaryDirectory.appending(path: "jarvis-\(UUID().uuidString).wav")
+            defer { try? FileManager.default.removeItem(at: wav) }
+            try WAVWriter.write(chunk, to: wav)
             return Self.clean(try await runCLI(binary: binary, model: model, wav: wav))
         }
     }
 
     // Field names confirmed from `whisper-server`'s built-in usage page and the whisper.cpp 1.9.5 README.
-    private func post(wav: URL, to url: URL) async throws -> String {
+    private func post(wav: Data, to url: URL) async throws -> String {
         let boundary = "jarvis-\(UUID().uuidString)"
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }
-        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(wav.lastPathComponent)\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
-        body.append(try Data(contentsOf: wav))
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"jarvis-\(UUID().uuidString).wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
+        body.append(wav)
         body.append(Data("\r\n".utf8))
         field("language", language)
         field("response_format", "text")

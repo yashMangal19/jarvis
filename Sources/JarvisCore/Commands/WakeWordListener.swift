@@ -2,7 +2,20 @@ import Foundation
 
 /// Listens on the mic for "Jarvis", then captures the command that follows it — no pause needed.
 /// Also serves hold-to-talk, press-to-talk and the yes/no reply window, one capture at a time.
-/// Reads every frame into the capture's in-memory buffer; nothing is written to disk.
+/// Reads every frame into the capture's in-memory buffer. Audio leaves memory only through the injected
+/// transcribers; see `CommandCapture` for which of them write a temp file (only whisper's CLI fallback).
+///
+/// One listener owns the `frames` stream: it is its only reader for as long as it lives, and a second
+/// listener on the same stream would split the frames between them. When the stream ends, any capture in
+/// progress ends with what it heard and later captures end at once; when the listener goes away, it stops
+/// reading and releases the stream.
+///
+/// Deviation from the blueprint, on purpose: the blueprint captures from `hitEnd` and strips a leading
+/// "Jarvis". A text-only `Transcriber` gives no word times, so there is no `hitEnd`. Instead the capture
+/// starts where the utterance holding the wake word began (just after the window's last ≥ 1 s pause, see
+/// `utteranceStart`), and everything up to the first "jarvis" in its text is dropped (`afterWakeWord`).
+/// The buffer is read with `samples(from:)` rather than a `latest(2.5 s)` call, so a window never re-hears
+/// audio already acted on (`heardUpTo`).
 @MainActor
 public final class WakeWordListener {
     /// The wake word was heard (the chime).
@@ -13,6 +26,8 @@ public final class WakeWordListener {
     /// Audio-time cadence and window of the wake-word check (≈ every 1 s, the last 2.5 s).
     private static let checkEvery = 4
     private static let windowSeconds = 2.5
+    /// A hold ends at `endHold`; this only stops a stuck key from capturing forever.
+    private static let holdSafetySeconds: TimeInterval = 120
 
     private let wakeWordTranscriber: () -> (any Transcriber)?
     private let capture: CommandCapture
@@ -24,19 +39,24 @@ public final class WakeWordListener {
     private var framesSinceCheck = 0
     /// Audio before this stream time was already acted on; a later window never hears it again.
     private var heardUpTo: TimeInterval = 0
+    private var reader: Task<Void, Never>?
 
     public init(mic frames: AsyncStream<[Float]>, wakeWordTranscriber: @escaping () -> (any Transcriber)?,
                 capture: CommandCapture) {
         self.wakeWordTranscriber = wakeWordTranscriber
         self.capture = capture
-        // One reader for the stream's whole life: cancelling a reader would end the stream.
-        Task { [weak self] in
+        // The stream's only reader. Cancelling it ends the stream for good, so `stop()` leaves it running
+        // (the listener restarts on `start()`); only `deinit` cancels it.
+        reader = Task { [weak self, capture] in
             for await frame in frames {
                 guard let self else { return }
                 self.take(frame)
             }
+            capture.close()
         }
     }
+
+    deinit { reader?.cancel() }
 
     /// Starts looking for the wake word (driven by `session.wakeWordActive`).
     public func start() { listening = true }
@@ -48,17 +68,21 @@ public final class WakeWordListener {
     }
 
     /// Hotkey down: capture from now until `endHold`, no wake word, a pause does not end it.
-    public func beginHold() { beginManual(endSilence: .infinity) }
+    public func beginHold() {
+        beginManual(maxSeconds: Self.holdSafetySeconds, endSilence: .infinity, startSilence: .infinity)
+    }
 
     /// Hotkey up: the held audio becomes the command.
     public func endHold() { if manual { capture.finish() } }
 
-    /// Stem press: the first press starts a capture, a second press or 5 s of silence ends it.
+    /// Stem press: the first press starts a capture, a second press or 5 s of silence ends it — counted
+    /// from the press when nothing is said, from the last word otherwise.
     public func pressToTalk() {
-        if manual { capture.finish() } else { beginManual(endSilence: 5) }
+        if manual { capture.finish() } else { beginManual(maxSeconds: 15, endSilence: 5, startSilence: 5) }
     }
 
-    /// The spoken reply after a read-back, or `nil` when nothing is said within `timeout` seconds.
+    /// The spoken reply after a read-back, or `nil` when nothing is said within `timeout` seconds — of
+    /// audio, or of the capture's clock when frames stop.
     public func listenForReply(timeout: TimeInterval = 15) async -> String? {
         guard !capturing else { return nil }
         capturing = true
@@ -68,13 +92,14 @@ public final class WakeWordListener {
         return reply
     }
 
-    private func beginManual(endSilence: TimeInterval) {
+    private func beginManual(maxSeconds: TimeInterval, endSilence: TimeInterval, startSilence: TimeInterval) {
         guard !capturing else { return }
         capturing = true
         manual = true
         let start = capture.buffer.end
         Task {
-            let text = await capture.capture(from: start, endSilence: endSilence)
+            let text = await capture.capture(from: start, maxSeconds: maxSeconds, endSilence: endSilence,
+                                             startSilence: startSilence)
             finishCapture(text.map(Self.withoutLeadingWakeWord))
         }
     }
