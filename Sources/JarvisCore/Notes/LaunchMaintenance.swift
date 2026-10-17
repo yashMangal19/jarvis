@@ -13,8 +13,11 @@ public struct LaunchMaintenance {
 
     /// A failure in either step leaves that step for the next run and does not stop the other:
     /// the purge only deletes, and a roll-up that failed is still missing, so it is retried.
-    public func run(now: Date) async {
-        _ = try? transcripts.purge(olderThan: 7, now: now)
-        try? await rollups.runIfDue(now: now)
+    /// Returns what failed: the purge error, if any, and each roll-up that failed.
+    @discardableResult
+    public func run(now: Date) async -> (purge: (any Error)?, rollups: [(id: String, error: any Error)]) {
+        var purgeError: (any Error)?
+        do { _ = try transcripts.purge(olderThan: 7, now: now) } catch { purgeError = error }
+        return (purgeError, await rollups.runIfDue(now: now))
     }
 }

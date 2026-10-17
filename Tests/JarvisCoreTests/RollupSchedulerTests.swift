@@ -2,6 +2,15 @@ import Foundation
 import Testing
 import JarvisCore
 
+/// Echoes like `HNSEchoNoteWriter`, but throws for any input containing `failOn`.
+struct RSFailingNoteWriter: NoteWriter {
+    let failOn: String
+    func note(from transcript: String, prompt: String) async throws -> String {
+        if transcript.contains(failOn) { throw CocoaError(.fileWriteUnknown) }
+        return "PROMPT:\(prompt)\nTRANSCRIPT:\(transcript)"
+    }
+}
+
 @Suite struct RollupSchedulerTests {
     let root = FileManager.default.temporaryDirectory.appending(path: "jarvis-\(UUID().uuidString)")
     var paths: JarvisPaths { JarvisPaths(root: root) }
@@ -34,7 +43,7 @@ import JarvisCore
         try hourly(16, 10, "Ship it Friday.")
         try hourly(16, 14, "Call Priya.")
 
-        try await makeScheduler().runIfDue(now: at(17, 0, 5))
+        await makeScheduler().runIfDue(now: at(17, 0, 5))
 
         let daily = try #require(notes.note(id: "2026-10-16"))
         #expect(daily.kind == .daily)
@@ -54,7 +63,7 @@ import JarvisCore
         defer { try? FileManager.default.removeItem(at: root) }
         try hourly(17, 9, "Still today.")
 
-        try await makeScheduler().runIfDue(now: at(17, 23, 59))
+        await makeScheduler().runIfDue(now: at(17, 23, 59))
 
         #expect(notes.allIDs(kind: .daily).isEmpty)
         #expect(echo.calls == 0)
@@ -64,7 +73,7 @@ import JarvisCore
         defer { try? FileManager.default.removeItem(at: root) }
         try hourly(16, 10, "Demo slot.", minutes: 2)
 
-        try await makeScheduler().runIfDue(now: at(17, 1))
+        await makeScheduler().runIfDue(now: at(17, 1))
 
         #expect(notes.note(id: "2026-10-16")?.body.contains("## 2026-10-16-1000\nDemo slot.") == true)
     }
@@ -74,10 +83,10 @@ import JarvisCore
         for day in 12...17 { try daily(day, "Day \(day).") }  // Mon 12 … Sat 17
         try hourly(18, 11, "Sunday walk.")
 
-        try await makeScheduler().runIfDue(now: at(18, 23, 59))
+        await makeScheduler().runIfDue(now: at(18, 23, 59))
         #expect(notes.allIDs(kind: .weekly).isEmpty)
 
-        try await makeScheduler().runIfDue(now: at(19, 0, 5))
+        await makeScheduler().runIfDue(now: at(19, 0, 5))
 
         let weekly = try #require(notes.note(id: "2026-W42"))
         #expect(weekly.period == DateInterval(start: at(12, 0), end: at(19, 0)))
@@ -90,11 +99,11 @@ import JarvisCore
     @Test func runningTwiceWritesNothingNew() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         try hourly(18, 11, "Sunday walk.")
-        try await makeScheduler().runIfDue(now: at(19, 1))
+        await makeScheduler().runIfDue(now: at(19, 1))
         let calls = echo.calls
         let before = try String(contentsOf: paths.notesWeekly.appending(path: "2026-W42.md"), encoding: .utf8)
 
-        try await makeScheduler().runIfDue(now: at(19, 2))
+        await makeScheduler().runIfDue(now: at(19, 2))
 
         #expect(calls == 2)
         #expect(echo.calls == calls)
@@ -105,7 +114,7 @@ import JarvisCore
         defer { try? FileManager.default.removeItem(at: root) }
         try hourly(16, 10, "Ship it Friday.")
 
-        try await makeScheduler(writer: { nil }).runIfDue(now: at(17, 1))
+        await makeScheduler(writer: { nil }).runIfDue(now: at(17, 1))
 
         #expect(notes.allIDs(kind: .daily).isEmpty)
     }
@@ -116,8 +125,33 @@ import JarvisCore
         try "Summarise as haiku.".write(to: paths.prompts.appending(path: "daily.md"), atomically: true, encoding: .utf8)
         try hourly(16, 10, "Ship it Friday.")
 
-        try await makeScheduler().runIfDue(now: at(17, 1))
+        await makeScheduler().runIfDue(now: at(17, 1))
 
         #expect(notes.note(id: "2026-10-16")?.body.hasPrefix("PROMPT:Summarise as haiku.") == true)
+    }
+
+    @Test func oneFailingDayIsSkippedReportedAndTheRestStillRollUp() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try hourly(14, 10, "Bad day.")
+        try hourly(15, 10, "Good day.")
+        let writer = RSFailingNoteWriter(failOn: "Bad day.")
+
+        let failures = await makeScheduler(writer: { writer }).runIfDue(now: at(19, 1))
+
+        #expect(failures.map(\.id) == ["2026-10-14"])
+        #expect(notes.note(id: "2026-10-14") == nil)
+        #expect(notes.note(id: "2026-10-15")?.body.contains("Good day.") == true)
+        #expect(notes.note(id: "2026-W42")?.body.contains("Good day.") == true)
+    }
+
+    @Test func dayIsNotDueUntilFiveMinutesAfterMidnight() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try hourly(16, 22, "Late call.")
+
+        await makeScheduler().runIfDue(now: at(17, 0, 4))
+        #expect(notes.allIDs(kind: .daily).isEmpty)
+
+        await makeScheduler().runIfDue(now: at(17, 0, 5))
+        #expect(notes.note(id: "2026-10-16")?.body.contains("Late call.") == true)
     }
 }
