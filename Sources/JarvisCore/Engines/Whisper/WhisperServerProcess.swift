@@ -12,12 +12,14 @@ public final class WhisperServerProcess: @unchecked Sendable {
 
     public let binary: URL
     public let model: URL
-    /// Holds `<pid> <start time> <port>` of the running child; removed by `stop()`.
+    /// Holds `<pid> <start time> <port>` of the running child; removed by `stop()` only if this
+    /// instance launched one, so discarding a never-started server leaves another run's record alone.
     public let pidFile: URL?
     private let lock = NSLock()
     private var requestedPort: Int
     private var process: Process?
     private var stopping = false
+    private var launched = false
     private var budget = RestartBudget()
     private var _failure: Error?
     private let session: URLSession
@@ -58,12 +60,12 @@ public final class WhisperServerProcess: @unchecked Sendable {
 
     /// Terminates the child and waits for it to exit. No relaunch follows.
     public func stop() {
-        let running: Process? = lock.withLock {
+        let (running, wrotePidFile): (Process?, Bool) = lock.withLock {
             stopping = true
-            defer { process = nil }
-            return process
+            defer { process = nil; launched = false }
+            return (process, launched)
         }
-        if let pidFile { try? FileManager.default.removeItem(at: pidFile) }
+        if wrotePidFile, let pidFile { try? FileManager.default.removeItem(at: pidFile) }
         guard let running, running.isRunning else { return }
         running.terminate()
         running.waitUntilExit()
@@ -94,6 +96,7 @@ public final class WhisperServerProcess: @unchecked Sendable {
         child.terminationHandler = { [weak self] exited in self?.exited(exited) }
         try child.run()
         process = child
+        launched = true
         if let pidFile, let started = Self.startTime(of: child.processIdentifier) {
             try? "\(child.processIdentifier) \(started) \(requestedPort)".write(to: pidFile, atomically: true, encoding: .utf8)
         }

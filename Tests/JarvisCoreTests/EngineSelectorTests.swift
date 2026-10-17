@@ -72,6 +72,29 @@ import Testing
     }
 }
 
+extension EngineSelectorTests {
+    /// `select` builds servers on the shared pidfiles; discarding them must not erase a running Jarvis's record.
+    @Test func aServerThatNeverStartedLeavesAnExistingPidFileIntact() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "selector-pid-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pidFile = dir.appending(path: "jarvis-whisper-main.pid")
+        try "4242 1 17171".write(to: pidFile, atomically: true, encoding: .utf8)
+        do {
+            let server = WhisperServerProcess(binary: URL(filePath: "/selector-test/bin/whisper-server"),
+                                              model: URL(filePath: "/m.bin"), port: 17_171, pidFile: pidFile)
+            server.stop()
+        }
+        #expect(FileManager.default.fileExists(atPath: pidFile.path))
+    }
+
+    @Test func searchNameIsTheChosenEmbeddersOwnName() {
+        let engines = EngineSelector.select(selectorProbes(os: 27, contextualName: "contextual-stub"),
+                                            settings: { .default })
+        #expect(engines.description.search == "contextual-stub")
+    }
+}
+
 struct SelectorRow: Sendable, CustomTestStringConvertible {
     var os: Int
     var claude = false, whisper = false, speechAnalyzer = false, foundationModels = false
@@ -90,7 +113,8 @@ struct SelectorRow: Sendable, CustomTestStringConvertible {
 private func selectorProbes(os major: Int, claude: Bool = false, whisper: Bool = false,
                             wakeWordModel: URL? = nil, speechAnalyzerLocale: Locale? = nil,
                             foundationModels: Bool = false, coreAI: Bool = false,
-                            contextual: Bool = false, ollama: Bool = false) -> EngineProbes {
+                            contextual: Bool = false, contextualName: String? = nil,
+                            ollama: Bool = false) -> EngineProbes {
     let bin = URL(filePath: "/selector-test/bin")
     let models = URL(filePath: "/selector-test/models")
     return EngineProbes(
@@ -101,11 +125,13 @@ private func selectorProbes(os major: Int, claude: Bool = false, whisper: Bool =
         wakeWordModel: wakeWordModel,
         speechAnalyzerLocale: speechAnalyzerLocale,
         foundationModelsAvailable: foundationModels,
-        coreAIEmbedder: coreAI ? SelectorStubEmbedder() : nil,
-        contextualEmbedder: contextual ? SelectorStubEmbedder() : nil,
+        coreAIEmbedder: coreAI ? SelectorStubEmbedder(displayName: "Core AI") : nil,
+        contextualEmbedder: contextual || contextualName != nil
+            ? SelectorStubEmbedder(displayName: contextualName ?? "Apple contextual") : nil,
         ollamaAvailable: ollama)
 }
 
-private struct SelectorStubEmbedder: Embedder {
+private struct SelectorStubEmbedder: NamedEmbedder {
+    let displayName: String
     func embed(_ text: String) throws -> [Float] { [1] }
 }

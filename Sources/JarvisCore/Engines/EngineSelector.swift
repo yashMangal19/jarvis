@@ -18,23 +18,33 @@ public struct EnginesDescription: Equatable {
     public var line: String { "Speech: \(speech) · Notes: \(notes) · Search: \(search)" }
 }
 
+/// A search embedder that names itself, so the Engines line reads the name from the engine.
+public protocol NamedEmbedder: Embedder {
+    var displayName: String { get }
+}
+
+extension NLEmbedder: NamedEmbedder {}
+@available(macOS 14, *) extension NLContextualEmbedder: NamedEmbedder {}
+#if canImport(CoreAI)
+@available(macOS 27, *) extension CoreAIEmbedder: NamedEmbedder {}
+#endif
+
 public enum EngineSelector {
     /// Pure: builds engines from probes in the spec's order and starts nothing. Whisper servers
-    /// are created stopped; whoever owns the session starts them.
+    /// are created stopped; whoever owns the session starts them. Discarding the result is safe:
+    /// a server that never launched leaves the shared pidfiles alone.
     public static func select(_ p: EngineProbes, settings: @escaping () -> Settings) -> Engines {
         let os26 = p.osVersion.majorVersion >= 26
         let speech = transcribers(p, os26: os26)
         let notes = noteWriter(p, os26: os26)
-        let search: (any Embedder, String) = p.coreAIEmbedder.map { ($0, "Core AI") }
-            ?? p.contextualEmbedder.map { ($0, "Apple contextual") }
-            ?? (NLEmbedder(), "NaturalLanguage")
+        let search: any NamedEmbedder = p.coreAIEmbedder ?? p.contextualEmbedder ?? NLEmbedder()
         let claude = p.claude.map { ClaudeCLI(executable: $0) }
         return Engines(
             transcriber: speech?.main, wakeWordTranscriber: speech?.wake, noteWriter: notes?.writer,
-            embedder: search.0,
+            embedder: search,
             commandRunner: claude.map { ClaudeCommandRunner(cli: $0, settings: settings) },
             description: EnginesDescription(speech: speech?.name ?? "none — run install.sh",
-                                            notes: notes?.name ?? "off", search: search.1))
+                                            notes: notes?.name ?? "off", search: search.displayName))
     }
 
     private static func transcribers(_ p: EngineProbes, os26: Bool)

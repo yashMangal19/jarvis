@@ -12,14 +12,17 @@ import NaturalLanguage
 public struct NLContextualEmbedder: Embedder {
     private let model: NLContextualEmbedding
 
+    public let displayName = "Apple contextual"
     var dimension: Int { model.dimension }
 
-    /// `nil` when there is no English model, its assets cannot be fetched, or it fails to load —
-    /// any of these means "fall back". May download Apple's assets on first use.
-    public static func load() async -> NLContextualEmbedder? {
+    /// `nil` when there is no English model, its assets are not on this Mac yet, or it fails to load —
+    /// any of these means "fall back". Missing assets are requested in the background, without waiting,
+    /// so a later launch can use them.
+    public static func load() -> NLContextualEmbedder? {
         guard let model = NLContextualEmbedding(language: .english) else { return nil }
-        if !model.hasAvailableAssets {
-            guard (try? await model.requestAssets()) == .available else { return nil }
+        guard model.hasAvailableAssets else {
+            Task.detached { _ = try? await model.requestAssets() }
+            return nil
         }
         guard (try? model.load()) != nil else { return nil }
         return NLContextualEmbedder(model: model)
