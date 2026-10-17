@@ -6,6 +6,8 @@ Jarvis is a small menu-bar app that **listens**, **remembers** and **acts**, so 
 
 From the Swift Mumbai talk **"What If You Could Clone Yourself?"** (17 Oct 2026). MIT licensed: fork it, change it, make it yours.
 
+**Read the guide:** https://yashmangal19.github.io/jarvis/guide.html
+
 > **Status: building in the open.** v1 is in progress on the [`feature/jarvis-ambient-memory`](../../tree/feature/jarvis-ambient-memory) branch and merges into `main` when it's done. Anything marked *(after v1)* is decided but not shipped yet. Star or watch the repo to follow along.
 
 ## How it works
