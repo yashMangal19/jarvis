@@ -9,17 +9,23 @@ public protocol FolderWatcher: AnyObject {
 
 /// Watches one directory for writes (a file added, removed or renamed in it) and calls `onChange`
 /// once things have been quiet for `debounce` seconds, so a burst of copies is one call.
+/// A file growing in place is not a write to the directory, so it raises no call.
+///
+/// `onChange` runs on the watcher's own serial queue: keep it short and hand real work elsewhere.
+/// `stop()` and `start()` may be called from inside it.
 public final class DispatchFolderWatcher: FolderWatcher {
     public var onChange: (() -> Void)?
     private let url: URL
     private let debounce: TimeInterval
     private let queue = DispatchQueue(label: "jarvis.folder-watcher")
+    private let onQueue = DispatchSpecificKey<Void>()
     private var source: DispatchSourceFileSystemObject?
     private var pending: DispatchWorkItem?
 
     public init(url: URL, debounce: TimeInterval = 2) {
         self.url = url
         self.debounce = debounce
+        queue.setSpecific(key: onQueue, value: ())
     }
 
     public func start() throws {
@@ -36,7 +42,8 @@ public final class DispatchFolderWatcher: FolderWatcher {
     public func stop() {
         source?.cancel()
         source = nil
-        queue.sync { pending?.cancel(); pending = nil }
+        let cancel = { self.pending?.cancel(); self.pending = nil }
+        if DispatchQueue.getSpecific(key: onQueue) != nil { cancel() } else { queue.sync(execute: cancel) }
     }
 
     /// On `queue`.

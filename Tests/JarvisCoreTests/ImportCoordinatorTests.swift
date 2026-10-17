@@ -17,7 +17,7 @@ final class ImportFakeTranscriber: Transcriber {
 final class ImportFailingTranscriber: Transcriber {
     struct Failure: Error {}
     let succeeding: Int
-    private var calls = 0
+    private(set) var calls = 0
 
     init(succeeding: Int) { self.succeeding = succeeding }
 
@@ -66,6 +66,22 @@ final class ImportFailingTranscriber: Transcriber {
         try store.lines(in: DateInterval(start: recordedAt.addingTimeInterval(-3600), duration: 7200))
     }
 
+    func makeImporter(_ coordinator: ImportCoordinator, retryDelay: TimeInterval = 60, maxRetries: Int = 12,
+                      watcher: FakeFolderWatcher = FakeFolderWatcher()) -> InboxImporter {
+        InboxImporter(paths: paths, coordinator: coordinator, watcher: watcher,
+                      retryDelay: retryDelay, maxRetries: maxRetries)
+    }
+
+    func inboxRecordings() -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: paths.inbox.path)) ?? []).filter { $0.hasSuffix(".wav") }
+    }
+
+    /// Polls `condition` every 50 ms for up to `timeout` seconds.
+    func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline { try? await Task.sleep(nanoseconds: 50_000_000) }
+    }
+
     // QA-81, QA-82: a 65 s recording becomes three lines dated from the recording, then the copy is gone.
     @Test func importedRecordingIsTranscribedAtItsRecordingTimeAndDeleted() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
@@ -85,18 +101,19 @@ final class ImportFailingTranscriber: Transcriber {
         #expect(abs((imported.first?.duration ?? 0) - 65) < 0.5)
     }
 
-    // A failure after the first stored line still deletes the copy, so a retry cannot duplicate lines.
-    @Test func failureAfterTheFirstLineStillDeletesTheFile() async throws {
+    // A failure after the first stored line still deletes the copy, so a retry cannot duplicate lines,
+    // and the stored part is still reported so its hourly note gets written.
+    @Test func failureAfterTheFirstLineStillDeletesTheFileAndReportsTheStoredSpan() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let url = try importWAV(seconds: 65)
-        var imported = 0
-        let (coordinator, store) = makeCoordinator(transcriber: ImportFailingTranscriber(succeeding: 1)) { _ in imported += 1 }
+        var imported: [DateInterval] = []
+        let (coordinator, store) = makeCoordinator(transcriber: ImportFailingTranscriber(succeeding: 1)) { imported.append($0) }
 
         await #expect(throws: ImportFailingTranscriber.Failure.self) { try await coordinator.importFile(url) }
 
         #expect(try allLines(store).map(\.time) == [recordedAt])
         #expect(!FileManager.default.fileExists(atPath: url.path))
-        #expect(imported == 0)
+        #expect(imported == [DateInterval(start: recordedAt, duration: 30)])
     }
 
     // A failure before any line is stored keeps the file, so the next scan can try again.
@@ -111,6 +128,118 @@ final class ImportFailingTranscriber: Transcriber {
         #expect(FileManager.default.fileExists(atPath: url.path))
     }
 
+    // A delete that fails is reported, and a later scan does not import the same lines again.
+    @Test func failedDeleteIsReportedAndNotImportedTwice() async throws {
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.inbox.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let url = try importWAV(seconds: 5)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: paths.inbox.path)
+        let (coordinator, store) = makeCoordinator(settleDelay: 0.05)
+
+        await #expect(throws: ImportError.self) { try await coordinator.importFile(url) }
+        await coordinator.scanAndImport(folder: paths.inbox)
+
+        #expect(try allLines(store).map(\.time) == [recordedAt])
+        #expect(FileManager.default.fileExists(atPath: url.path))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.inbox.path)
+        await coordinator.scanAndImport(folder: paths.inbox)
+
+        #expect(try allLines(store).map(\.time) == [recordedAt])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    // A file that cannot be decoded is moved to inbox/failed after its first try, so it is not retried forever.
+    @Test func undecodableFileIsMovedToTheFailedFolder() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: paths.inbox, withIntermediateDirectories: true)
+        let url = paths.inbox.appending(path: "broken.m4a")
+        try Data("not audio at all".utf8).write(to: url)
+        let (coordinator, store) = makeCoordinator()
+
+        await #expect(throws: (any Error).self) { try await coordinator.importFile(url) }
+
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(FileManager.default.fileExists(atPath: paths.inbox.appending(path: "failed/broken.m4a").path))
+        #expect(try allLines(store).isEmpty)
+    }
+
+    // F-4: one scan at a time; changes during a scan become one more scan; nothing is imported twice.
+    @Test func inboxImporterRunsOneScanAtATimeAndCoalescesChanges() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try importWAV(seconds: 5, name: "a.wav")
+        let transcriber = ImportFakeTranscriber()
+        let (coordinator, store) = makeCoordinator(transcriber: transcriber, settleDelay: 0.4)
+        let watcher = FakeFolderWatcher()
+        let importer = makeImporter(coordinator, watcher: watcher)
+        try importer.start()
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+        _ = try importWAV(seconds: 5, name: "b.wav")
+        for _ in 0..<3 { watcher.fire() }
+        await waitUntil { inboxRecordings().isEmpty }
+        await importer.stop()
+
+        #expect(inboxRecordings().isEmpty)
+        #expect(transcriber.calls == 2)
+        #expect(try allLines(store).count == 2)
+    }
+
+    // F-4: stop() cancels the scan in flight and waits for it, so nothing is imported after it returns.
+    @Test func inboxImporterStopCancelsTheScanInFlight() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = try importWAV(seconds: 5)
+        let transcriber = ImportFakeTranscriber()
+        let (coordinator, _) = makeCoordinator(transcriber: transcriber, settleDelay: 0.5)
+        let importer = makeImporter(coordinator)
+        try importer.start()
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        await importer.stop()
+        try await Task.sleep(nanoseconds: 800_000_000)
+
+        #expect(transcriber.calls == 0)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    // F-2: a file still being copied when a scan runs is retried without another folder change.
+    @Test func inboxImporterRetriesAFileStillBeingCopied() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: paths.inbox, withIntermediateDirectories: true)
+        let url = paths.inbox.appending(path: "memo.wav")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let (coordinator, store) = makeCoordinator(settleDelay: 0.1)
+        let importer = makeImporter(coordinator, retryDelay: 0.3)
+        try importer.start()
+
+        try await Task.sleep(nanoseconds: 250_000_000)
+        try FileManager.default.removeItem(at: url)
+        _ = try importWAV(seconds: 5)
+        await waitUntil { inboxRecordings().isEmpty }
+        await importer.stop()
+
+        #expect(inboxRecordings().isEmpty)
+        #expect(try allLines(store).map(\.time) == [recordedAt])
+    }
+
+    // F-2: a file kept after a failure is retried, but only `maxRetries` times without a folder change.
+    @Test func inboxImporterStopsRetryingAfterItsBound() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = try importWAV(seconds: 5)
+        let transcriber = ImportFailingTranscriber(succeeding: 0)
+        let (coordinator, _) = makeCoordinator(transcriber: transcriber, settleDelay: 0.05)
+        let importer = makeImporter(coordinator, retryDelay: 0.1, maxRetries: 2)
+        try importer.start()
+
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        await importer.stop()
+
+        #expect(transcriber.calls == 3)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
     // QA-83: a scan imports supported recordings and leaves every other file alone.
     @Test func scanImportsSupportedRecordingsOnly() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
@@ -119,9 +248,10 @@ final class ImportFailingTranscriber: Transcriber {
         try Data("hello".utf8).write(to: notes)
         let (coordinator, store) = makeCoordinator(settleDelay: 0.1)
 
-        let reports = await coordinator.scanAndImport(folder: paths.inbox)
+        let scan = await coordinator.scanAndImport(folder: paths.inbox)
 
-        #expect(reports.map(\.lines) == [1])
+        #expect(scan.imported.map(\.lines) == [1])
+        #expect(scan.waiting == 0)
         #expect(try allLines(store).map(\.time) == [recordedAt])
         #expect(!FileManager.default.fileExists(atPath: wav.path))
         #expect(FileManager.default.fileExists(atPath: notes.path))
@@ -145,6 +275,21 @@ final class ImportFailingTranscriber: Transcriber {
 
         #expect(counter.value == 1)
     }
+
+    // F-7: stop() called from inside onChange returns instead of deadlocking on the watcher's queue.
+    @Test func folderWatcherCanBeStoppedFromInsideOnChange() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: paths.inbox, withIntermediateDirectories: true)
+        let watcher = DispatchFolderWatcher(url: paths.inbox, debounce: 0.1)
+        let counter = ImportCallCounter()
+        watcher.onChange = { watcher.stop(); counter.increment() }
+        try watcher.start()
+
+        try Data("x".utf8).write(to: paths.inbox.appending(path: "f.wav"))
+        try await Task.sleep(nanoseconds: 600_000_000)
+
+        #expect(counter.value == 1)
+    }
 }
 
 final class ImportCallCounter {
@@ -152,4 +297,12 @@ final class ImportCallCounter {
     private var count = 0
     var value: Int { lock.withLock { count } }
     func increment() { lock.withLock { count += 1 } }
+}
+
+/// A watcher the test fires by hand.
+final class FakeFolderWatcher: FolderWatcher {
+    var onChange: (() -> Void)?
+    func start() throws {}
+    func stop() {}
+    func fire() { onChange?() }
 }

@@ -3,6 +3,8 @@ import Foundation
 
 public enum ImportError: Error {
     case unreadable(URL)
+    /// The recording's lines are stored but the file could not be deleted.
+    case notDeleted(URL, any Error)
 }
 
 /// Decodes an audio file into 30-second, 16 kHz mono chunks labelled as imported.
