@@ -17,11 +17,12 @@ public protocol Embedder {
 
 /// Runs a spoken command in two phases.
 public protocol CommandRunner {
-    /// Invariant: `draft` never acts. It only returns a one-sentence plan of
-    /// what *would* be done; no tool is called and nothing changes.
+    /// Implementations must not act in `draft`; it only returns the plan — a
+    /// one-sentence description of what *would* be done. No tool is called.
     func draft(_ command: String) async throws -> String
 
-    /// Invariant: `execute` runs only after the user has explicitly said yes
-    /// to the draft. Callers must never invoke it on a timeout or a "no".
+    /// Callers must invoke `execute` only after the user has explicitly
+    /// confirmed the draft — never on a timeout or a "no". Nothing here
+    /// enforces that; the obligation is the caller's.
     func execute(_ draft: String) async throws -> String
 }

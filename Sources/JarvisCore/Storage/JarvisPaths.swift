@@ -24,11 +24,15 @@ public struct JarvisPaths {
     public var imports: URL { root.appending(path: "imports") }
     public var settingsFile: URL { root.appending(path: "settings.json") }
 
+    /// Every folder of the layout, in one place.
+    public var allFolders: [URL] {
+        [inbox, transcripts, notesHourly, notesDaily, notesWeekly,
+         index, prompts, models, imports]
+    }
+
     /// Creates every folder of the layout (and `root`); folders that already exist are left alone.
     public func ensureLayout() throws {
-        let folders = [inbox, transcripts, notesHourly, notesDaily, notesWeekly,
-                       index, prompts, models, imports]
-        for folder in folders {
+        for folder in allFolders {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         }
     }

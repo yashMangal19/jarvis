@@ -3,6 +3,6 @@
 .agentic/
 *.xcodeproj
 .DS_Store
-# The whisper model is not committed: 148 MB exceeds GitHub's 100 MB file limit.
-# The installer (T-28) downloads it instead.
+# Model binaries are never committed: the whisper model is ~148 MB, above GitHub's
+# 100 MB file limit. They are fetched at install time instead.
 models/*.bin
