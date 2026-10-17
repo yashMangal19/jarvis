@@ -1,4 +1,5 @@
-import AVFAudio
+import AVFoundation
+import Combine
 import Foundation
 import Testing
 import JarvisCore
@@ -46,45 +47,82 @@ import JarvisCore
         return (importer, store)
     }
 
-    func memoLines(_ store: TranscriptStore) throws -> [TranscriptLine] {
-        try store.lines(in: DateInterval(start: .distantPast, end: .distantFuture))
+    /// The lines within a day of `around`. A bounded window: the store reads one file per day in the
+    /// interval, so `.distantPast…distantFuture` alone took about 9 s.
+    func memoLines(_ store: TranscriptStore, around: Date) throws -> [TranscriptLine] {
+        try store.lines(in: DateInterval(start: around.addingTimeInterval(-86_400), duration: 2 * 86_400))
     }
 
-    func memoWaitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) async {
+    /// Polls `condition` every 50 ms; records an issue if it is still false after `timeout` seconds.
+    /// The deadline is generous: under a loaded full-suite run one import has taken over 9 s.
+    func memoWaitUntil(timeout: TimeInterval = 60, _ condition: () -> Bool,
+                       sourceLocation: SourceLocation = #_sourceLocation) async {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() && Date() < deadline { try? await Task.sleep(nanoseconds: 50_000_000) }
+        if !condition() { Issue.record("timed out after \(timeout) s", sourceLocation: sourceLocation) }
+    }
+
+    /// Starts `importer` over an empty Recordings folder, so its baseline is empty and every memo
+    /// written afterwards is new.
+    func startEmpty(_ importer: VoiceMemosImporter) async throws {
+        try FileManager.default.createDirectory(at: recordings, withIntermediateDirectories: true)
+        try await importer.start()
     }
 
     @Test func importsACopyAndLeavesTheOriginalUntouched() async throws {
+        let watcher = FakeFolderWatcher()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, store) = memoImporter(watcher: watcher, ledger: ledger)
+        try await startEmpty(importer)
         let original = try memoM4A()
         let bytes = try Data(contentsOf: original)
         // AVAudioFile stamps an m4a with its write time as creation metadata; a real memo carries its recording time.
         let recorded = await RecordingDate.of(original)
         let modified = try original.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        let ledger = ImportLedger(paths: paths)
-        let (importer, store) = memoImporter(ledger: ledger)
 
-        try importer.start()
+        watcher.fire()
         await memoWaitUntil { ledger.isImported(original) }
         await importer.stop()
 
         #expect(ledger.isImported(original))
         #expect(try Data(contentsOf: original) == bytes)
         #expect(try original.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == modified)
-        let lines = try memoLines(store)
+        let lines = try memoLines(store, around: recorded)
         #expect(lines.count == 1)
         #expect(lines.first?.time == TranscriptLine(time: recorded, label: .me, text: "").time)
         #expect(try FileManager.default.contentsOfDirectory(atPath: paths.imports.path).filter { $0.hasSuffix(".m4a") }.isEmpty)
     }
 
-    @Test func aSecondChangeImportsNothing() async throws {
-        let original = try memoM4A()
+    // F-2: recent Voice Memos also write QuickTime-container `.qta` memos; AVAudioFile decodes them.
+    @Test func aQuickTimeMemoIsImported() async throws {
         let watcher = FakeFolderWatcher()
         let transcriber = ImportFakeTranscriber()
         let ledger = ImportLedger(paths: paths)
         let (importer, _) = memoImporter(watcher: watcher, transcriber: transcriber, ledger: ledger)
+        try await startEmpty(importer)
+        let m4a = try memoM4A(name: "source.m4a")
+        let qta = recordings.appending(path: "20261017 101500-QT12CD34.qta")
+        guard #available(macOS 15, *) else { return }
+        let export = try #require(AVAssetExportSession(asset: AVURLAsset(url: m4a), presetName: AVAssetExportPresetPassthrough))
+        try await export.export(to: qta, as: .mov) // a QuickTime ('qt  ') container, as .qta is
+        try ledger.recordBaseline([m4a]) // only the .qta is new
 
-        try importer.start()
+        watcher.fire()
+        await memoWaitUntil { ledger.isImported(qta) }
+        await importer.stop()
+
+        #expect(transcriber.calls == 1)
+    }
+
+    @Test func aSecondChangeImportsNothing() async throws {
+        let watcher = FakeFolderWatcher()
+        let transcriber = ImportFakeTranscriber()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, _) = memoImporter(watcher: watcher, transcriber: transcriber, ledger: ledger)
+        try await startEmpty(importer)
+        let original = try memoM4A()
+
+        watcher.fire()
         await memoWaitUntil { ledger.isImported(original) }
         watcher.fire()
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -92,6 +130,92 @@ import JarvisCore
 
         #expect(transcriber.calls == 1)
         #expect(ImportLedger(paths: paths).isImported(original))
+    }
+
+    // Backlog decision A: memos already in the folder the first time it is readable are a baseline,
+    // recorded as seen and never imported; only memos that appear afterwards are imported.
+    @Test func memosAlreadyThereOnFirstStartAreABaselineAndOnlyLaterOnesImport() async throws {
+        let old = [try memoM4A(name: "old-1.m4a"), try memoM4A(name: "old-2.m4a")]
+        let watcher = FakeFolderWatcher()
+        let transcriber = ImportFakeTranscriber()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, _) = memoImporter(watcher: watcher, transcriber: transcriber, ledger: ledger)
+
+        try await importer.start()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(transcriber.calls == 0)
+        #expect(old.allSatisfy { ledger.isImported($0) })
+
+        let later = try memoM4A(name: "later.m4a")
+        watcher.fire()
+        await memoWaitUntil { ledger.isImported(later) }
+        await importer.stop()
+        #expect(transcriber.calls == 1)
+
+        // A relaunch over a fresh ledger read from the same file imports nothing old, and still imports
+        // a memo that appears after it: one call, not three, so the file kept both the baseline and the import.
+        let relaunchWatcher = FakeFolderWatcher()
+        let relaunched = ImportFakeTranscriber()
+        let relaunchLedger = ImportLedger(paths: paths)
+        let (again, _) = memoImporter(watcher: relaunchWatcher, transcriber: relaunched, ledger: relaunchLedger)
+        try await again.start()
+        let afterRelaunch = try memoM4A(name: "after-relaunch.m4a")
+        relaunchWatcher.fire()
+        await memoWaitUntil { relaunchLedger.isImported(afterRelaunch) }
+        await again.stop()
+        #expect(relaunched.calls == 1)
+    }
+
+    // Backlog decision A, folder absent: with no Recordings folder at first start the baseline is empty,
+    // so the first memo that syncs (and creates the folder) is imported, not taken as a baseline later.
+    @Test func aMissingFolderAtFirstStartTakesAnEmptyBaselineSoTheFirstMemoImports() async throws {
+        let watcher = FakeFolderWatcher()
+        let transcriber = ImportFakeTranscriber()
+        let ledger = ImportLedger(paths: paths)
+        var access = VoiceMemosAccess.absent
+        let store = TranscriptStore(paths: paths)
+        let coordinator = ImportCoordinator(pipeline: CapturePipeline(transcriber: transcriber, store: store),
+                                            onImported: { _ in })
+        let importer = VoiceMemosImporter(locator: { access }, watcherFactory: { _ in watcher },
+                                          coordinator: coordinator, ledger: ledger, paths: paths,
+                                          settleDelay: 0.05, retryDelay: 60)
+
+        try await importer.start()
+        let first = try memoM4A(name: "first.m4a")
+        access = .readable(recordings)
+        try await importer.start() // re-probed once the first memo has synced
+        watcher.fire()
+        await memoWaitUntil(timeout: 10) { ledger.isImported(first) }
+        await importer.stop()
+        #expect(transcriber.calls == 1)
+
+        let relaunched = ImportFakeTranscriber()
+        let (again, _) = memoImporter(transcriber: relaunched, ledger: ImportLedger(paths: paths))
+        try await again.start()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        await again.stop()
+        #expect(relaunched.calls == 0)
+    }
+
+    // A ledger written before baselines existed ({ path: { size, mtime } }) keeps its memos and still
+    // takes a baseline of everything else already there.
+    @Test func aLedgerWithoutABaselineMarkerTakesOneOnStart() async throws {
+        let imported = try memoM4A(name: "imported.m4a")
+        let present = try memoM4A(name: "present.m4a")
+        try FileManager.default.createDirectory(at: paths.index, withIntermediateDirectories: true)
+        try Data(#"{"\#(imported.standardizedFileURL.path)":{"size":10,"mtime":1792000000}}"#.utf8)
+            .write(to: paths.index.appending(path: "imported.json"))
+        let transcriber = ImportFakeTranscriber()
+        let (importer, _) = memoImporter(transcriber: transcriber, ledger: ImportLedger(paths: paths))
+
+        try await importer.start()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        await importer.stop()
+
+        #expect(transcriber.calls == 0)
+        let reread = ImportLedger(paths: paths)
+        #expect(reread.isImported(imported))
+        #expect(reread.isImported(present))
     }
 
     @Test func anUnreadableFolderAsksForFullDiskAccess() async throws {
@@ -104,9 +228,37 @@ import JarvisCore
         #expect(VoiceMemosLocator.probe([missing]) == .absent)
 
         let (importer, _) = memoImporter(access: .unreadable(recordings))
-        try importer.start()
+        try await importer.start()
         #expect(importer.needsFullDiskAccess)
         await importer.stop()
+    }
+
+    // F-1: TCC refuses even the lookup of a protected folder, so a refusal is read from the listing's
+    // own error, never from an existence check first.
+    @Test func aRefusedListingIsUnreadableEvenWhenTheFolderCannotBeLookedUp() {
+        let missing = root.appending(path: "nowhere/Recordings")
+        let protected = root.appending(path: "protected/Recordings")
+        let list: (URL) throws -> [String] = { url in
+            throw url == protected ? POSIXError(.EPERM) : POSIXError(.ENOENT)
+        }
+
+        #expect(VoiceMemosLocator.probe([missing, protected], list: list) == .unreadable(protected))
+        #expect(VoiceMemosLocator.probe([missing], list: list) == .absent)
+        #expect(VoiceMemosLocator.probe([protected], list: { _ in throw POSIXError(.EACCES) }) == .unreadable(protected))
+    }
+
+    // F-6: the menu observes needsFullDiskAccess, so it changes on the main thread even when start()
+    // is awaited from elsewhere.
+    @Test func fullDiskAccessIsPublishedOnTheMainThread() async throws {
+        let (importer, _) = memoImporter(access: .unreadable(recordings))
+        var onMain: [Bool] = []
+        let subscription = importer.$needsFullDiskAccess.dropFirst().sink { _ in onMain.append(Thread.isMainThread) }
+        defer { subscription.cancel() }
+
+        try await importer.start()
+        await importer.stop()
+
+        #expect(onMain == [true])
     }
 
     @Test func probeTakesTheFirstFolderThatExists() throws {
@@ -118,13 +270,14 @@ import JarvisCore
     }
 
     @Test func anUndecodableMemoIsRecordedAndLeavesNoCopy() async throws {
-        try FileManager.default.createDirectory(at: recordings, withIntermediateDirectories: true)
+        let watcher = FakeFolderWatcher()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger)
+        try await startEmpty(importer)
         let original = recordings.appending(path: "broken.m4a")
         try Data("not audio".utf8).write(to: original)
-        let ledger = ImportLedger(paths: paths)
-        let (importer, _) = memoImporter(ledger: ledger)
 
-        try importer.start()
+        watcher.fire()
         await memoWaitUntil { ledger.isImported(original) }
         await importer.stop()
 
@@ -133,13 +286,56 @@ import JarvisCore
         #expect(FileManager.default.subpaths(atPath: paths.imports.path)?.filter { $0.hasSuffix(".m4a") } == [])
     }
 
+    // F-5: when failed/<name> is taken the copy lands under another name; that copy is the one removed,
+    // and the file already there is left alone.
+    @Test func anUndecodableMemoRemovesItsOwnFailedCopyWhenTheNameIsTaken() async throws {
+        let failed = paths.imports.appending(path: "failed")
+        try FileManager.default.createDirectory(at: failed, withIntermediateDirectories: true)
+        try Data("older".utf8).write(to: failed.appending(path: "broken.m4a"))
+        let watcher = FakeFolderWatcher()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger)
+        try await startEmpty(importer)
+        let original = recordings.appending(path: "broken.m4a")
+        try Data("not audio".utf8).write(to: original)
+
+        watcher.fire()
+        await memoWaitUntil { ledger.isImported(original) }
+        await importer.stop()
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: failed.path) == ["broken.m4a"])
+        #expect(try Data(contentsOf: failed.appending(path: "broken.m4a")) == Data("older".utf8))
+    }
+
+    // F-5: an undecodable memo whose copy cannot be moved to failed/ is still recorded, so it is not
+    // retried on every change, and its copy is still removed.
+    @Test func anUndecodableMemoIsRecordedEvenWhenItsCopyCannotBeMoved() async throws {
+        try FileManager.default.createDirectory(at: paths.imports, withIntermediateDirectories: true)
+        try Data("a file where the folder would go".utf8).write(to: paths.imports.appending(path: "failed"))
+        let watcher = FakeFolderWatcher()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger)
+        try await startEmpty(importer)
+        let original = recordings.appending(path: "broken.m4a")
+        try Data("not audio".utf8).write(to: original)
+
+        watcher.fire()
+        await memoWaitUntil(timeout: 2) { ledger.isImported(original) }
+        await importer.stop()
+
+        #expect(ledger.isImported(original))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: paths.imports.path).filter { $0.hasSuffix(".m4a") }.isEmpty)
+    }
+
     @Test func aMemoWithNothingStoredIsTriedAgainLater() async throws {
-        let original = try memoM4A()
+        let watcher = FakeFolderWatcher()
         let transcriber = ImportFailingTranscriber(succeeding: 0)
         let ledger = ImportLedger(paths: paths)
-        let (importer, _) = memoImporter(transcriber: transcriber, ledger: ledger)
+        let (importer, _) = memoImporter(watcher: watcher, transcriber: transcriber, ledger: ledger)
+        try await startEmpty(importer)
+        let original = try memoM4A()
 
-        try importer.start()
+        watcher.fire()
         await memoWaitUntil { transcriber.calls > 0 }
         await importer.stop()
 

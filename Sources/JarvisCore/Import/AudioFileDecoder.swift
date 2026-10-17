@@ -5,6 +5,8 @@ public enum ImportError: Error {
     case unreadable(URL)
     /// The recording's lines are stored but the file could not be deleted.
     case notDeleted(URL, any Error)
+    /// The recording could not be decoded; it was moved to `movedTo`, or left in place when the move failed.
+    case undecodable(movedTo: URL?, any Error)
 }
 
 /// Decodes an audio file into 30-second, 16 kHz mono chunks labelled as imported.

@@ -3,9 +3,17 @@ import Foundation
 /// Imports Voice Memos as they sync to the Mac: each new memo is copied into `~/Jarvis/imports`,
 /// the copy is transcribed and deleted, and the memo is recorded in the ledger so it is imported once.
 /// Originals are only ever listed and read by the copy; never opened for writing, moved or deleted.
+///
+/// The first time the folder is readable, the memos already in it are recorded as a baseline and not
+/// imported (backlog decision A); only memos that appear afterwards are. A folder absent at first
+/// start takes an empty baseline, so the memo that later creates it is imported.
 public final class VoiceMemosImporter: ObservableObject {
     /// True when the recordings folder exists but cannot be read without Full Disk Access.
     @Published public private(set) var needsFullDiskAccess = false
+
+    /// `.m4a`, and the QuickTime-container `.qta` recent Voice Memos versions also write (AVAudioFile
+    /// decodes a single-track one; a real synced `.qta` is unverified until one reaches this Mac).
+    static let memoExtensions: Set<String> = ["m4a", "qta"]
 
     private let locator: () -> VoiceMemosAccess
     private let watcherFactory: (URL) -> any FolderWatcher
@@ -13,16 +21,11 @@ public final class VoiceMemosImporter: ObservableObject {
     private let ledger: ImportLedger
     private let imports: URL
     private let settleDelay: TimeInterval
-    private let retryDelay: TimeInterval
-    private let maxRetries: Int
     private let lock = NSLock()
     private var watcher: (any FolderWatcher)?
     private var folder: URL?
-    private var scanTask: Task<Void, Never>?
-    private var retryTask: Task<Void, Never>?
-    private var rescan = false
-    private var retries = 0
-    private var stopped = false
+    /// Set once at the end of `init`; it calls back into `self`, so it cannot be built before.
+    private var scheduler: ScanScheduler!
 
     /// A memo is taken once its size is unchanged across two looks `settleDelay` seconds apart.
     /// A scan that leaves a memo behind (still syncing, or failed) schedules another `retryDelay`
@@ -37,97 +40,58 @@ public final class VoiceMemosImporter: ObservableObject {
         self.ledger = ledger
         self.imports = paths.imports
         self.settleDelay = settleDelay
-        self.retryDelay = retryDelay
-        self.maxRetries = maxRetries
+        scheduler = ScanScheduler(retryDelay: retryDelay, maxRetries: maxRetries) { [weak self] in
+            await self?.importNew() ?? 0
+        }
     }
 
     /// Probes the folder and, when it is readable, imports what is new now and on every change.
     /// Nothing re-probes on its own: call again after Full Disk Access is granted or a first memo syncs.
-    public func start() throws {
+    /// `needsFullDiskAccess` changes on the main actor, so a SwiftUI view can observe it.
+    public func start() async throws {
         let access = locator()
-        needsFullDiskAccess = if case .unreadable = access { true } else { false }
+        let needsAccess = if case .unreadable = access { true } else { false }
+        await MainActor.run { needsFullDiskAccess = needsAccess }
+        // No folder yet means no memo has synced: the baseline is empty, so the first one imports.
+        // An unreadable folder may hold memos from before access was granted, so it waits for a read.
+        if case .absent = access, !ledger.hasBaseline { try? ledger.recordBaseline([]) }
         guard case .readable(let folder) = access else { return }
+        if !ledger.hasBaseline {
+            // A ledger that cannot be written keeps the baseline in memory; a relaunch takes it again.
+            try? ledger.recordBaseline(Array(memos(in: folder).keys))
+        }
         let watcher = watcherFactory(folder)
         lock.withLock {
             self.watcher?.stop()
             self.watcher = watcher
             self.folder = folder
-            stopped = false
         }
-        watcher.onChange = { [weak self] in self?.folderChanged() }
+        watcher.onChange = { [weak self] in self?.scheduler.folderChanged() }
         try watcher.start()
-        scan()
+        scheduler.start()
     }
 
     /// Stops watching and retrying, cancels the scan in flight and returns once it has ended.
     public func stop() async {
-        let (watcher, scan) = lock.withLock { () -> ((any FolderWatcher)?, Task<Void, Never>?) in
-            stopped = true
-            retryTask?.cancel()
-            retryTask = nil
-            return (self.watcher, scanTask)
-        }
+        let watcher = lock.withLock { self.watcher }
         watcher?.stop()
         watcher?.onChange = nil
-        scan?.cancel()
-        await scan?.value
-        lock.withLock { scanTask = nil; rescan = false }
-    }
-
-    private func folderChanged() {
-        lock.withLock { retries = 0 }
-        scan()
-    }
-
-    /// One scan at a time, so a memo is never imported twice; a change during a scan runs one more.
-    /// Same scheduling as `InboxImporter`.
-    private func scan() {
-        lock.withLock {
-            guard !stopped, let folder else { return }
-            if scanTask != nil { rescan = true; return }
-            retryTask?.cancel()
-            retryTask = nil
-            scanTask = Task { await self.runScans(folder) }
-        }
-    }
-
-    private func runScans(_ folder: URL) async {
-        var again = true
-        while again {
-            let waiting = await importNew(from: folder)
-            again = lock.withLock {
-                if Task.isCancelled || stopped { return false }
-                if rescan { rescan = false; return true }
-                scanTask = nil
-                if waiting == 0 { retries = 0 } else if retries < maxRetries {
-                    retries += 1
-                    let delay = UInt64(retryDelay * 1_000_000_000)
-                    retryTask = Task { [weak self] in
-                        try? await Task.sleep(nanoseconds: delay)
-                        if !Task.isCancelled { self?.scan() }
-                    }
-                }
-                return false
-            }
-        }
+        await scheduler.stop()
     }
 
     /// Imports every new, size-stable memo; returns how many new memos are left for a later scan.
-    private func importNew(from folder: URL) async -> Int {
-        let before = newMemos(in: folder)
-        try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
-        let after = newMemos(in: folder)
-        var waiting = 0
-        for (original, size) in after.sorted(by: { $0.key.path < $1.key.path }) {
+    private func importNew() async -> Int {
+        guard let folder = lock.withLock({ self.folder }) else { return 0 }
+        for original in await ScanScheduler.settledFiles(after: settleDelay, { newMemos(in: folder) }) {
             if Task.isCancelled { break }
-            if size > 0, before[original] == size, await importCopy(of: original) { continue }
-            waiting += 1
+            await importCopy(of: original)
         }
-        return waiting
+        return newMemos(in: folder).count
     }
 
-    /// True once `original` is done with (imported, or found undecodable); false to try again later.
-    private func importCopy(of original: URL) async -> Bool {
+    /// Records `original` once it is done with (imported, or found undecodable); leaves it for a later
+    /// scan when nothing of it was stored.
+    private func importCopy(of original: URL) async {
         let fileManager = FileManager.default
         let copy = imports.appending(path: original.lastPathComponent)
         do {
@@ -135,34 +99,31 @@ public final class VoiceMemosImporter: ObservableObject {
             try? fileManager.removeItem(at: copy) // left by an earlier failed try
             try fileManager.copyItem(at: original, to: copy)
         } catch {
-            return false
+            return
         }
         do {
             try await coordinator.importFile(copy)
         } catch ImportError.notDeleted {
             try? fileManager.removeItem(at: copy) // lines are stored; only the copy's delete failed
+        } catch ImportError.undecodable(let movedTo, _) {
+            // The original stays in Voice Memos, so Jarvis's failed copy is not kept, wherever it is.
+            try? fileManager.removeItem(at: movedTo ?? copy)
         } catch {
             if fileManager.fileExists(atPath: copy.path) {
                 try? fileManager.removeItem(at: copy) // nothing stored: the original is tried again
-                return false
+                return
             }
-            // The copy is gone: a later chunk failed after lines were stored (it was deleted), or it
-            // could not be decoded and the coordinator moved it to `failed/`. The original stays in
-            // Voice Memos, so Jarvis's failed copy is not kept.
-            try? fileManager.removeItem(at: imports.appending(path: "failed").appending(path: copy.lastPathComponent))
+            // The copy is gone: a later chunk failed after lines were stored, and it was deleted.
         }
         // A ledger that cannot be written still holds the memo in memory; it re-imports after a relaunch.
         try? ledger.record(original)
-        return true
+    }
+
+    private func memos(in folder: URL) -> [URL: Int] {
+        ScanScheduler.sizes(in: folder) { Self.memoExtensions.contains($0.pathExtension.lowercased()) }
     }
 
     private func newMemos(in folder: URL) -> [URL: Int] {
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles)) ?? []
-        var sizes: [URL: Int] = [:]
-        for url in files where url.pathExtension.lowercased() == "m4a" && !ledger.isImported(url) {
-            sizes[url] = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        }
-        return sizes
+        memos(in: folder).filter { !ledger.isImported($0.key) }
     }
 }

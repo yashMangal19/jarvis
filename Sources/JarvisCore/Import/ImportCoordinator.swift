@@ -40,7 +40,8 @@ public final class ImportCoordinator {
     /// - a later chunk failing after a line is stored still deletes the file (a retry cannot
     ///   duplicate lines), and the stored part (start to the end of the last stored chunk) is reported;
     /// - a failure before any line is stored keeps the file for the next scan;
-    /// - a file that cannot be decoded is moved to `failed/` beside it, so it is not retried forever;
+    /// - a file that cannot be decoded is moved to `failed/` beside it, so it is not retried forever,
+    ///   and `ImportError.undecodable` says where it went;
     /// - a failed delete throws `ImportError.notDeleted`, and the file is never imported again.
     @discardableResult
     public func importFile(_ url: URL) async throws -> ImportReport {
@@ -48,8 +49,7 @@ public final class ImportCoordinator {
         let recordedAt = await RecordingDate.of(url)
         let chunks: [AudioChunk]
         do { chunks = try AudioFileDecoder.chunks(from: url, recordedAt: recordedAt) } catch {
-            moveToFailed(url)
-            throw error
+            throw ImportError.undecodable(movedTo: moveToFailed(url), error)
         }
         var lines = 0
         var storedEnd = recordedAt
@@ -78,11 +78,8 @@ public final class ImportCoordinator {
     /// A file that fails is skipped; the others still import. Stops between files when cancelled.
     @discardableResult
     public func scanAndImport(folder: URL) async -> ScanReport {
-        let before = sizes(in: folder)
-        try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
-        let after = sizes(in: folder)
         var reports: [ImportReport] = []
-        for (url, size) in after.sorted(by: { $0.key.path < $1.key.path }) where size > 0 && before[url] == size {
+        for url in await ScanScheduler.settledFiles(after: settleDelay, { sizes(in: folder) }) {
             if Task.isCancelled { break }
             let stamp = FileStamp(url)
             if lock.withLock({ undeleted.contains(stamp) }) {
@@ -104,24 +101,20 @@ public final class ImportCoordinator {
         }
     }
 
-    private func moveToFailed(_ url: URL) {
+    /// Where `url` now is, or nil when the move failed and it is still in place.
+    private func moveToFailed(_ url: URL) -> URL? {
         let failed = url.deletingLastPathComponent().appending(path: "failed")
         try? FileManager.default.createDirectory(at: failed, withIntermediateDirectories: true)
         var target = failed.appending(path: url.lastPathComponent)
         if FileManager.default.fileExists(atPath: target.path) {
             target = failed.appending(path: "\(UUID().uuidString)-\(url.lastPathComponent)")
         }
-        try? FileManager.default.moveItem(at: url, to: target)
+        do { try FileManager.default.moveItem(at: url, to: target) } catch { return nil }
+        return target
     }
 
     private func sizes(in folder: URL) -> [URL: Int] {
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: [.fileSizeKey], options: .skipsHiddenFiles)) ?? []
-        var sizes: [URL: Int] = [:]
-        for url in files where AudioFileDecoder.supportedExtensions.contains(url.pathExtension.lowercased()) {
-            sizes[url] = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
-        }
-        return sizes
+        ScanScheduler.sizes(in: folder) { AudioFileDecoder.supportedExtensions.contains($0.pathExtension.lowercased()) }
     }
 }
 
