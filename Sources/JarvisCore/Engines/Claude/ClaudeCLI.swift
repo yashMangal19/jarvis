@@ -16,7 +16,9 @@ public struct ToolDescriptor: Equatable {
 
 /// The Claude Code command-line tool, run as a child process.
 public struct ClaudeCLI {
-    /// Ids accepted by `--tools` (the built-in set); anything else in an allow list is an MCP tool.
+    /// A curated subset of the built-in tools `--tools` accepts — the ones a spoken command plausibly needs. Others
+    /// (TodoWrite, Skill, the Bash output/kill tools, …) are left out on purpose and so can never be ticked. Anything
+    /// else in an allow list is an MCP server.
     public static let builtInTools = ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep",
                                       "WebFetch", "WebSearch", "Task"]
 
@@ -38,48 +40,25 @@ public struct ClaudeCLI {
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    /// Runs `claude` with `stdin` piped in; stdout on exit 0, else `ClaudeError.exit`. Past `timeout` the child is
-    /// terminated and `ClaudeError.timeout` thrown.
+    /// On every `-p` run: no user, project or local settings file (so no allow rules, default mode or hooks of the
+    /// user's), and a permission mode that denies whatever is not explicitly allowed.
+    static let pinned = ["--setting-sources", "", "--permission-mode", "dontAsk"]
+
+    /// Every `claude` run starts here: an empty folder Jarvis owns, so no `.claude/` settings, `CLAUDE.md` or
+    /// `.mcp.json` from wherever the app was launched (`/` from Finder) is picked up, and relative paths land nowhere.
+    static let workingDirectory = FileManager.default.temporaryDirectory.appending(path: "jarvis-claude")
+
+    /// Runs `claude` with `stdin` piped in; stdout on exit 0, else `ClaudeError.exit`. Past `timeout` the child (and
+    /// its process group) is terminated and `ClaudeError.timeout` thrown.
     public func run(arguments: [String], stdin: String, timeout: TimeInterval) async throws -> String {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        let input = Pipe(), stdout = Pipe(), stderr = Pipe()
-        process.standardInput = input
-        process.standardOutput = stdout
-        process.standardError = stderr
-        // Awaited rather than `waitUntilExit()`, which blocks a cooperative thread.
-        let (exit, exited) = AsyncStream.makeStream(of: Int32.self)
-        process.terminationHandler = { exited.yield($0.terminationStatus); exited.finish() }
-        try process.run()
-        let deadline = Date().addingTimeInterval(timeout)
-        let timer = Task {
-            try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-            process.terminate()
+        try FileManager.default.createDirectory(at: Self.workingDirectory, withIntermediateDirectories: true)
+        let output = try await ChildProcess.run(executable, arguments: arguments, stdin: Data(stdin.utf8),
+                                                directory: Self.workingDirectory, timeout: timeout)
+        if output.timedOut { throw ClaudeError.timeout }
+        guard output.status == 0 else {
+            throw ClaudeError.exit(code: output.status, stderr: String(decoding: output.stderr, as: UTF8.self))
         }
-        defer { timer.cancel() }
-        // Cancelling terminates the child, which closes its pipes and ends the reads below.
-        return try await withTaskCancellationHandler {
-            // Written off-thread and closed, so a child that reads slowly cannot block us and sees EOF.
-            Task.detached {
-                try? input.fileHandleForWriting.write(contentsOf: Data(stdin.utf8))
-                try? input.fileHandleForWriting.close()
-            }
-            // Both pipes are drained concurrently so a chatty stderr cannot block the child.
-            async let out = Task.detached { stdout.fileHandleForReading.readDataToEndOfFile() }.value
-            async let err = Task.detached { stderr.fileHandleForReading.readDataToEndOfFile() }.value
-            let (outData, errData) = await (out, err)
-            var status: Int32 = -1
-            for await code in exit { status = code }
-            try Task.checkCancellation()
-            if process.terminationReason == .uncaughtSignal, Date() >= deadline { throw ClaudeError.timeout }
-            guard status == 0 else {
-                throw ClaudeError.exit(code: status, stderr: String(decoding: errData, as: UTF8.self))
-            }
-            return String(decoding: outData, as: UTF8.self)
-        } onCancel: {
-            process.terminate()
-        }
+        return String(decoding: output.stdout, as: UTF8.self)
     }
 
     /// The built-in tools, then one entry per MCP server from `claude mcp list` (it lists servers, not their
@@ -88,10 +67,19 @@ public struct ClaudeCLI {
         let builtIns = Self.builtInTools.map {
             ToolDescriptor(id: $0, title: $0, isShell: ToolIDs.shell.contains($0), isFileEdit: ToolIDs.fileEdits.contains($0))
         }
-        guard let listing = try? await run(arguments: ["mcp", "list"], stdin: "", timeout: 60) else { return builtIns }
+        guard let listing = try? await mcpListing() else { return builtIns }
         return builtIns + Self.mcpServers(in: listing).map {
             ToolDescriptor(id: "mcp__\(Self.toolSegment($0))", title: $0, isShell: false, isFileEdit: false)
         }
+    }
+
+    /// `mcp__<server>` for every MCP server `claude mcp list` shows.
+    func mcpServerIDs() async throws -> [String] {
+        Self.mcpServers(in: try await mcpListing()).map { "mcp__\(Self.toolSegment($0))" }
+    }
+
+    private func mcpListing() async throws -> String {
+        try await run(arguments: ["mcp", "list"], stdin: "", timeout: 60)
     }
 
     /// Server names from `mcp list` lines shaped `<name>: <url or command> - <status>`. A name may hold `:` and

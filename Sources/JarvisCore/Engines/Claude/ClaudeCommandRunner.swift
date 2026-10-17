@@ -2,11 +2,21 @@ import Foundation
 
 /// Spoken commands through `claude -p`, in the two phases `CommandRunner` describes.
 ///
-/// `draft` cannot act: every built-in tool is removed (`--tools ""`), no MCP server is loaded
-/// (`--strict-mcp-config` with no `--mcp-config`), and it runs in plan mode.
-/// `execute` gets only the tools ticked in Settings: built-ins outside the ticked list are removed with `--tools`,
-/// and with `--permission-prompts none` anything not on `--allowedTools` is denied rather than asked about.
-/// Like the protocol, nothing here stops a caller running `execute` without a yes.
+/// Every run is pinned so the user's own Claude Code configuration cannot widen it (flags as listed by
+/// `claude --help`, 2.1.302): `--setting-sources ""` loads no user, project or local settings file, so none of their
+/// `permissions.allow` rules, `defaultMode` or hooks apply; `--permission-mode dontAsk` denies anything not already
+/// allowed; and `ClaudeCLI` starts it in an empty Jarvis-owned folder, so no project `.claude/` or `.mcp.json` applies.
+///
+/// `draft` cannot act: every built-in tool is removed (`--tools ""`) and no MCP server is loaded
+/// (`--strict-mcp-config` with no `--mcp-config`).
+/// `execute` can run only the tools ticked in Settings: built-ins outside the ticked list are removed with `--tools`,
+/// the only allow rules are `--allowedTools`, and with `--permission-prompts none` anything else is denied rather
+/// than asked about. With no MCP server ticked none is loaded; with one ticked every server is loaded (a claude.ai
+/// connector cannot be passed through `--mcp-config`), so each unticked server `claude mcp list` shows is also put
+/// on `--disallowedTools`, and if that list cannot be read the command is refused.
+///
+/// Not enforced here: managed (admin policy) settings still apply and could allow more; a server `mcp list` did not
+/// show is denied by `dontAsk` alone. Like the protocol, nothing here stops a caller running `execute` without a yes.
 public struct ClaudeCommandRunner: CommandRunner {
     private let cli: ClaudeCLI
     private let settings: () -> Settings
@@ -20,9 +30,9 @@ public struct ClaudeCommandRunner: CommandRunner {
     }
 
     public func draft(_ command: String) async throws -> String {
-        let plan = try await cli.run(arguments: ["-p", "--output-format", "text", "--tools", "", "--strict-mcp-config",
-                                                 "--permission-mode", "plan", "--no-session-persistence",
-                                                 "--append-system-prompt", Self.draftInstruction],
+        let plan = try await cli.run(arguments: ["-p", "--output-format", "text"] + ClaudeCLI.pinned
+                                         + ["--tools", "", "--strict-mcp-config", "--no-session-persistence",
+                                            "--append-system-prompt", Self.draftInstruction],
                                      stdin: command, timeout: 120)
         return plan.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -31,11 +41,17 @@ public struct ClaudeCommandRunner: CommandRunner {
     public func execute(_ draft: String) async throws -> String {
         let ticked = settings().allowedTools
         let builtIns = ticked.filter(ClaudeCLI.builtInTools.contains)
-        var arguments = ["-p", "--output-format", "json", "--permission-prompts", "none", "--no-session-persistence",
-                         "--tools", builtIns.joined(separator: ","), "--allowedTools", ticked.joined(separator: ",")]
-        if builtIns.count == ticked.count { arguments.append("--strict-mcp-config") }
+        var arguments = ["-p", "--output-format", "json", "--permission-prompts", "none", "--no-session-persistence"]
+            + ClaudeCLI.pinned
         let output: String
         do {
+            if builtIns.count == ticked.count {
+                arguments.append("--strict-mcp-config")
+            } else {
+                let unticked = try await cli.mcpServerIDs().filter { !ticked.contains($0) }
+                if !unticked.isEmpty { arguments += ["--disallowedTools", unticked.joined(separator: ",")] }
+            }
+            arguments += ["--tools", builtIns.joined(separator: ","), "--allowedTools", ticked.joined(separator: ",")]
             // The draft goes on stdin, not as the positional prompt, so a draft starting with "-" is not read as a flag.
             output = try await cli.run(arguments: arguments, stdin: draft, timeout: 180)
         } catch is CancellationError {
@@ -51,6 +67,8 @@ public struct ClaudeCommandRunner: CommandRunner {
         return text
     }
 
+    /// A failed run names no tool, so it cannot say which one Settings refused (the blueprint's wording); it says
+    /// that Claude Code failed instead.
     static let failed = "I couldn't do that — Claude Code stopped with an error."
 
     /// `mcp__slack__send_message` → `slack send_message`, so a denial reads aloud as words.

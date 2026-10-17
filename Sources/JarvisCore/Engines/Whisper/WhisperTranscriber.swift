@@ -84,38 +84,16 @@ public final class WhisperTranscriber: Transcriber {
 
     // Flags confirmed with `whisper-cli --help` (whisper.cpp 1.9.5): -nt no timestamps, -np results only.
     private func runCLI(binary: URL, model: URL, wav: URL) async throws -> String {
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = ["-m", model.path, "-f", wav.path, "-l", language, "-nt", "-np"]
-        let stdout = Pipe(), stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        // Awaited rather than `waitUntilExit()`, which blocks a cooperative thread.
-        let (exit, exited) = AsyncStream.makeStream(of: Int32.self)
-        process.terminationHandler = { exited.yield($0.terminationStatus); exited.finish() }
-        try process.run()
-        // Cancelling terminates the child, which closes its pipes and ends the reads below.
-        return try await withTaskCancellationHandler {
-            // Both pipes are drained concurrently so a chatty stderr cannot block the child.
-            async let out = Task.detached { stdout.fileHandleForReading.readDataToEndOfFile() }.value
-            async let err = Task.detached { stderr.fileHandleForReading.readDataToEndOfFile() }.value
-            let (outData, errData) = await (out, err)
-            var status: Int32 = -1
-            for await code in exit { status = code }
-            try Task.checkCancellation()
-            guard status == 0 else {
-                throw WhisperError.cliFailed(status: status, stderr: String(decoding: errData, as: UTF8.self))
-            }
-            return String(decoding: outData, as: UTF8.self)
-        } onCancel: {
-            process.terminate()
+        let output = try await ChildProcess.run(binary, arguments: ["-m", model.path, "-f", wav.path, "-l", language,
+                                                                    "-nt", "-np"])
+        guard output.status == 0 else {
+            throw WhisperError.cliFailed(status: output.status, stderr: String(decoding: output.stderr, as: UTF8.self))
         }
+        return String(decoding: output.stdout, as: UTF8.self)
     }
 
     /// Drops bracket-only tokens (`[BLANK_AUDIO]`, `[Music]`), joins lines, collapses whitespace.
     static func clean(_ raw: String) -> String {
-        raw.replacingOccurrences(of: #"\[[^\]]*\]"#, with: " ", options: .regularExpression)
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
+        TranscriptText.clean(raw)
     }
 }

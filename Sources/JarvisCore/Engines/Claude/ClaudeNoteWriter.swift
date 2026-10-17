@@ -1,6 +1,7 @@
 import Foundation
 
-/// Writes notes with `claude -p`: prompt and transcript on stdin, no tools, nothing kept in Claude's session history.
+/// Writes notes with `claude -p`: prompt and transcript on stdin, no tools, none of the user's
+/// Claude Code settings (`ClaudeCLI.pinned`), nothing kept in Claude's session history.
 public struct ClaudeNoteWriter: NoteWriter {
     private let cli: ClaudeCLI
 
@@ -11,8 +12,8 @@ public struct ClaudeNoteWriter: NoteWriter {
     public var displayName: String { "Claude" }
 
     public func note(from transcript: String, prompt: String) async throws -> String {
-        try await cli.run(arguments: ["-p", "--output-format", "text", "--tools", "", "--strict-mcp-config",
-                                      "--no-session-persistence"],
+        try await cli.run(arguments: ["-p", "--output-format", "text"] + ClaudeCLI.pinned
+                              + ["--tools", "", "--strict-mcp-config", "--no-session-persistence"],
                           stdin: "\(prompt)\n\n\(transcript)", timeout: 120)
     }
 }

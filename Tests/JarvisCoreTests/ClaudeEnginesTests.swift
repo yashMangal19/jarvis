@@ -7,9 +7,10 @@ import Testing
     private var claudeTestDirs: [URL] = []
     deinit { claudeTestDirs.forEach { try? FileManager.default.removeItem(at: $0) } }
 
-    /// A fake `claude` in a fresh temp dir: records each argument on its own line in `args`, stdin in `stdin`,
-    /// prints `stdout` and exits with `status`.
-    private func claudeTestFake(stdout: String = "", status: Int32 = 0, extra: String = "") throws -> (ClaudeCLI, URL) {
+    /// A fake `claude` in a fresh temp dir: records each argument on its own line in `args`, its working directory in
+    /// `pwd`, stdin in `stdin`, prints `stdout` and exits with `status`. `before` runs ahead of reading stdin.
+    private func claudeTestFake(stdout: String = "", status: Int32 = 0, before: String = "",
+                                extra: String = "") throws -> (ClaudeCLI, URL) {
         let dir = FileManager.default.temporaryDirectory.appending(path: "claude-fake-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         claudeTestDirs.append(dir)
@@ -20,6 +21,8 @@ import Testing
         d="$(dirname "$0")"
         : > "$d/args"
         for a in "$@"; do printf '%s\\n' "$a" >> "$d/args"; done
+        pwd -P > "$d/pwd"
+        \(before)
         cat > "$d/stdin"
         \(extra)
         cat "$d/out"
@@ -59,7 +62,8 @@ import Testing
         #expect(draft.first == "-p")
         #expect(claudeTestValue("--tools", in: draft) == "")
         #expect(draft.contains("--strict-mcp-config"))
-        #expect(claudeTestValue("--permission-mode", in: draft) == "plan")
+        #expect(claudeTestValue("--permission-mode", in: draft) == "dontAsk")
+        #expect(claudeTestValue("--setting-sources", in: draft) == "")
         #expect(!draft.contains("--allowedTools"))
     }
 
@@ -73,7 +77,35 @@ import Testing
         #expect(claudeTestValue("--tools", in: args) == "")
         #expect(args.contains("--strict-mcp-config"))
         #expect(claudeTestValue("--permission-prompts", in: args) == "none")
+        #expect(claudeTestValue("--permission-mode", in: args) == "dontAsk")
+        #expect(claudeTestValue("--setting-sources", in: args) == "")
+        #expect(!args.contains("--disallowedTools"))
         #expect(try String(contentsOf: dir.appending(path: "stdin"), encoding: .utf8) == "Say hi.")
+    }
+
+    @Test func executeWithOneMCPServerTickedDeniesEveryOtherServerAndIgnoresTheUsersSettings() async throws {
+        // `mcp list` (run first) shows two servers; the execute call that follows overwrites `args`.
+        let (cli, dir) = try claudeTestFake(stdout: Self.claudeTestResult, extra: """
+        [ "$1" = mcp ] && { printf '%s\\n' 'slack: npx slack-mcp - ✔ Connected' 'gmail: npx gmail-mcp - ✔ Connected'; exit 0; }
+        """)
+        let runner = ClaudeCommandRunner(cli: cli, settings: { Settings(allowedTools: ["mcp__slack", "Read"]) })
+
+        #expect(try await runner.execute("Send Prashant the deck on Slack.") == "Sent.")
+        let args = try claudeTestArgs(dir)
+        #expect(args.first == "-p")
+        #expect(claudeTestValue("--allowedTools", in: args) == "mcp__slack,Read")
+        #expect(claudeTestValue("--disallowedTools", in: args) == "mcp__gmail")
+        #expect(claudeTestValue("--permission-mode", in: args) == "dontAsk")
+        #expect(claudeTestValue("--permission-prompts", in: args) == "none")
+        #expect(claudeTestValue("--setting-sources", in: args) == "")
+    }
+
+    @Test func executeFailsClosedWhenTheMCPServersCannotBeListed() async throws {
+        let (cli, dir) = try claudeTestFake(stdout: Self.claudeTestResult, extra: #"[ "$1" = mcp ] && exit 1"#)
+        let runner = ClaudeCommandRunner(cli: cli, settings: { Settings(allowedTools: ["mcp__slack"]) })
+
+        #expect(try await runner.execute("Send it.") == ClaudeCommandRunner.failed)
+        #expect(try claudeTestArgs(dir) == ["mcp", "list"])
     }
 
     @Test func aDeniedToolComesBackAsASentenceNamingIt() async throws {
@@ -105,6 +137,8 @@ import Testing
         #expect(claudeTestValue("--tools", in: args) == "")
         #expect(args.contains("--strict-mcp-config"))
         #expect(!args.contains("--allowedTools"))
+        #expect(claudeTestValue("--permission-mode", in: args) == "dontAsk")
+        #expect(claudeTestValue("--setting-sources", in: args) == "")
         #expect(try String(contentsOf: dir.appending(path: "stdin"), encoding: .utf8) == "Summarise.\n\nMe: the deck is ready")
     }
 
@@ -115,6 +149,38 @@ import Testing
         let empty = FileManager.default.temporaryDirectory.appending(path: "claude-empty-\(UUID().uuidString)")
         #expect(ClaudeCLI.locate(searching: [empty, dir]) == cli.executable)
         #expect(ClaudeCLI.locate(searching: [empty]) == nil)
+    }
+
+    @Test func runIsPinnedToAnEmptyJarvisOwnedDirectory() async throws {
+        let (cli, dir) = try claudeTestFake()
+        _ = try await cli.run(arguments: [], stdin: "", timeout: 10)
+        let pwd = try String(contentsOf: dir.appending(path: "pwd"), encoding: .utf8)
+        let jarvisOwned = FileManager.default.temporaryDirectory.appending(path: "jarvis-claude").path
+        #expect(pwd == realpath(jarvisOwned, nil).map { String(cString: $0) }.map { $0 + "\n" })
+    }
+
+    @Test func aChildThatExitsWithoutReadingALargeStdinThrowsInsteadOfKillingTheApp() async throws {
+        let big = String(repeating: "transcript line\n", count: 64 * 1024)  // 1 MB, far past the pipe buffer
+        let (quits, _) = try claudeTestFake(before: "exit 0")
+        await #expect(throws: (any Error).self) { try await quits.run(arguments: [], stdin: big, timeout: 10) }
+        let (fails, _) = try claudeTestFake(status: 3, before: "echo nope >&2; exit 3")
+        await #expect(throws: ClaudeError.exit(code: 3, stderr: "nope\n")) {
+            try await fails.run(arguments: [], stdin: big, timeout: 10)
+        }
+    }
+
+    @Test func aTimeoutAlsoTerminatesWhatTheChildStarted() async throws {
+        let (cli, dir) = try claudeTestFake(extra: #"sleep 30 >/dev/null 2>&1 </dev/null & echo $! > "$d/child"; wait"#)
+        await #expect(throws: ClaudeError.timeout) { try await cli.run(arguments: [], stdin: "", timeout: 0.5) }
+        let child = try #require(Int32(String(contentsOf: dir.appending(path: "child"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)))
+        var alive = true
+        for _ in 0..<20 where alive {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            alive = kill(child, 0) == 0
+        }
+        if alive { kill(child, SIGKILL) }
+        #expect(!alive)
     }
 
     @Test func runPastItsTimeoutTerminatesTheChild() async throws {
