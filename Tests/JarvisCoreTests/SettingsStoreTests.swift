@@ -81,4 +81,53 @@ import JarvisCore
         #expect(try Data(contentsOf: bak) == garbage)
         #expect(!fm.fileExists(atPath: paths.settingsFile.path))
     }
+    @Test func validJSONMissingAKeyKeepsTheFieldsItHas() throws {
+        let paths = tempPaths()
+        defer { try? fm.removeItem(at: paths.root) }
+        try fm.createDirectory(at: paths.root, withIntermediateDirectories: true)
+        try Data(#"{"quietHours":{"startMinutes":1320,"endMinutes":420}}"#.utf8).write(to: paths.settingsFile)
+
+        let settings = SettingsStore(paths: paths).load()
+
+        #expect(settings == Settings(quietHours: QuietHours(startMinutes: 22 * 60, endMinutes: 7 * 60)))
+        #expect(!fm.fileExists(atPath: paths.root.appending(path: "settings.json.bak").path))
+    }
+
+    @Test func existingFileThatCannotBeReadIsMovedToBak() throws {
+        let paths = tempPaths()
+        defer { try? fm.removeItem(at: paths.root) }
+        try fm.createDirectory(at: paths.settingsFile, withIntermediateDirectories: true)  // a directory, not a file
+
+        let settings = SettingsStore(paths: paths).load()
+
+        #expect(settings == Settings.default)
+        #expect(fm.fileExists(atPath: paths.root.appending(path: "settings.json.bak").path))
+        #expect(!fm.fileExists(atPath: paths.settingsFile.path))
+    }
+
+    @Test func corruptFileReplacesAnOlderBak() throws {
+        let paths = tempPaths()
+        defer { try? fm.removeItem(at: paths.root) }
+        try fm.createDirectory(at: paths.root, withIntermediateDirectories: true)
+        let bak = paths.root.appending(path: "settings.json.bak")
+        try Data("old backup".utf8).write(to: bak)
+        let garbage = Data("{ not json".utf8)
+        try garbage.write(to: paths.settingsFile)
+
+        _ = SettingsStore(paths: paths).load()
+
+        #expect(try Data(contentsOf: bak) == garbage)
+        #expect(!fm.fileExists(atPath: paths.settingsFile.path))
+    }
+
+    @Test func quietHoursWithEqualStartAndEndIsNeverQuiet() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let none = QuietHours(startMinutes: 0, endMinutes: 0)   // 00:00–00:00
+
+        for hour in [0, 7, 12, 23] {
+            let date = calendar.date(from: DateComponents(year: 2026, month: 3, day: 14, hour: hour))!
+            #expect(!none.contains(date, calendar: calendar))
+        }
+    }
 }

@@ -19,9 +19,17 @@ public struct Settings: Codable, Equatable {
     }
 
     public static let `default` = Settings()
+
+    /// A missing key falls back to its default, so a hand edit that drops one keeps the rest.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        allowedTools = try c.decodeIfPresent([String].self, forKey: .allowedTools) ?? []
+        quietHours = try c.decodeIfPresent(QuietHours.self, forKey: .quietHours)
+    }
 }
 
 /// A daily window in minutes from local midnight; it may cross midnight (22:00–07:00).
+/// `startMinutes == endMinutes` is an empty window: never quiet.
 public struct QuietHours: Codable, Equatable {
     public var startMinutes: Int
     public var endMinutes: Int
@@ -47,15 +55,21 @@ public final class SettingsStore {
         self.paths = paths
     }
 
-    /// Missing file → defaults. Unreadable file → moved to `settings.json.bak`, defaults
-    /// (never crash at launch).
+    /// Missing file → defaults. A file that exists but cannot be read or decoded → moved to
+    /// `settings.json.bak`, defaults (never crash at launch).
     public func load() -> Settings {
+        let fm = FileManager.default
         let file = paths.settingsFile
-        guard let data = try? Data(contentsOf: file) else { return .default }
-        if let settings = try? JSONDecoder().decode(Settings.self, from: data) { return settings }
+        guard fm.fileExists(atPath: file.path) else { return .default }
+        if let data = try? Data(contentsOf: file),
+           let settings = try? JSONDecoder().decode(Settings.self, from: data) { return settings }
         let bak = file.appendingPathExtension("bak")
-        try? FileManager.default.removeItem(at: bak)
-        try? FileManager.default.moveItem(at: file, to: bak)
+        // Replace, not remove-then-move: a failed move must not cost the previous backup.
+        if fm.fileExists(atPath: bak.path) {
+            _ = try? fm.replaceItemAt(bak, withItemAt: file)
+        } else {
+            try? fm.moveItem(at: file, to: bak)
+        }
         return .default
     }
 
