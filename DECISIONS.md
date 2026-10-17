@@ -97,6 +97,8 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 ### DEC-14 · Quiet hours always Stop, even over a user pause; afterwards return to the prior state
 - **Decided by:** human (decision:quiet-hours), applied in the T-5 fix
 - **Affects:** `Session/ListeningSession.swift`.
+- **Amended 18 Oct (T-25 review):** "always" means nothing *automatic* overrides quiet hours. You can, on purpose:
+  see DEC-27 and DEC-22.
 
 ### DEC-15 · A built-in control said during a pending read-back wins
 - **Decided by:** human (T-11 F-2, option A)
@@ -121,6 +123,12 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Affects:** `Commands/VoiceControlRouter.swift`, `Jarvis.swift`.
 - **Checked against:** DEC-14. Quiet hours stop *listening*, and a hold is a deliberate command, not listening.
 
+### DEC-27 · Clicking "Start listening" during quiet hours overrides them until they end
+- **Decided by:** human (T-25 review, F-3, option A)
+- **What:** Jarvis stays on until the current quiet window ends. The status reads "Listening (quiet hours paused
+  until HH:MM)". The next window applies normally. Enforced in `ListeningSession`, not the app.
+- **Checked against:** DEC-14 (amended), DEC-22. Both are deliberate actions. Nothing automatic overrides quiet hours.
+
 ### DEC-24 · Audio chunks are cut at every listening boundary
 - **Decided by:** human (T-24 review, option A)
 - **What:** on pause, resume, stop, start, quiet hours or screen lock, the mic and call-audio streams end
@@ -134,6 +142,25 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **What:** no 30 s window of listening at launch. The lock check reads the session's `CGSSessionScreenIsLocked` key, which Apple doesn't
   document. **Hardware check pending:** launch while the screen is locked. If the key is missing, the lock is caught at the next lock event.
 - **Checked against:** DEC-14.
+
+### DEC-28 · Screen Recording is asked for once
+- **Decided by:** human (T-25 review, F-2, option A)
+- **Why:** call audio (spec story 4a) needs ScreenCaptureKit, which macOS files under Screen Recording, even though
+  Jarvis uses audio only. macOS shows its own prompt only once.
+- **What:** Jarvis explains, then asks, on the first launch only, and remembers the answer in its settings. After a
+  "no", the menu shows "Call audio off — Allow Screen Recording…", which opens the right Settings page.
+- **Affects:** `Storage/SettingsStore`, `JarvisApp/Permissions.swift`, `JarvisApp/MenuContent.swift`.
+
+### DEC-30 · Forget-last-hour deletes exactly the hour it named
+- **Decided by:** review (T-25 F-1)
+- **What:** the menu alert and the voice read-back both fix the window when they describe it. Leaving the alert
+  open doesn't shift what gets deleted.
+- **Checked against:** DEC-12.
+
+### DEC-31 · A denied microphone is shown, never hidden behind a red icon
+- **Decided by:** review (T-25 F-7)
+- **What:** the menu shows "Microphone access is off" with a button that opens the right Settings page, like the
+  Full Disk Access line.
 
 ## Imports
 
@@ -162,6 +189,13 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 
 ## Process and scope
 
+### DEC-29 · The setup guide is published from `docs/guide.html`
+- **Decided by:** human (T-25 review, F-9, option A)
+- **What:** the "Notes off — install…" link opens `yashmangal19.github.io/jarvis/guide.html#install`. The guide
+  is the same page as the Jarvis artifact page, and the two are kept in sync. After the merge, the human turns on
+  GitHub Pages; that step is outward, so it's the human's to do.
+
+
 ### DEC-20 · UI, installer and Homebrew formula ship without automated tests (blueprint D-1)
 - **Decided by:** human ("proceed untested, acknowledged")
 - **Affects:** T-25…T-29. All of their logic lives in JarvisCore, which is tested. They are covered by manual QA.
@@ -176,7 +210,7 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 | Ticket · finding | Why rejected |
 |---|---|
 | T-5 F-6, T-6 F-3, T-8 F-6, T-18 F-4 | rejected in the wave-2…4 reviews, each with its reason in the run's review file |
-| F-CLAIM-1 on T-3, T-4, T-7, T-11, T-22, T-23, T-24 | "new vs reusing" disagreements where the reused piece was trivial or already fixed by another finding |
+| F-CLAIM-1 on T-3, T-4, T-7, T-11, T-22, T-23, T-24, T-25 | "new vs reusing" disagreements where the reused piece was trivial or already fixed by another finding |
 
 ## Open
 
