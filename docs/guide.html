@@ -137,6 +137,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
       <details><summary>How it's built</summary><div>
         <p>We tested it. AirPods Pro caught the wearer clearly but heard a nearby podcast as "[INAUDIBLE]". The MacBook mic transcribed the same podcast almost word for word.</p>
         <p>So the AirPods record you, <code>ScreenCaptureKit</code> records call audio (audio only, which needs the Screen Recording permission), and Meeting mode adds the built-in mic for the room.</p>
+        <p>Jarvis asks for Screen Recording once, on first launch. If you say no, it works with your mic only, and the menu shows "Call audio off — Allow Screen Recording…" in case you change your mind.</p>
         <p>Each source is its own stream, and the source decides the label.</p>
       </div></details>
     </div>
@@ -260,11 +261,12 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
     <li>The icon is red while recording.</li>
     <li><b>Pause</b> with a click or "Jarvis, pause". Nothing is recorded, but "Jarvis, …" still works: ask a question, give a command or say "resume". The icon goes grey with a dot.</li>
     <li><b>Stop</b> from the menu turns everything off, wake word included. The icon goes plain grey. Holding ⌥Space still gives a command: the mic is on only while you hold the key, and nothing is saved.</li>
-    <li>It stops on its own when your screen locks and during quiet hours you set, checked from the moment it launches. Quiet hours stop it even while paused, and when they end your pause is still in place.</li>
+    <li>It stops on its own when your screen locks and during quiet hours you set, checked from the moment it launches. Quiet hours stop it even while paused, and when they end your pause is still in place. Want it on anyway? Click <b>Start listening</b>: it stays on until that night's quiet hours end.</li>
     <li>Pausing cuts the recording at that exact moment. Nothing after a pause is saved, and nothing before it is lost.</li>
     <li>Audio is never stored and never uploaded. Audio stays in memory. The one exception: if the whisper server is down, the fallback writes a temporary file and deletes it once transcribed.</li>
     <li>Only text goes to the model you choose.</li>
-    <li><b>Forget last hour</b> deletes that hour's transcript, notes and search entries, including anything still being written.</li>
+    <li><b>Forget last hour</b> deletes that hour's transcript, notes and search entries, including anything still being written. It deletes exactly the hour it showed you, even if you take a while to confirm.</li>
+    <li>If the microphone permission is off, the menu says so, with a button to fix it. A red icon always means it can really hear.</li>
   </ul>
   <p class="note">Tell people when you're recording them. Consent and local laws apply to you.</p>
 </section>
@@ -333,14 +335,15 @@ protocol CommandRunner {
 <section id="decisions">
   <span class="eyebrow">Decisions</span>
   <h2>What we've decided, and why.</h2>
-  <p class="muted">Every decision is recorded in <code>DECISIONS.md</code> in the repo. Each new one is checked against it first. These are the ones you'll notice. <span class="muted">Updated 17 Oct 2026.</span></p>
+  <p class="muted">Every decision is recorded in <code>DECISIONS.md</code> in the repo. Each new one is checked against it first. These are the ones you'll notice. <span class="muted">Updated 18 Oct 2026.</span></p>
   <div class="facts">
     <div><span class="k">Controls win</span><span class="v">A control said while Jarvis waits for your yes cancels that command, then runs.</span></div>
     <div><span class="k">Hold to talk</span><span class="v">⌥Space works even when Jarvis is stopped. The mic is on only while you hold the key.</span></div>
     <div><span class="k">Clean cuts</span><span class="v">Pausing ends the current recording block on the spot, so no speech is lost either side.</span></div>
     <div><span class="k">No restart</span><span class="v">Transcription starts as soon as the speech model has downloaded.</span></div>
     <div><span class="k">AirPods gone</span><span class="v">Jarvis pauses. "Jarvis, resume" continues on the MacBook mic and tells you so.</span></div>
-    <div><span class="k">Quiet hours</span><span class="v">Always stop everything, wake word included, even while paused.</span></div>
+    <div><span class="k">Quiet hours</span><span class="v">Nothing automatic overrides them, wake word included. You can, with one click, until they end.</span></div>
+    <div><span class="k">Asked once</span><span class="v">Screen Recording (call audio) is asked for once. A "no" is remembered, and you can turn it on later from the menu.</span></div>
     <div><span class="k">Search</span><span class="v">Core AI (planned) → NLContextualEmbedding → NLEmbedding, picked per Mac.</span></div>
     <div><span class="k">Voice Memos</span><span class="v">Only new memos are imported. Older ones go through the inbox.</span></div>
     <div><span class="k">No audio on disk</span><span class="v">Audio is processed in memory. A brief temp file is used only as a fallback.</span></div>
