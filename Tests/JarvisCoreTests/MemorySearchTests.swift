@@ -22,7 +22,7 @@ final class MemoryRecordingWriter: NoteWriter {
     @Test func theTopNotesGoToTheWriterUnderTheirIdsAndTheAnswerNamesThem() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = NoteStore(paths: paths)
-        let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder())
+        let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword")
         index.attach(to: store)
         try store.write(memoryNote("2026-10-17-09", "Budget review: we cut the travel line"))
         try store.write(memoryNote("2026-10-17-11", "Spent the money on lunch"))
@@ -44,7 +44,7 @@ final class MemoryRecordingWriter: NoteWriter {
     @Test func noMatchingNoteAndNoWriterEachSaySoWithoutCallingTheModel() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = NoteStore(paths: paths)
-        let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder())
+        let index = NoteIndex(paths: paths, embedder: IndexKeywordEmbedder(), embedderID: "keyword")
         index.attach(to: store)
         try store.write(memoryNote("2026-10-17-13", "Standup moved to Thursday"))
         let writer = MemoryRecordingWriter()
