@@ -93,9 +93,12 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: try wavPath(in: fake.argsFile)))
     }
 
-    @Test func cancellingACLITranscribeTerminatesTheChildPromptly() async throws {
+    // Gate repair: a child that ignores SIGTERM is killed after a grace period rather than waited on.
+    @Test(arguments: ["", "trap '' TERM"])
+    func cancellingACLITranscribeTerminatesTheChildPromptly(ignoringSIGTERM trap: String) async throws {
         let argsFile = try tempDir("fakecli").appending(path: "args.txt")
         let slow = try fakeExecutable("whisper-cli", """
+        \(trap)
         printf '%s\\n' "$@" > '\(argsFile.path)'
         exec /bin/sleep 30
         """)
@@ -276,8 +279,9 @@ import Testing
         return (process, binary)
     }
 
+    /// Bounded: `waitUntilExit()` here once missed the exit and hung the suite.
     private func reap(_ process: Process) {
-        if process.isRunning { process.terminate(); process.waitUntilExit() }
+        process.terminateAndWait()
     }
 
     private func gone(_ process: Process) async throws -> Bool {
@@ -339,6 +343,25 @@ import Testing
         await #expect(throws: WhisperError.serverKeepsExiting) {
             try await WhisperTranscriber(backend: .server(server)).transcribe(self.oneSecond)
         }
+    }
+
+    // Gate repair: stop() runs at quit and before a relaunch; it must return even when the server
+    // ignores SIGTERM, and must not hang on an exit it failed to notice.
+    @Test func stopReturnsPromptlyEvenWhenTheServerIgnoresSIGTERM() async throws {
+        let stubborn = try fakeExecutable("whisper-server", "trap '' TERM\nexec /bin/sleep 600")
+        let server = WhisperServerProcess(binary: stubborn, model: URL(filePath: "/m.bin"),
+                                          port: WhisperServerProcess.freePort(from: 17_721))
+        try? await server.start(timeout: 0.3)          // the fake never answers HTTP; by now it has set its trap
+        let pid = try #require(server.pid)
+        let started = WhisperServerProcess.startTime(of: pid)
+        defer { if WhisperServerProcess.startTime(of: pid) == started { kill(pid, SIGKILL) } }
+
+        let stopping = Thread { server.stop() }     // a thread of its own: on red it never returns
+        stopping.start()
+        for _ in 0..<100 where !stopping.isFinished { try await Task.sleep(nanoseconds: 100_000_000) }
+
+        #expect(stopping.isFinished)
+        #expect(WhisperServerProcess.startTime(of: pid) == nil)
     }
 
     @Test func readinessWaitsForA200FromHealth() async throws {

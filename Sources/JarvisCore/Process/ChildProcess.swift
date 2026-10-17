@@ -39,11 +39,11 @@ enum ChildProcess {
         let timer = timeout.map { timeout in
             Task {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                process.terminate()
+                DispatchQueue.global().async { process.terminateAndWait() }
             }
         }
         defer { timer?.cancel() }
-        // Cancelling terminates the child, which closes its pipes and ends the reads below.
+        // Cancelling terminates (then kills) the child, which closes its pipes and ends the reads below.
         return try await withTaskCancellationHandler {
             // Written off-thread and closed, so a child that reads slowly cannot block us and sees EOF.
             async let written: Error? = Task.detached {
@@ -62,7 +62,27 @@ enum ChildProcess {
             if let writeError, status == 0, !timedOut { throw writeError }
             return Output(status: status, stdout: outData, stderr: errData, timedOut: timedOut)
         } onCancel: {
-            process.terminate()
+            DispatchQueue.global().async { process.terminateAndWait() }
         }
+    }
+}
+
+extension Process {
+    /// SIGTERM (to the child's process group, as `terminate()` does), then SIGKILL to the group if it is still
+    /// running `grace` seconds later. Returns once it has exited, or 1 s after the SIGKILL: never blocks longer.
+    ///
+    /// Polls `isRunning` rather than calling `waitUntilExit()`, which, called off the main thread, can miss the
+    /// exit and block forever (reproduced on macOS 27: child gone, `isRunning` false, still waiting).
+    func terminateAndWait(grace: TimeInterval = 2) {
+        func exited(within seconds: TimeInterval) -> Bool {
+            let deadline = Date().addingTimeInterval(seconds)
+            while isRunning, Date() < deadline { usleep(10_000) }
+            return !isRunning
+        }
+        guard isRunning else { return }
+        terminate()
+        if exited(within: grace) { return }
+        if killpg(processIdentifier, SIGKILL) != 0 { kill(processIdentifier, SIGKILL) }
+        _ = exited(within: 1)
     }
 }

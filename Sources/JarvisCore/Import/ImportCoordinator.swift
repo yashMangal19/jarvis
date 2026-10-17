@@ -119,7 +119,8 @@ public final class ImportCoordinator {
 }
 
 /// A file as it was when imported: a new file under the same name is a different stamp.
-private struct FileStamp: Hashable {
+/// Also used by `VoiceMemosImporter` to tell a memo still being written from a broken one.
+struct FileStamp: Hashable {
     let path: String
     let size: Int?
     let modified: Date?

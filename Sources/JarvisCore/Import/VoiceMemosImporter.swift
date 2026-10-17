@@ -24,6 +24,8 @@ public final class VoiceMemosImporter: ObservableObject {
     private let lock = NSLock()
     private var watcher: (any FolderWatcher)?
     private var folder: URL?
+    /// Memos whose copy did not decode, as they were then; recorded only if a later scan finds them unchanged.
+    private var undecodable: [URL: FileStamp] = [:]
     /// Set once at the end of `init`; it calls back into `self`, so it cannot be built before.
     private var scheduler: ScanScheduler!
 
@@ -94,6 +96,7 @@ public final class VoiceMemosImporter: ObservableObject {
     private func importCopy(of original: URL) async {
         let fileManager = FileManager.default
         let copy = imports.appending(path: original.lastPathComponent)
+        let stamp = FileStamp(original)
         do {
             try fileManager.createDirectory(at: imports, withIntermediateDirectories: true)
             try? fileManager.removeItem(at: copy) // left by an earlier failed try
@@ -108,6 +111,12 @@ public final class VoiceMemosImporter: ObservableObject {
         } catch ImportError.undecodable(let movedTo, _) {
             // The original stays in Voice Memos, so Jarvis's failed copy is not kept, wherever it is.
             try? fileManager.removeItem(at: movedTo ?? copy)
+            // An export or sync writes a memo in place, and an MP4/QuickTime file does not decode until its
+            // index is written last, so one still being written looks broken. It is given up on only when
+            // a later scan (a folder change, or a retry `retryDelay` on) finds it unchanged and still broken.
+            // Ceiling: a writer stalled longer than that gap still loses the memo; a quiet-period check would close it.
+            let seenUnchanged = lock.withLock { undecodable.updateValue(stamp, forKey: original) == stamp }
+            guard seenUnchanged else { return }
         } catch {
             if fileManager.fileExists(atPath: copy.path) {
                 try? fileManager.removeItem(at: copy) // nothing stored: the original is tried again

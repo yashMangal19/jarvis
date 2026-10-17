@@ -11,11 +11,14 @@ import JarvisCore
     var paths: JarvisPaths { JarvisPaths(root: root) }
     /// Stands in for the Voice Memos "Recordings" folder.
     var recordings: URL { root.appending(path: "VoiceMemos/Recordings") }
+    /// Outside the watched folder: fixtures built here cannot be seen by a scan half-made.
+    var fixtures: URL { root.appending(path: "fixtures") }
 
-    /// A `seconds`-long tone at speech level in the fake Recordings folder, dated `recordedAt`.
-    func memoM4A(seconds: Double = 3, name: String = "20261017 101500-AB12CD34.m4a") throws -> URL {
-        try FileManager.default.createDirectory(at: recordings, withIntermediateDirectories: true)
-        let url = recordings.appending(path: name)
+    /// A `seconds`-long tone at speech level in `folder` (the fake Recordings folder), dated `recordedAt`.
+    func memoM4A(seconds: Double = 3, name: String = "20261017 101500-AB12CD34.m4a", in folder: URL? = nil) throws -> URL {
+        let folder = folder ?? recordings
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appending(path: name)
         let rate = 48_000.0
         let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
         let frames = AVAudioFrameCount(seconds * rate)
@@ -36,14 +39,14 @@ import JarvisCore
 
     func memoImporter(access: VoiceMemosAccess? = nil, watcher: FakeFolderWatcher = FakeFolderWatcher(),
                       transcriber: any Transcriber = ImportFakeTranscriber(),
-                      ledger: ImportLedger? = nil) -> (VoiceMemosImporter, TranscriptStore) {
+                      ledger: ImportLedger? = nil, retryDelay: TimeInterval = 60) -> (VoiceMemosImporter, TranscriptStore) {
         let store = TranscriptStore(paths: paths)
         let coordinator = ImportCoordinator(pipeline: CapturePipeline(transcriber: transcriber, store: store),
                                             onImported: { _ in })
         let access = access ?? .readable(recordings)
         let importer = VoiceMemosImporter(locator: { access }, watcherFactory: { _ in watcher },
                                           coordinator: coordinator, ledger: ledger ?? ImportLedger(paths: paths),
-                                          paths: paths, settleDelay: 0.05, retryDelay: 60)
+                                          paths: paths, settleDelay: 0.05, retryDelay: retryDelay)
         return (importer, store)
     }
 
@@ -99,13 +102,16 @@ import JarvisCore
         let transcriber = ImportFakeTranscriber()
         let ledger = ImportLedger(paths: paths)
         let (importer, _) = memoImporter(watcher: watcher, transcriber: transcriber, ledger: ledger)
-        try await startEmpty(importer)
-        let m4a = try memoM4A(name: "source.m4a")
-        let qta = recordings.appending(path: "20261017 101500-QT12CD34.qta")
+        // Built outside the watched folder, then moved in whole: the importer's first scan runs as soon as
+        // it starts, and must find neither the source .m4a nor a half-exported .qta.
+        let m4a = try memoM4A(name: "source.m4a", in: fixtures)
+        let exported = fixtures.appending(path: "20261017 101500-QT12CD34.qta")
         guard #available(macOS 15, *) else { return }
         let export = try #require(AVAssetExportSession(asset: AVURLAsset(url: m4a), presetName: AVAssetExportPresetPassthrough))
-        try await export.export(to: qta, as: .mov) // a QuickTime ('qt  ') container, as .qta is
-        try ledger.recordBaseline([m4a]) // only the .qta is new
+        try await export.export(to: exported, as: .mov) // a QuickTime ('qt  ') container, as .qta is
+        try await startEmpty(importer)
+        let qta = recordings.appending(path: exported.lastPathComponent)
+        try FileManager.default.moveItem(at: exported, to: qta)
 
         watcher.fire()
         await memoWaitUntil { ledger.isImported(qta) }
@@ -272,7 +278,7 @@ import JarvisCore
     @Test func anUndecodableMemoIsRecordedAndLeavesNoCopy() async throws {
         let watcher = FakeFolderWatcher()
         let ledger = ImportLedger(paths: paths)
-        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger)
+        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger, retryDelay: 0.1)
         try await startEmpty(importer)
         let original = recordings.appending(path: "broken.m4a")
         try Data("not audio".utf8).write(to: original)
@@ -294,7 +300,7 @@ import JarvisCore
         try Data("older".utf8).write(to: failed.appending(path: "broken.m4a"))
         let watcher = FakeFolderWatcher()
         let ledger = ImportLedger(paths: paths)
-        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger)
+        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger, retryDelay: 0.1)
         try await startEmpty(importer)
         let original = recordings.appending(path: "broken.m4a")
         try Data("not audio".utf8).write(to: original)
@@ -314,7 +320,7 @@ import JarvisCore
         try Data("a file where the folder would go".utf8).write(to: paths.imports.appending(path: "failed"))
         let watcher = FakeFolderWatcher()
         let ledger = ImportLedger(paths: paths)
-        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger)
+        let (importer, _) = memoImporter(watcher: watcher, ledger: ledger, retryDelay: 0.1)
         try await startEmpty(importer)
         let original = recordings.appending(path: "broken.m4a")
         try Data("not audio".utf8).write(to: original)
@@ -325,6 +331,34 @@ import JarvisCore
 
         #expect(ledger.isImported(original))
         #expect(try FileManager.default.contentsOfDirectory(atPath: paths.imports.path).filter { $0.hasSuffix(".m4a") }.isEmpty)
+    }
+
+    // Gate repair: an export or sync writes a memo in place under its final name, and an MP4/QuickTime file
+    // is undecodable until its index is written last. A scan that takes it mid-write must not record it as
+    // undecodable for good: once complete, it is imported.
+    @Test func aMemoStillBeingWrittenWhenAScanTakesItIsImportedOnceComplete() async throws {
+        let watcher = FakeFolderWatcher()
+        let transcriber = ImportFakeTranscriber()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, _) = memoImporter(watcher: watcher, transcriber: transcriber, ledger: ledger)
+        let whole = try Data(contentsOf: try memoM4A(in: fixtures))
+        try await startEmpty(importer)
+        let memo = recordings.appending(path: "20261017 101500-AB12CD34.m4a")
+        try whole.prefix(whole.count / 2).write(to: memo)
+
+        watcher.fire()
+        // The scan took the half-written memo: its copy failed to decode and went through failed/.
+        await memoWaitUntil { FileManager.default.fileExists(atPath: paths.imports.appending(path: "failed").path) }
+        let handle = try FileHandle(forWritingTo: memo)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: whole.dropFirst(whole.count / 2))
+        try handle.close()
+        watcher.fire()
+        await memoWaitUntil { ledger.isImported(memo) }
+        await memoWaitUntil(timeout: 5) { transcriber.calls == 1 }
+        await importer.stop()
+
+        #expect(transcriber.calls == 1)
     }
 
     @Test func aMemoWithNothingStoredIsTriedAgainLater() async throws {

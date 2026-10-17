@@ -58,7 +58,8 @@ public final class WhisperServerProcess: @unchecked Sendable {
         try await waitUntilReady(timeout: timeout)
     }
 
-    /// Terminates the child and waits for it to exit. No relaunch follows.
+    /// Terminates the child and waits for it to exit, killing it if it ignores SIGTERM: returns within ~3 s.
+    /// No relaunch follows.
     public func stop() {
         let (running, wrotePidFile): (Process?, Bool) = lock.withLock {
             stopping = true
@@ -66,9 +67,7 @@ public final class WhisperServerProcess: @unchecked Sendable {
             return (process, launched)
         }
         if wrotePidFile, let pidFile { try? FileManager.default.removeItem(at: pidFile) }
-        guard let running, running.isRunning else { return }
-        running.terminate()
-        running.waitUntilExit()
+        running?.terminateAndWait()
     }
 
     /// Polls `/health` until it answers 200 (whisper-server answers 503 while the model loads),
