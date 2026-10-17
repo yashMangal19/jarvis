@@ -1,0 +1,321 @@
+<title>Jarvis for Mac</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a narrow, airy reading column. One idea per block; details fold away under "How it's built". Dark-first, like the talk. */
+:root {
+  --bg: #0d0d0f; --surface: #16161a; --line: #26262c; --fg: #ececf0; --muted: #9a9aa6;
+  --accent: #f05138; --plan: #e0b341; --ok: #4cc38a;
+  --display: "Sora", "SF Pro Display", system-ui, sans-serif;
+  --body: "Source Sans 3", "SF Pro Text", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #fbfbfc; --surface: #f2f2f5; --line: #e0e0e6; --fg: #141418; --muted: #5d5d69;
+  --accent: #d63f27; --plan: #9a6f00; --ok: #1f8a57; color-scheme: light; } }
+:root[data-theme="light"] {
+  --bg: #fbfbfc; --surface: #f2f2f5; --line: #e0e0e6; --fg: #141418; --muted: #5d5d69;
+  --accent: #d63f27; --plan: #9a6f00; --ok: #1f8a57; color-scheme: light; }
+
+body { background: var(--bg); color: var(--fg); font: 18px/1.7 var(--body); }
+.wrap { max-width: 720px; margin: 0 auto; padding-block: 72px 120px;
+  padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 112px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2.6rem, 8vw, 4.2rem); letter-spacing: -.02em; }
+h2 { font-size: clamp(1.6rem, 4.5vw, 2.1rem); letter-spacing: -.01em; }
+h3 { font-size: 1.15rem; }
+p { margin: 0; }
+section, header { display: flex; flex-direction: column; gap: 28px; }
+.eyebrow { font: 600 .72rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 1.3rem; line-height: 1.6; color: var(--muted); }
+.lede b { color: var(--fg); font-weight: 600; }
+.muted { color: var(--muted); }
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; overflow-x: auto; font: 14px/1.7 var(--mono); }
+pre code { background: none; border: 0; padding: 0; font-size: 1em; }
+.pill { display: inline-block; font: 600 .66rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  padding: 4px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; vertical-align: middle; }
+.pill.all { color: var(--ok); } .pill.m27 { color: var(--accent); } .pill.plan { color: var(--plan); }
+.note { border-left: 2px solid var(--line); padding-left: 18px; color: var(--muted); font-size: .98rem; }
+.note b { color: var(--fg); }
+
+/* Three verbs */
+.verbs { display: flex; flex-direction: column; gap: 18px; font-family: var(--display); font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 700; }
+.verbs span:last-child { color: var(--accent); }
+
+/* Steps */
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
+.steps li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 4px 16px; padding: 22px 0; border-top: 1px solid var(--line); }
+.steps li:last-child { border-bottom: 1px solid var(--line); }
+.steps .n { font: 600 .8rem/1.9 var(--mono); color: var(--accent); }
+.steps h3 { margin-bottom: 4px; }
+.steps p { color: var(--muted); font-size: 1rem; }
+
+/* Feature blocks */
+.feature { display: flex; flex-direction: column; gap: 14px; padding-top: 36px; border-top: 1px solid var(--line); }
+.feature:first-of-type { border-top: 0; padding-top: 0; }
+.feature .tags { display: flex; gap: 8px; flex-wrap: wrap; }
+details { border: 1px solid var(--line); border-radius: 10px; }
+summary { cursor: pointer; padding: 10px 16px; font: 600 .8rem/1.4 var(--mono); color: var(--muted); letter-spacing: .04em; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "+ "; color: var(--accent); }
+details[open] summary::before { content: "– "; }
+details > div { padding: 2px 16px 16px; color: var(--muted); font-size: 1rem; display: flex; flex-direction: column; gap: 10px; }
+.features { display: flex; flex-direction: column; gap: 36px; }
+
+/* Simple two-column facts */
+.facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.facts div { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
+.facts div:last-child { border-bottom: 1px solid var(--line); }
+.facts dt, .facts .k { font-weight: 600; }
+.facts .v { color: var(--muted); }
+.facts .v b { color: var(--fg); font-weight: 600; }
+@media (max-width: 520px) { .facts div { grid-template-columns: 1fr; gap: 2px; } }
+
+ul.plain { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
+ul.plain li::marker { color: var(--accent); }
+a { color: var(--accent); text-underline-offset: 3px; }
+summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--line); padding-top: 24px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Swift Mumbai · What if you could clone yourself?</span>
+  <h1>Jarvis for Mac</h1>
+  <p class="lede">A small menu-bar app that <b>listens</b>, <b>remembers</b> and <b>acts</b>, so you don't have to hold everything in your head.</p>
+  <p class="note"><b>Status:</b> v1 is being built in the open. Items marked <span class="pill plan">Planned</span> are decided but not final. The code is open source (MIT) at <a href="https://github.com/yashMangal19/jarvis">github.com/yashMangal19/jarvis</a>: fork it.</p>
+</header>
+
+<section id="idea">
+  <span class="eyebrow">The idea</span>
+  <h2>A clone for the part of you that forgets.</h2>
+  <div class="verbs"><span>It listens.</span><span>It remembers.</span><span>It acts.</span></div>
+  <p class="muted">And it always asks before doing anything that leaves your Mac.</p>
+</section>
+
+<section id="how">
+  <span class="eyebrow">How it works</span>
+  <h2>Five steps, all on your Mac.</h2>
+  <ol class="steps">
+    <li><span class="n">01</span><div><h3>Listen</h3><p>Records you, your calls and, if you want, the room.</p></div></li>
+    <li><span class="n">02</span><div><h3>Transcribe</h3><p>Turns speech into text on your Mac, then deletes the audio.</p></div></li>
+    <li><span class="n">03</span><div><h3>Write notes</h3><p>Every hour, a short note of what was said.</p></div></li>
+    <li><span class="n">04</span><div><h3>Remember</h3><p>Notes roll up into days and weeks, and you can search all of them.</p></div></li>
+    <li><span class="n">05</span><div><h3>Act</h3><p>Say "Jarvis, …". It reads back its plan and acts after your yes.</p></div></li>
+  </ol>
+</section>
+
+<section id="features">
+  <span class="eyebrow">Features</span>
+  <h2>What it does.</h2>
+  <p class="muted"><span class="pill all">Any Mac</span> works everywhere. <span class="pill m27">macOS 27</span> gets Apple's newest frameworks automatically.</p>
+
+  <div class="features">
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span></div>
+      <h3>Always listening, when you want it</h3>
+      <p>Start and stop from the menu bar. The icon is red while recording.</p>
+      <details><summary>How it's built</summary><div>
+        <p><code>AVAudioEngine</code> records the active mic in 30-second chunks.</p>
+        <p>A chunk that stays below a loudness threshold is silence. It is dropped and adds no transcript line.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span></div>
+      <h3>Whole meetings, not just you</h3>
+      <p>Online calls: the call audio is recorded too.</p>
+      <p>In person: turn on <b>Meeting mode</b> to record the room.</p>
+      <p>Lines are labelled <b>Me</b> or <b>Others</b>.</p>
+      <details><summary>How it's built</summary><div>
+        <p>We tested it. AirPods Pro caught the wearer clearly but heard a nearby podcast as "[INAUDIBLE]". The MacBook mic transcribed the same podcast almost word for word.</p>
+        <p>So the AirPods record you, <code>ScreenCaptureKit</code> records call audio (audio only, which needs the Screen Recording permission), and Meeting mode adds the built-in mic for the room.</p>
+        <p>Each source is its own stream, and the source decides the label.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span><span class="pill m27">macOS 26+</span></div>
+      <h3>Private transcription</h3>
+      <p>Speech becomes text on your Mac. Audio is never uploaded or kept.</p>
+      <p>Hindi and Hinglish work too.</p>
+      <details><summary>How it's built</summary><div>
+        <p>whisper.cpp with a multilingual model that detects the language.</p>
+        <p>On macOS 26 and later, Apple's <code>SpeechAnalyzer</code> is used for the languages it supports, so there's nothing to download.</p>
+        <p><b>Settings → Engines</b> shows which engine is in use.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span><span class="pill m27">macOS 26+</span></div>
+      <h3>Hourly notes</h3>
+      <p>Each hour with speech becomes a short Markdown note: topics, decisions, to-dos, people.</p>
+      <p class="muted">Turn on Demo mode to get a note every 2 minutes.</p>
+      <details><summary>How it's built</summary><div>
+        <p>The first available writer is used: Claude Code (<code>claude -p</code>), then Apple <code>FoundationModels</code> on-device, then a local Ollama model (optional, about 2 GB).</p>
+        <p>With none available, the menu says <b>"Notes off — install Claude Code or Ollama"</b>, and transcripts and search keep working.</p>
+        <p>Edit <code>prompts/hourly.md</code> to change how notes read.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span></div>
+      <h3>Memory that stays small</h3>
+      <p>Hourly notes become a daily note. Daily notes become a weekly note.</p>
+      <details><summary>How it's built</summary><div>
+        <p>Plain Markdown in <code>~/Jarvis/notes/hourly</code>, <code>daily</code> and <code>weekly</code>.</p>
+        <p>Raw transcripts are deleted after 7 days. Notes stay.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span><span class="pill m27">macOS 27</span></div>
+      <h3>Ask your memory</h3>
+      <p>"What did we decide about the launch on Tuesday?"</p>
+      <p class="muted">Jarvis answers and names the notes it used.</p>
+      <details><summary>How it's built</summary><div>
+        <p>Every note is turned into a vector with Apple's built-in <code>NLEmbedding</code> and searched by similarity.</p>
+        <p>On macOS 27, <b>Core AI</b> runs a stronger embedding model. If it can't load, Jarvis falls back to NaturalLanguage.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span></div>
+      <h3>Voice commands</h3>
+      <p>"Jarvis, tell the team I'm 10 minutes late."</p>
+      <p class="muted">It uses the tools you've connected to Claude Code: chat, calendar, GitHub and more.</p>
+      <details><summary>How it's built</summary><div>
+        <p>Three ways to start:</p>
+        <ul class="plain">
+          <li>say <b>"Jarvis, …"</b></li>
+          <li>hold <b>⌥Space</b>, speak, then release</li>
+          <li>squeeze an <b>AirPods stem</b> (experimental)</li>
+        </ul>
+        <p>Claude drafts the action, Jarvis speaks the draft, and you say yes.</p>
+        <p>Say it in one breath. There's no need to wait after "Jarvis": it keeps the last few seconds in memory (never on disk), so it catches what you say right after the wake word. A soft chime tells you it heard you.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span></div>
+      <h3>Control it by voice</h3>
+      <p>"Jarvis, pause." "Jarvis, resume."</p>
+      <p class="muted">Also: meeting mode on/off, demo mode on/off, forget the last hour, and "what did …?"</p>
+      <details><summary>How it's built</summary><div>
+        <p>Jarvis handles these itself, without Claude, so they're instant and confirmed with a tick sound.</p>
+        <p>"Forget the last hour" can't be undone, so Jarvis reads it back and waits for your yes.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span></div>
+      <h3>It asks before it acts</h3>
+      <p>Nothing leaves your Mac until you've heard it and said yes.</p>
+      <details><summary>How it's built</summary><div>
+        <p>Every command runs in two phases: a read-only draft, then execution.</p>
+        <p>The read-back says exactly what will happen, to whom, and with what content.</p>
+        <p><b>Yes</b> runs it. <b>No</b>, or 15 seconds of silence, drops it.</p>
+        <p>Anything else is treated as a correction ("no, send it to Prashant instead"). Jarvis redrafts and reads the new plan back. After 3 corrections without a yes, it gives up and tells you.</p>
+        <p class="muted">Later: Jarvis learns how you talk, so it needs fewer words and fewer confirmations.</p>
+        <p>Only the tools you tick in Settings can run. Shell commands and file edits are off by default.</p>
+      </div></details>
+    </div>
+
+    <div class="feature">
+      <div class="tags"><span class="pill all">Any Mac</span></div>
+      <h3>Away from your Mac</h3>
+      <p>Record on your phone. Jarvis adds the recording to your memory when the Mac wakes.</p>
+      <details><summary>How it's built</summary><div>
+        <p><b>iPhone:</b> Voice Memos sync over iCloud and are imported automatically. The first time, Jarvis asks for Full Disk Access, with a button that opens the right Settings page.</p>
+        <p><b>Android:</b> save recordings into a synced folder that points at <code>~/Jarvis/inbox</code>.</p>
+        <p>If your AirPods disconnect, Jarvis pauses and marks the gap in that hour's note.</p>
+      </div></details>
+    </div>
+
+  </div>
+</section>
+
+<section id="privacy">
+  <span class="eyebrow">Privacy</span>
+  <h2>You can always tell. You stay in control.</h2>
+  <ul class="plain">
+    <li>The icon is red while recording.</li>
+    <li><b>Pause</b> with a click or "Jarvis, pause". Nothing is recorded, but "Jarvis, …" still works: ask a question, give a command or say "resume". The icon goes grey with a dot.</li>
+    <li><b>Stop</b> from the menu turns everything off, wake word included. The icon goes plain grey.</li>
+    <li>It stops on its own when your screen locks and during quiet hours you set.</li>
+    <li>Audio is never stored and never uploaded.</li>
+    <li>Only text goes to the model you choose.</li>
+    <li><b>Forget last hour</b> deletes that hour's notes and their search entries.</li>
+  </ul>
+  <p class="note">Tell people when you're recording them. Consent and local laws apply to you.</p>
+</section>
+
+<section id="requirements">
+  <span class="eyebrow">Requirements</span>
+  <h2>What you need.</h2>
+  <div class="facts">
+    <div><span class="k">Mac</span><span class="v">macOS 13 or later. <b>macOS 27</b> on Apple Silicon for the newest features.</span></div>
+    <div><span class="k">Tools</span><span class="v">Homebrew and the Xcode Command Line Tools. <b>Xcode 27</b> for the newest features.</span></div>
+    <div><span class="k">AI</span><span class="v">Claude Code with a Claude plan. Without it, Apple's on-device model (macOS 26+) or Ollama writes notes.</span></div>
+    <div><span class="k">Mic</span><span class="v">Built-in mic or any earbuds. AirPods are best for your own voice.</span></div>
+  </div>
+</section>
+
+<section id="install">
+  <span class="eyebrow">Install</span>
+  <h2>One command. <span class="pill plan">After publish</span></h2>
+  <pre><code>brew install yashMangal19/tap/jarvis</code></pre>
+  <p class="muted">Or from source:</p>
+  <pre><code>git clone https://github.com/yashMangal19/jarvis
+cd jarvis &amp;&amp; ./install.sh</code></pre>
+  <ol class="steps">
+    <li><span class="n">01</span><div><h3>Allow the mic</h3><p>Open Jarvis from the menu bar and allow microphone access.</p></div></li>
+    <li><span class="n">02</span><div><h3>Connect Claude (optional)</h3><p>Install Claude Code and sign in. Add tools with <code>claude mcp add</code>.</p></div></li>
+    <li><span class="n">03</span><div><h3>Start listening</h3><p>Click Start. Turn on Demo mode to see a note in 2 minutes.</p></div></li>
+  </ol>
+</section>
+
+<section id="files">
+  <span class="eyebrow">Your data</span>
+  <h2>Plain files you own.</h2>
+<pre><code>~/Jarvis/
+├── inbox/          phone recordings to import
+├── transcripts/    deleted after 7 days
+├── notes/
+│   ├── hourly/
+│   ├── daily/
+│   └── weekly/
+├── index/          for search
+└── prompts/        edit to change your notes</code></pre>
+</section>
+
+<section id="extend">
+  <span class="eyebrow">Build on top</span>
+  <h2>Swap any step.</h2>
+  <p class="muted">Each step is a small Swift protocol. Replace one without touching the rest. <span class="pill plan">Planned API</span></p>
+<pre><code>protocol Transcriber   { func transcribe(_ chunk: AudioChunk) async throws -> String }
+protocol NoteWriter    { func note(from transcript: String, prompt: String) async throws -> String }
+protocol Embedder      { func embed(_ text: String) throws -> [Float] }
+protocol CommandRunner {
+  func draft(_ command: String) async throws -> String   // never acts
+  func execute(_ draft: String) async throws -> String   // only after "yes"
+}</code></pre>
+  <h3>Ideas to try</h3>
+  <ul class="plain">
+    <li>Change how notes read: edit <code>prompts/hourly.md</code>.</li>
+    <li>Give Jarvis new powers: <code>claude mcp add</code> any MCP server.</li>
+    <li>Send yourself a daily digest of <code>notes/daily/</code>.</li>
+    <li>Build a phone companion in SwiftUI or Compose that feeds the inbox.</li>
+    <li>Name individual speakers inside "Others".</li>
+    <li>Add Siri with App Intents (macOS 27): "Siri, ask Jarvis …".</li>
+  </ul>
+</section>
+
+<footer>Made by Yash Mangal for Swift Mumbai. Questions and pull requests are welcome at github.com/yashMangal19/jarvis.</footer>
+</div>
