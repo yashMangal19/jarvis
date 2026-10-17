@@ -40,7 +40,15 @@ public final class SystemAudioSource: NSObject, AudioSourceStream, SCStreamOutpu
             guard self.onChunk == nil else { return }
             let stream = try makeStream()
             try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
-            try Self.wait { done in stream.startCapture { done($0) } }
+            do {
+                try Self.wait({ done in stream.startCapture { done($0.map { .failure($0) } ?? .success(())) } },
+                              late: { if case .success = $0 { stream.stopCapture() } })
+            } catch {
+                // Never stored in `self.stream`, so nothing else would ever stop it.
+                try? stream.removeStreamOutput(self, type: .audio)
+                stream.stopCapture()
+                throw error
+            }
             self.stream = stream
             self.onChunk = onChunk  // set only once running, so a failed start can be retried
         }
@@ -50,7 +58,7 @@ public final class SystemAudioSource: NSObject, AudioSourceStream, SCStreamOutpu
         queue.sync(execute: tearDown)
     }
 
-    // MARK: SCStreamOutput, SCStreamDelegate — called on `queue`
+    // MARK: SCStreamOutput on `queue` (its `sampleHandlerQueue`); SCStreamDelegate on a ScreenCaptureKit queue
 
     public func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
                        of type: SCStreamOutputType) {
@@ -82,14 +90,12 @@ public final class SystemAudioSource: NSObject, AudioSourceStream, SCStreamOutpu
 
     /// Audio-only in effect: a display filter is required, so the video is 1×1 at 1 fps and unread.
     private func makeStream() throws -> SCStream {
-        var found: SCShareableContent?
-        try Self.wait { done in
+        let content: SCShareableContent = try Self.wait { done in
             SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
-                found = content
-                done(error)
+                done(content.map { .success($0) } ?? .failure(error ?? AudioError.noInput))
             }
         }
-        guard let content = found, let display = content.displays.first else { throw AudioError.noInput }
+        guard let display = content.displays.first else { throw AudioError.noInput }
         let me = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         let filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])
         let config = SCStreamConfiguration()
@@ -103,13 +109,15 @@ public final class SystemAudioSource: NSObject, AudioSourceStream, SCStreamOutpu
         return SCStream(filter: filter, configuration: config, delegate: self)
     }
 
-    /// Runs one ScreenCaptureKit completion-handler call to the end; never called on the handler's queue.
-    private static func wait(_ call: (@escaping (Error?) -> Void) -> Void) throws {
-        let finished = DispatchSemaphore(value: 0)
-        var failure: Error?
-        call { failure = $0; finished.signal() }
-        guard finished.wait(timeout: .now() + setupTimeout) == .success else { throw AudioError.noInput }
-        if let failure { throw failure }
+    /// Waits for one ScreenCaptureKit completion handler; never called on the handler's queue. Past
+    /// `timeout` it throws `.noInput`, and a result that arrives later goes to `late` instead.
+    static func wait<T>(timeout: DispatchTimeInterval = setupTimeout,
+                        _ call: (@escaping (Result<T, any Error>) -> Void) -> Void,
+                        late: @escaping (Result<T, any Error>) -> Void = { _ in }) throws -> T {
+        let box = CompletionBox(late: late)
+        call(box.complete)
+        guard let result = box.wait(timeout) else { throw AudioError.noInput }
+        return try result.get()
     }
 
     /// The buffer's samples, if it is the mono 16 kHz float audio the configuration asked for.
@@ -123,5 +131,35 @@ public final class SystemAudioSource: NSObject, AudioSourceStream, SCStreamOutpu
             return Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self),
                                              count: Int(first.mDataByteSize) / MemoryLayout<Float>.size))
         }
+    }
+}
+
+/// One completion result handed from a ScreenCaptureKit queue to the waiting thread, under a lock.
+private final class CompletionBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private let arrived = DispatchSemaphore(value: 0)
+    private let late: (Result<T, any Error>) -> Void
+    private var result: Result<T, any Error>?
+    private var abandoned = false
+
+    init(late: @escaping (Result<T, any Error>) -> Void) {
+        self.late = late
+    }
+
+    func complete(_ result: Result<T, any Error>) {
+        lock.lock()
+        guard !abandoned else { lock.unlock(); late(result); return }
+        self.result = result
+        lock.unlock()
+        arrived.signal()
+    }
+
+    /// The result, or `nil` once `timeout` passes with none; every later result then goes to `late`.
+    func wait(_ timeout: DispatchTimeInterval) -> Result<T, any Error>? {
+        let inTime = arrived.wait(timeout: .now() + timeout) == .success
+        lock.lock()
+        defer { lock.unlock() }
+        if !inTime, result == nil { abandoned = true }
+        return result
     }
 }

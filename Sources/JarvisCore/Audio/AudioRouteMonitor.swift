@@ -24,7 +24,7 @@ public final class AudioRouteMonitor {
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.refresh() }
         self.listener = listener
         for selector in Self.watched {
-            var address = Self.address(selector)
+            var address = CoreAudioProperty.address(selector)
             AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue, listener)
         }
     }
@@ -32,13 +32,13 @@ public final class AudioRouteMonitor {
     deinit {
         guard let listener else { return }
         for selector in Self.watched {
-            var address = Self.address(selector)
+            var address = CoreAudioProperty.address(selector)
             AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue, listener)
         }
     }
 
     private func refresh() {
-        let present = Set(Self.deviceIDs())
+        let present = Set(CoreAudioProperty.deviceIDs())
         let next = Self.defaultInput()
         lock.lock()
         let events = tracker.update(newDefault: next, present: present)
@@ -47,20 +47,32 @@ public final class AudioRouteMonitor {
         events.forEach { handler?($0) }
     }
 
-    // MARK: CoreAudio reads
+    private static func defaultInput() -> Entry? {
+        guard let id = CoreAudioProperty.defaultInputDevice() else { return nil }
+        var name: Unmanaged<CFString>?
+        guard CoreAudioProperty.read(id, kAudioObjectPropertyName, into: &name), let name else { return nil }
+        var transport: UInt32 = 0
+        _ = CoreAudioProperty.read(id, kAudioDevicePropertyTransportType, into: &transport)
+        return (id, InputDevice(name: name.takeRetainedValue() as String,
+                                isBluetoothHeadset: transport == kAudioDeviceTransportTypeBluetooth
+                                    || transport == kAudioDeviceTransportTypeBluetoothLE))
+    }
+}
 
-    private static func address(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
-        AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
-                                   mElement: kAudioObjectPropertyElementMain)
+/// CoreAudio property reads shared by the route monitor and the room mic.
+enum CoreAudioProperty {
+    static func address(_ selector: AudioObjectPropertySelector,
+                        _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
     }
 
-    private static func read<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, into value: inout T) -> Bool {
+    static func read<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, into value: inout T) -> Bool {
         var address = address(selector)
         var size = UInt32(MemoryLayout<T>.size)
         return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr
     }
 
-    private static func deviceIDs() -> [AudioDeviceID] {
+    static func deviceIDs() -> [AudioDeviceID] {
         let system = AudioObjectID(kAudioObjectSystemObject)
         var address = address(kAudioHardwarePropertyDevices)
         var size: UInt32 = 0
@@ -70,17 +82,11 @@ public final class AudioRouteMonitor {
         return ids
     }
 
-    private static func defaultInput() -> Entry? {
+    static func defaultInputDevice() -> AudioDeviceID? {
         var id = AudioDeviceID(kAudioObjectUnknown)
         guard read(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultInputDevice, into: &id),
               id != kAudioObjectUnknown else { return nil }
-        var name: Unmanaged<CFString>?
-        guard read(id, kAudioObjectPropertyName, into: &name), let name else { return nil }
-        var transport: UInt32 = 0
-        _ = read(id, kAudioDevicePropertyTransportType, into: &transport)
-        return (id, InputDevice(name: name.takeRetainedValue() as String,
-                                isBluetoothHeadset: transport == kAudioDeviceTransportTypeBluetooth
-                                    || transport == kAudioDeviceTransportTypeBluetoothLE))
+        return id
     }
 }
 

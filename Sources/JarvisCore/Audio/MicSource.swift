@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 
 /// The active microphone as 30 s, 16 kHz mono chunks, plus a tee of 250 ms frames for the wake-word
 /// listener. Follows the default input: the engine restarts on `.AVAudioEngineConfigurationChange`.
@@ -7,22 +8,18 @@ public final class MicSource: AudioSourceStream {
     /// 250 ms frames of 16 kHz mono samples. Keeps only the newest few if nobody is reading.
     public let frames: AsyncStream<[Float]>
 
-    private static let sampleRate = 16_000.0
     private let framesOut: AsyncStream<[Float]>.Continuation
-    private let clock: any TimeSource
-    private let engine = AVAudioEngine()
-    private let queue = DispatchQueue(label: "jarvis.mic")
+    private let queue: DispatchQueue
     private let onQueue = DispatchSpecificKey<Void>()
+    private let tap: InputTap
     private var chunks = ChunkAssembler(source: .mic)
     private var frameCutter = ChunkAssembler(chunkSeconds: 0.25, source: .mic)
     private var onChunk: ((AudioChunk) -> Void)?
-    private var configObserver: NSObjectProtocol?
-    /// Bumped on every engine stop, so samples an old tap queued are dropped after a restart.
-    private var generation = 0
 
     public init(clock: any TimeSource = SystemClock()) {
-        self.clock = clock
         (frames, framesOut) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
+        queue = DispatchQueue(label: "jarvis.mic")
+        tap = InputTap(queue: queue, clock: clock)
         queue.setSpecific(key: onQueue, value: ())
     }
 
@@ -38,14 +35,9 @@ public final class MicSource: AudioSourceStream {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw AudioError.permissionDenied }
         try queue.sync {
             guard self.onChunk == nil else { return }
-            try startEngine()
+            try startTap()
             self.onChunk = onChunk  // set only once running, so a failed start can be retried
-            configObserver = NotificationCenter.default.addObserver(
-                forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
-            ) { [weak self] _ in
-                // Apple: never tear the engine down inside this handler; hop to our queue.
-                self?.queue.async { [weak self] in self?.restart() }
-            }
+            tap.onConfigurationChange = { [weak self] in self?.restart() }
         }
     }
 
@@ -56,51 +48,97 @@ public final class MicSource: AudioSourceStream {
     // MARK: on `queue`
 
     private func tearDown() {
-        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
-        configObserver = nil
-        stopEngine()
+        tap.onConfigurationChange = nil
+        stopTap()
         onChunk = nil
     }
 
-    private func startEngine() throws {
-        let input = engine.inputNode
-        let inFormat = input.inputFormat(forBus: 0)
-        guard inFormat.sampleRate > 0, inFormat.channelCount > 0,
-              let outFormat = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 1),
-              let converter = AVAudioConverter(from: inFormat, to: outFormat)
-        else { throw AudioError.noInput }
-        converter.downmix = true  // mix a multi-channel mic to mono rather than keep channel 0
-        let generation = generation
-        input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
-            guard let self, let samples = Self.convert(buffer, with: converter, to: outFormat) else { return }
-            let heardAt = self.clock.now.addingTimeInterval(-Double(samples.count) / Self.sampleRate)
-            self.queue.async { [weak self] in self?.take(samples, at: heardAt, from: generation) }
-        }
-        engine.prepare()
-        do { try engine.start() } catch { input.removeTap(onBus: 0); throw error }
+    private func startTap() throws {
+        try tap.start { [weak self] samples, time in self?.take(samples, at: time) }
     }
 
-    /// Drops the tap and ends the current chunk; the generation bump keeps samples the old tap already
-    /// queued out of the next chunk, so no chunk spans the restart gap.
-    private func stopEngine() {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        generation += 1
+    /// Ends the current chunk too, so no chunk spans a restart gap.
+    private func stopTap() {
+        tap.stop()
         if let partial = chunks.flush() { onChunk?(partial) }
         _ = frameCutter.flush()
     }
 
     private func restart() {
         guard onChunk != nil else { return }
-        stopEngine()
+        stopTap()
         // A device with no usable input (e.g. the default went away) stays stopped until the next change.
-        try? startEngine()
+        try? startTap()
     }
 
-    private func take(_ samples: [Float], at time: Date, from tapGeneration: Int) {
-        guard tapGeneration == generation, let onChunk else { return }
+    private func take(_ samples: [Float], at time: Date) {
+        guard let onChunk else { return }
         chunks.append(samples, at: time).forEach(onChunk)
         frameCutter.append(samples, at: time).forEach { framesOut.yield($0.samples) }
+    }
+}
+
+/// The AVAudioEngine input tap both microphone streams share: 16 kHz mono samples delivered on the
+/// owner's queue, and configuration changes forwarded there. Call every member on that queue.
+final class InputTap {
+    private static let sampleRate = 16_000.0
+    /// Called on the owner's queue after `.AVAudioEngineConfigurationChange`; restart from here.
+    var onConfigurationChange: (() -> Void)?
+
+    private let engine = AVAudioEngine()
+    private let queue: DispatchQueue
+    private let clock: any TimeSource
+    private var observer: NSObjectProtocol?
+    /// Bumped on every stop, so samples an old tap queued are dropped after a restart.
+    private var generation = 0
+
+    init(queue: DispatchQueue, clock: any TimeSource) {
+        self.queue = queue
+        self.clock = clock
+        observer = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self, queue] _ in
+            // Apple: never tear the engine down inside this handler; hop to the owner's queue.
+            queue.async { self?.onConfigurationChange?() }
+        }
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    /// Installs the tap and starts the engine. `device` pins the input; `nil` follows the default input.
+    func start(device: AudioDeviceID? = nil, onSamples: @escaping (_ samples: [Float], _ heardAt: Date) -> Void) throws {
+        let input = engine.inputNode
+        if var device {
+            guard let unit = input.audioUnit,
+                  AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                       &device, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr
+            else { throw AudioError.noInput }
+        }
+        let inFormat = input.inputFormat(forBus: 0)
+        guard inFormat.sampleRate > 0, inFormat.channelCount > 0,
+              let outFormat = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 1),
+              let converter = AVAudioConverter(from: inFormat, to: outFormat)
+        else { throw AudioError.noInput }
+        converter.downmix = true  // mix a multi-channel mic (the built-in one is an array) to mono
+        let generation = generation
+        input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
+            guard let self, let samples = Self.convert(buffer, with: converter, to: outFormat) else { return }
+            let heardAt = self.clock.now.addingTimeInterval(-Double(samples.count) / Self.sampleRate)
+            self.queue.async { [weak self] in
+                guard let self, generation == self.generation else { return }
+                onSamples(samples, heardAt)
+            }
+        }
+        engine.prepare()
+        do { try engine.start() } catch { input.removeTap(onBus: 0); throw error }
+    }
+
+    func stop() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        generation += 1
     }
 
     /// One tap buffer at 16 kHz mono; the converter keeps its resampler state between buffers.

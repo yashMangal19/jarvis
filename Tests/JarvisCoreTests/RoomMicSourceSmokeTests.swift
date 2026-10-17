@@ -7,7 +7,7 @@ struct RoomMicSourceSmokeTests {
     @Test func startRefusesWhenTheDefaultInputIsTheBuiltInMic() {
         let room = RoomMicSource(resolver: .init(defaultInput: { 73 }, builtIn: { 73 }))
 
-        #expect(throws: RoomMicError.redundantWithDefaultInput) {
+        #expect(throws: AudioError.redundantWithDefaultInput) {
             try room.start { _ in }
         }
     }

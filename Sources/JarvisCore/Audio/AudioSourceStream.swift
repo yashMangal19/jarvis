@@ -9,4 +9,6 @@ public enum AudioError: Error, Equatable {
     case permissionDenied
     /// No usable input device, or its format cannot be converted to 16 kHz mono.
     case noInput
+    /// The default input already is the built-in mic, so the mic stream records the room; run only that.
+    case redundantWithDefaultInput
 }
