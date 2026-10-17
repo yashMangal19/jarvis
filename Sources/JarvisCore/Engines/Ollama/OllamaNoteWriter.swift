@@ -7,6 +7,9 @@ public struct OllamaNoteWriter: NoteWriter {
         public let body: String
     }
 
+    /// `/api/tags` answered 200 with an empty model list: Ollama runs but nothing was pulled.
+    public struct NoModelInstalled: Error {}
+
     private let baseURL: URL
     private let model: String?
     private let session: URLSession
@@ -34,9 +37,11 @@ public struct OllamaNoteWriter: NoteWriter {
     /// The configured model, else the first one `ollama pull` installed.
     private func resolvedModel() async throws -> String {
         if let model { return model }
-        let (data, _) = try await session.data(from: baseURL.appendingPathComponent("api/tags"))
+        let (data, response) = try await session.data(from: baseURL.appendingPathComponent("api/tags"))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw Failure(status: status, body: String(decoding: data, as: UTF8.self)) }
         guard let first = try JSONDecoder().decode(Tags.self, from: data).models.first?.name else {
-            throw Failure(status: 404, body: "no Ollama model installed")
+            throw NoModelInstalled()
         }
         return first
     }

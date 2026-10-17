@@ -18,10 +18,21 @@ import NaturalLanguage
         #expect(cosine(anchor, related) > cosine(anchor, unrelated))
     }
 
-    @Test func emptyTextIsAZeroVectorOfTheModelDimension() throws {
-        let vector = try NLEmbedder().embed("")
-        #expect(vector.count == NLEmbedding.sentenceEmbedding(for: .english)?.dimension)
-        #expect(vector.allSatisfy { $0 == 0 })
+    @Test func emptyOrWhitespaceTextIsAZeroVectorOfTheModelDimension() throws {
+        for text in ["", "  \n\t "] {
+            let vector = try NLEmbedder().embed(text)
+            #expect(vector.count == NLEmbedding.sentenceEmbedding(for: .english)?.dimension)
+            #expect(vector.allSatisfy { $0 == 0 })
+        }
+    }
+
+    @Test func withoutTheSentenceModelNonEmptyTextIsTheAveragedWordVector() throws {
+        let words = try #require(NLEmbedding.wordEmbedding(for: .english))
+        let embedder = NLEmbedder(sentence: nil, words: words)
+        let vector = try embedder.embed("budget money")
+        #expect(vector == NLEmbedder.averagedWordVector("budget money", words))
+        #expect(vector.contains { $0 != 0 })
+        #expect(throws: NLEmbedder.Unavailable.self) { try NLEmbedder(sentence: nil, words: nil).embed("budget") }
     }
 
     @Test func wordFallbackAveragesKnownWordsAndKeepsOrdering() throws {

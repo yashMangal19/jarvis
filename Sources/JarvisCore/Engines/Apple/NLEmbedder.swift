@@ -2,19 +2,34 @@ import Foundation
 import NaturalLanguage
 
 /// Apple's built-in NaturalLanguage embeddings: the baseline `Embedder` on every Mac.
+///
+/// Empty or whitespace-only text is a zero vector. Non-empty text the sentence model cannot embed
+/// falls back to the mean of its known words' vectors, which is also zero when no word is known.
+/// A zero vector has no direction, so cosine callers must guard a zero norm.
 public struct NLEmbedder: Embedder {
     public struct Unavailable: Error {}
 
     public let displayName = "NaturalLanguage"
+    /// Loaded once, not per `embed` call, so bulk indexing does not reload the model.
+    private let sentence: NLEmbedding?
+    private let words: NLEmbedding?
 
-    public init() {}
+    public init() {
+        self.init(sentence: NLEmbedding.sentenceEmbedding(for: .english),
+                  words: NLEmbedding.wordEmbedding(for: .english))
+    }
+
+    init(sentence: NLEmbedding?, words: NLEmbedding?) {
+        self.sentence = sentence
+        self.words = words
+    }
 
     public func embed(_ text: String) throws -> [Float] {
-        if let sentence = NLEmbedding.sentenceEmbedding(for: .english) {
-            return sentence.vector(for: text).map { $0.map(Float.init) }
-                ?? Array(repeating: 0, count: sentence.dimension)
+        if text.allSatisfy(\.isWhitespace), let dimension = (sentence ?? words)?.dimension {
+            return Array(repeating: 0, count: dimension)
         }
-        guard let words = NLEmbedding.wordEmbedding(for: .english) else { throw Unavailable() }
+        if let vector = sentence?.vector(for: text) { return vector.map(Float.init) }
+        guard let words else { throw Unavailable() }
         return Self.averagedWordVector(text, words)
     }
 

@@ -5,12 +5,8 @@ import Foundation
 public enum OllamaInstall {
     public static let defaultURL = URL(string: "http://127.0.0.1:11434")!
 
-    /// A launched app's PATH omits Homebrew, so its two prefixes are always searched.
-    public static let defaultSearchPaths: [String] =
-        (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        + ["/opt/homebrew/bin", "/usr/local/bin"]
-
-    /// The server answers `GET /api/tags` with 200 within 2 seconds.
+    /// The server answers `GET /api/tags` with 200. The request uses a 2-second
+    /// `timeoutInterval`, which is an idle timeout (no bytes for 2 s), not a total deadline.
     public static func isAvailable(baseURL: URL = defaultURL, session: URLSession = .shared) async -> Bool {
         var request = URLRequest(url: baseURL.appendingPathComponent("api/tags"))
         request.timeoutInterval = 2
@@ -18,8 +14,8 @@ public enum OllamaInstall {
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
-    /// An executable `ollama` exists in one of `directories`.
-    public static func isInstalled(searching directories: [String] = defaultSearchPaths) -> Bool {
-        directories.contains { FileManager.default.isExecutableFile(atPath: "\($0)/ollama") }
+    /// An executable `ollama` exists in one of `directories` — the same search path whisper.cpp uses.
+    public static func isInstalled(searching directories: [URL] = WhisperInstall.defaultSearchPath) -> Bool {
+        directories.contains { FileManager.default.isExecutableFile(atPath: $0.appending(path: "ollama").path) }
     }
 }

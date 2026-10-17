@@ -90,7 +90,28 @@ final class OllamaStub: URLProtocol {
         #expect(error?.body.contains("not found") == true)
     }
 
-    @Test func availableOnlyWhenTagsAnswerWithinTwoSeconds() async throws {
+    @Test func tagsServerErrorIsAFailureWithTheRealStatus() async throws {
+        OllamaStub.handler = { _, _ in (500, Data("boom".utf8)) }
+        let writer = OllamaNoteWriter(baseURL: base, session: OllamaStub.session())
+
+        let error = await #expect(throws: OllamaNoteWriter.Failure.self) {
+            try await writer.note(from: "t", prompt: "p")
+        }
+        #expect(error?.status == 500)
+        #expect(error?.body == "boom")
+        #expect(OllamaStub.seen.map { $0.0.url?.path } == ["/api/tags"])
+    }
+
+    @Test func noInstalledModelIsItsOwnError() async throws {
+        OllamaStub.handler = { _, _ in (200, Data(#"{"models":[]}"#.utf8)) }
+        let writer = OllamaNoteWriter(baseURL: base, session: OllamaStub.session())
+
+        await #expect(throws: OllamaNoteWriter.NoModelInstalled.self) {
+            try await writer.note(from: "t", prompt: "p")
+        }
+    }
+
+    @Test func availableOnlyWhenTagsAnswer200AndRequestHasATwoSecondIdleTimeout() async throws {
         OllamaStub.handler = { _, _ in (200, Data(#"{"models":[]}"#.utf8)) }
         #expect(await OllamaInstall.isAvailable(session: OllamaStub.session()))
         #expect(OllamaStub.seen.last?.0.url?.path == "/api/tags")
@@ -104,12 +125,12 @@ final class OllamaStub: URLProtocol {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        #expect(OllamaInstall.isInstalled(searching: [dir.path]) == false)
+        #expect(OllamaInstall.isInstalled(searching: [dir]) == false)
 
         let binary = dir.appendingPathComponent("ollama")
         try Data().write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
-        #expect(OllamaInstall.isInstalled(searching: [dir.path]))
+        #expect(OllamaInstall.isInstalled(searching: [dir]))
     }
 
     /// Talks to a real server; opt in with JARVIS_OLLAMA_SMOKE=1 (tests use no network by default).
