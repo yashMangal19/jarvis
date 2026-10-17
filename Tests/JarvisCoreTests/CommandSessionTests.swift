@@ -49,7 +49,7 @@ private final class CommandTestClock: TimeSource {
     }
 
     // Story 28/31: a yes (any phrasing, any case, with punctuation) executes the read-back draft.
-    @Test(arguments: ["Yes.", "  okay ", "Go ahead!", "do it", "Haan", "yup", "confirm"])
+    @Test(arguments: ["Yes.", "  okay ", "Go ahead!", "do it", "Haan", "yup", "confirm", "go-ahead", "Do-it."])
     func yesExecutesTheDraftAndSpeaksTheResult(reply: String) async {
         let session = makeSession()
         await session.submit("email Asha the deck")
@@ -191,6 +191,93 @@ private final class CommandTestClock: TimeSource {
         #expect(runner.drafts.isEmpty && runner.executed.isEmpty)
     }
 
+    // F-5: the drop message and threshold follow `maxCorrections`.
+    @Test func dropMessageFollowsMaxCorrections() async {
+        let runner = self.runner, spoken = self.spoken
+        let session = CommandSession(runner: { runner }, clock: clock, speak: { spoken.lines.append($0) },
+                                     maxCorrections: 2)
+        await session.submit("email Asha the deck")
+        await session.heard("to Prashant")
+        await session.heard("attach the PDF")
+
+        #expect(session.phase == .cancelled(.tooManyCorrections))
+        #expect(spoken.lines.last == "Dropping it — two corrections without a yes.")
+        #expect(runner.drafts.count == 2)
+    }
+
+    // F-5: `>=` — a zero budget drops on the first correction instead of never.
+    @Test func zeroMaxCorrectionsDropsOnFirstCorrection() async {
+        let runner = self.runner, spoken = self.spoken
+        let session = CommandSession(runner: { runner }, clock: clock, speak: { spoken.lines.append($0) },
+                                     maxCorrections: 0)
+        await session.submit("email Asha the deck")
+        await session.heard("to Prashant")
+
+        #expect(session.phase == .cancelled(.tooManyCorrections))
+        #expect(runner.drafts.count == 1)
+    }
+
+    // F-3: a cancelled execute ends quietly — no framework string spoken, no failure recorded.
+    @Test func cancelledExecuteEndsQuietly() async {
+        runner.executeError = CancellationError()
+        let session = makeSession()
+        await session.submit("email Asha the deck")
+        await session.heard("yes")
+
+        #expect(session.phase == .idle)
+        #expect(spoken.lines == ["plan: email Asha the deck"])
+    }
+
+    // F-3: a cancelled draft ends quietly too.
+    @Test func cancelledDraftEndsQuietly() async {
+        runner.draftError = CancellationError()
+        let session = makeSession()
+        await session.submit("email Asha the deck")
+
+        #expect(session.phase == .idle)
+        #expect(spoken.lines.isEmpty)
+    }
+
+    // F-2: a second command arriving while the first is still drafting wins; the late first
+    // draft is neither spoken nor confirmable, and a yes runs the second draft on its own runner.
+    @Test func secondSubmitWhileFirstDraftIsInFlightWins() async {
+        let slow = GatedCommandRunner()
+        let fast = ScriptedCommandRunner()
+        let session = makeSession()
+
+        let first = Task { await session.submit("email Asha the deck", runner: slow) }
+        await slow.waitUntilDrafting()
+        await session.submit("forget the last hour", runner: fast)
+        slow.finishDraft("plan: email Asha the deck")
+        await first.value
+
+        #expect(session.phase == .awaitingConfirmation(draft: "plan: forget the last hour", corrections: 0))
+        #expect(spoken.lines == ["plan: forget the last hour"])
+
+        await session.heard("yes")
+
+        #expect(fast.executed == ["plan: forget the last hour"])
+        #expect(slow.executed.isEmpty)
+        #expect(session.phase == .finished(result: "Sent."))
+    }
+
+    // F-2: a reset while execute is in flight is not overwritten by the late result.
+    @Test func resetDuringExecuteIsNotOverwritten() async {
+        let slow = GatedCommandRunner()
+        slow.draftResult = "plan: email Asha the deck"
+        let session = makeSession()
+        await session.submit("email Asha the deck", runner: slow)
+
+        let yes = Task { await session.heard("yes") }
+        await slow.waitUntilExecuting()
+        session.reset()
+        slow.finishExecute("Sent.")
+        await yes.value
+
+        #expect(session.phase == .idle)
+        #expect(spoken.lines == ["plan: email Asha the deck"])
+    }
+
     @Test func resetReturnsToIdle() async {
         let session = makeSession()
         await session.submit("email Asha the deck")
@@ -209,4 +296,29 @@ private struct CommandTestError: LocalizedError {
 
 private final class CommandSpokenLog {
     var lines: [String] = []
+}
+
+/// A runner whose `draft` / `execute` suspend until the test releases them.
+/// `draftResult` set → `draft` returns it at once instead of suspending.
+@MainActor
+private final class GatedCommandRunner: CommandRunner {
+    var draftResult: String?
+    var executed: [String] = []
+    private var draftGate: CheckedContinuation<String, Never>?
+    private var executeGate: CheckedContinuation<String, Never>?
+
+    func draft(_ command: String) async throws -> String {
+        if let draftResult { return draftResult }
+        return await withCheckedContinuation { draftGate = $0 }
+    }
+
+    func execute(_ draft: String) async throws -> String {
+        executed.append(draft)
+        return await withCheckedContinuation { executeGate = $0 }
+    }
+
+    func waitUntilDrafting() async { while draftGate == nil { await Task.yield() } }
+    func waitUntilExecuting() async { while executeGate == nil { await Task.yield() } }
+    func finishDraft(_ result: String) { draftGate?.resume(returning: result); draftGate = nil }
+    func finishExecute(_ result: String) { executeGate?.resume(returning: result); executeGate = nil }
 }
