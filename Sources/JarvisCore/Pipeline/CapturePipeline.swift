@@ -16,12 +16,11 @@ public final class CapturePipeline {
         self.gate = gate
     }
 
-    /// The chunk is only held for the duration of this call; audio is never persisted.
+    /// This class neither keeps nor writes the chunk: it is only held for the duration of this call.
     public func process(_ chunk: AudioChunk) async throws -> Outcome {
         if gate.isSilent(chunk) { return .dropped }
-        let text = try await transcriber.transcribe(chunk)
-        // Blank or bracket-only (`[BLANK_AUDIO]`, `[INAUDIBLE]`) is not speech, whichever engine produced it.
-        if WhisperTranscriber.clean(text).isEmpty { return .empty }
+        let text = TranscriptText.clean(try await transcriber.transcribe(chunk))
+        if text.isEmpty { return .empty }
         let line = TranscriptLine(time: chunk.start, label: chunk.source.label, text: text)
         try store.append(line)
         return .transcribed(line)

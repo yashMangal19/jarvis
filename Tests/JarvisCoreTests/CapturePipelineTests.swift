@@ -36,9 +36,9 @@ final class CapturePipelineFakeTranscriber: Transcriber {
                    sampleRate: sampleRate, start: start, source: source)
     }
 
-    /// One second of a 440 Hz sine at -20 dBFS RMS (peak 0.1 * sqrt(2)): ordinary speech level.
-    func speech(_ source: AudioSource = .mic) -> AudioChunk {
-        let peak = Float(0.1 * 2.0.squareRoot())
+    /// One second of a 440 Hz sine at `dbFS` RMS; the default -20 dBFS is ordinary speech level.
+    func speech(_ source: AudioSource = .mic, dbFS: Double = -20) -> AudioChunk {
+        let peak = Float(pow(10, dbFS / 20) * 2.0.squareRoot())
         let samples = (0..<Int(sampleRate)).map { i in
             peak * Float(sin(2 * Double.pi * 440 * Double(i) / sampleRate))
         }
@@ -89,5 +89,32 @@ final class CapturePipelineFakeTranscriber: Transcriber {
 
         #expect(outcome == .empty)
         #expect(try everything(in: store).isEmpty)
+    }
+
+    // The -50 dBFS threshold itself: quiet but non-zero audio either side of it.
+    @Test(arguments: [(-60.0, true), (-45.0, false)])
+    func quietChunkIsDroppedOnlyBelowTheThreshold(dbFS: Double, dropped: Bool) async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transcriber = CapturePipelineFakeTranscriber()
+        let pipeline = CapturePipeline(transcriber: transcriber, store: makeStore())
+
+        let outcome = try await pipeline.process(speech(dbFS: dbFS))
+
+        #expect((outcome == .dropped) == dropped)
+        #expect(transcriber.calls == (dropped ? 0 : 1))
+    }
+
+    // Stored text is the cleaned text, whatever the engine left in it.
+    @Test func storedLineHasPlaceholdersAndStrayWhitespaceRemoved() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transcriber = CapturePipelineFakeTranscriber(reply: " [Music] Ship it\n Friday. ")
+        let store = makeStore()
+        let pipeline = CapturePipeline(transcriber: transcriber, store: store)
+
+        let outcome = try await pipeline.process(speech())
+
+        let expected = TranscriptLine(time: start, label: .me, text: "Ship it Friday.")
+        #expect(outcome == .transcribed(expected))
+        #expect(try everything(in: store) == [expected])
     }
 }
