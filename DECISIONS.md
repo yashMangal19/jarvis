@@ -44,6 +44,11 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 ### DEC-5 · Engines are injected as `() -> (any Protocol)?` closures; `nil` means off (blueprint D-4)
 - **Why:** engines change after launch ("none" state, runtime fallback).
 - **Affects:** every component. The swappability test (T-24) keeps this true.
+- **Amended 17 Oct (T-24 review, human: A-lite):** the **transcriber** swaps live. When whisper's model
+  finishes downloading, transcription starts without a relaunch. The **search embedder** stays fixed per
+  launch, because nothing can change it while running today (Core AI is dormant). Note writer and command
+  runner already swap live.
+- **Checked against:** DEC-7 (search tiers unchanged), DEC-8 (index keyed by embedder, so a switch at launch rebuilds it).
 
 ### DEC-6 · whisper.cpp runs as a long-lived `whisper-server`; `whisper-cli` is the fallback (blueprint D-5)
 - **Why:** the wake word transcribes every ~1 s. Respawning reloads the model every time.
@@ -109,6 +114,26 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Decided by:** review (T-11 F-1)
 - **What:** the next thing said is handled as a new request, not dropped.
 
+### DEC-22 · Holding ⌥Space works while Stopped
+- **Decided by:** spec story 8a ("⌥Space also starts a command"), confirmed in the T-24 review
+- **What:** the mic runs only for the hold, nothing is stored, and the command routes as usual. A
+  deliberate hold also works during quiet hours.
+- **Affects:** `Commands/VoiceControlRouter.swift`, `Jarvis.swift`.
+- **Checked against:** DEC-14. Quiet hours stop *listening*, and a hold is a deliberate command, not listening.
+
+### DEC-24 · Audio chunks are cut at every listening boundary
+- **Decided by:** human (T-24 review, option A)
+- **What:** on pause, resume, stop, start, quiet hours or screen lock, the mic and call-audio streams end
+  their current chunk at that moment. Every chunk falls wholly inside or wholly outside listening, so nothing
+  paused is saved and no real speech is lost.
+- **Affects:** `Audio/MicSource.swift`, `Audio/SystemAudioSource.swift`, `Jarvis.swift`.
+- **Checked against:** DEC-11, DEC-14, DEC-16. Same privacy rules, without the 30 s loss.
+
+### DEC-25 · Jarvis checks quiet hours and the lock screen the moment it starts
+- **Decided by:** review (T-24 F-2)
+- **What:** no 30 s window of listening at launch.
+- **Checked against:** DEC-14.
+
 ## Imports
 
 ### DEC-18 · Imported recordings are labelled "Me" (blueprint D-7)
@@ -119,6 +144,18 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **What:** on first access, the memos already there become the baseline and are skipped. If `Recordings/`
   is missing, the baseline is empty. To bring in old memos, drop them in `~/Jarvis/inbox`.
 - **Affects:** `Import/VoiceMemosImporter.swift` (`start()` is async throws).
+
+### DEC-23 · An imported recording is deleted only after a successful transcription
+- **Decided by:** review (T-24 implementer finding on T-22)
+- **What:** if transcription fails, or no transcriber is available, the file stays and is retried. An empty
+  result from a silent recording counts as success.
+- **Affects:** `Import/ImportCoordinator.swift`.
+
+### DEC-26 · An import re-notes only finished hours
+- **Decided by:** review (T-24 F-1)
+- **What:** a recording from the current hour doesn't write that hour's note early. The hourly scheduler
+  owns the rule, using its own calendar and in-flight claim.
+- **Affects:** `Notes/HourlyNoteScheduler.swift`.
 
 ## Process and scope
 
@@ -136,7 +173,7 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 | Ticket · finding | Why rejected |
 |---|---|
 | T-5 F-6, T-6 F-3, T-8 F-6, T-18 F-4 | rejected in the wave-2…4 reviews, each with its reason in the run's review file |
-| F-CLAIM-1 on T-3, T-4, T-7, T-11, T-22, T-23 | "new vs reusing" disagreements where the reused piece was trivial or already fixed by another finding |
+| F-CLAIM-1 on T-3, T-4, T-7, T-11, T-22, T-23, T-24 | "new vs reusing" disagreements where the reused piece was trivial or already fixed by another finding |
 
 ## Open
 
