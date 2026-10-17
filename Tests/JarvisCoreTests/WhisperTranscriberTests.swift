@@ -3,7 +3,26 @@ import Foundation
 import Testing
 @testable import JarvisCore
 
-@Suite(.serialized) struct WhisperTranscriberTests {
+@Suite(.serialized) final class WhisperTranscriberTests {
+    /// Every temp directory a test creates; removed when the test's suite instance goes away.
+    private var tempDirs: [URL] = []
+    deinit { tempDirs.forEach { try? FileManager.default.removeItem(at: $0) } }
+
+    private func tempDir(_ prefix: String) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "\(prefix)-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        tempDirs.append(dir)
+        return dir
+    }
+
+    /// An executable `/bin/sh` script called `name` in a fresh temp directory.
+    private func fakeExecutable(_ name: String, _ body: String) throws -> URL {
+        let binary = try tempDir("fake").appending(path: name)
+        try "#!/bin/sh\n\(body)\n".write(to: binary, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        return binary
+    }
+
     // MARK: WAVWriter
 
     @Test func wavHeaderSays16kMono16BitAndDataMatchesSampleCount() throws {
@@ -31,18 +50,12 @@ import Testing
 
     /// A fake whisper-cli: records its argv in `args.txt`, prints `output`, exits with `status`.
     private func fakeCLI(output: String, status: Int32) throws -> (binary: URL, argsFile: URL) {
-        let dir = FileManager.default.temporaryDirectory.appending(path: "fakecli-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let binary = dir.appending(path: "whisper-cli")
-        let argsFile = dir.appending(path: "args.txt")
-        let script = """
-        #!/bin/sh
+        let argsFile = try tempDir("fakecli").appending(path: "args.txt")
+        let binary = try fakeExecutable("whisper-cli", """
         printf '%s\\n' "$@" > '\(argsFile.path)'
         printf '%s' '\(output)'
         exit \(status)
-        """
-        try script.write(to: binary, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        """)
         return (binary, argsFile)
     }
 
@@ -80,6 +93,28 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: try wavPath(in: fake.argsFile)))
     }
 
+    @Test func cancellingACLITranscribeTerminatesTheChildPromptly() async throws {
+        let argsFile = try tempDir("fakecli").appending(path: "args.txt")
+        let slow = try fakeExecutable("whisper-cli", """
+        printf '%s\\n' "$@" > '\(argsFile.path)'
+        exec /bin/sleep 30
+        """)
+        let transcriber = WhisperTranscriber(backend: .cli(binary: slow, model: URL(filePath: "/m.bin")))
+        let chunk = oneSecond
+        let task = Task { try await transcriber.transcribe(chunk) }
+        for _ in 0..<50 where !FileManager.default.fileExists(atPath: argsFile.path) {
+            try await Task.sleep(nanoseconds: 100_000_000)     // until the child is running
+        }
+
+        let cancelledAt = Date()
+        task.cancel()
+        let result = await task.result
+
+        #expect(Date().timeIntervalSince(cancelledAt) < 5)
+        #expect(throws: CancellationError.self) { try result.get() }
+        #expect(!FileManager.default.fileExists(atPath: try wavPath(in: argsFile)))
+    }
+
     // MARK: .server backend
 
     @Test func serverBackendPostsMultipartAndReturnsCleanedText() async throws {
@@ -109,8 +144,7 @@ import Testing
     // MARK: WhisperInstall
 
     private func folder(with files: [String], executable: Bool = false) throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appending(path: "wi-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = try tempDir("wi")
         for name in files {
             let file = dir.appending(path: name)
             try Data("x".utf8).write(to: file)
@@ -188,13 +222,152 @@ import Testing
         #expect(answers == [true, true, true, false, true])
     }
 
-    static let serverBinary = URL(filePath: "/opt/homebrew/bin/whisper-server")
-    static let englishModel = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().appending(path: "models/ggml-base.en.bin")
-    static let evidence = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().appending(path: ".agentic/jarvis-ambient-memory/evidence/airpods3.wav")
-    static var serverSmokeAvailable: Bool {
-        [serverBinary, englishModel, evidence].allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
+    /// A fake server that appends the `--port` it was given to `ports.txt`, then exits after 0.5 s.
+    private func flakyServer() throws -> (binary: URL, ports: URL) {
+        let ports = try tempDir("ports").appending(path: "ports.txt")
+        let binary = try fakeExecutable("whisper-server", """
+        printf '%s\\n' "$4" >> '\(ports.path)'
+        exec /bin/sleep 0.5
+        """)
+        return (binary, ports)
+    }
+
+    private func lines(_ file: URL) -> [String] {
+        ((try? String(contentsOf: file, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+    }
+
+    /// A socket listening on 127.0.0.1:`port`, as another program holding the port would.
+    private func occupy(_ port: Int) throws -> Int32 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(UInt16(port).bigEndian)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        try #require(bound == 0 && listen(fd, 1) == 0)
+        return fd
+    }
+
+    /// A previous run's server, left behind by a crash: a long-running fake, started by the test.
+    private func orphan() throws -> (process: Process, binary: URL) {
+        let binary = try fakeExecutable("whisper-server", "exec /bin/sleep 600")
+        let process = Process()
+        process.executableURL = binary
+        try process.run()
+        return (process, binary)
+    }
+
+    private func reap(_ process: Process) {
+        if process.isRunning { process.terminate(); process.waitUntilExit() }
+    }
+
+    private func gone(_ process: Process) async throws -> Bool {
+        for _ in 0..<50 where process.isRunning { try await Task.sleep(nanoseconds: 100_000_000) }
+        return !process.isRunning
+    }
+
+    @Test func startTerminatesTheServerAPreviousRunLeftBehindAndReusesItsPort() async throws {
+        let old = try orphan()
+        defer { reap(old.process) }
+        let pid = old.process.processIdentifier
+        let started = try #require(WhisperServerProcess.startTime(of: pid))
+        let recordedPort = WhisperServerProcess.freePort(from: 17_455)
+        let pidFile = try tempDir("pid").appending(path: "jarvis-whisper-main.pid")
+        try "\(pid) \(started) \(recordedPort)".write(to: pidFile, atomically: true, encoding: .utf8)
+        let server = WhisperServerProcess(binary: old.binary, model: URL(filePath: "/m.bin"), port: 17_701,
+                                          pidFile: pidFile)
+        defer { server.stop() }
+
+        try? await server.start(timeout: 0.3)          // the fake never answers HTTP
+
+        #expect(try await gone(old.process))
+        #expect(server.port == recordedPort)
+        let recorded = try String(contentsOf: pidFile, encoding: .utf8).split(separator: " ")
+        #expect(recorded.first.map(String.init) == server.pid.map(String.init))
+        #expect(recorded.last.map(String.init) == String(recordedPort))
+
+        server.stop()
+        #expect(!FileManager.default.fileExists(atPath: pidFile.path))
+    }
+
+    @Test func startLeavesAProcessAloneWhenOnlyItsPidMatchesThePidFile() async throws {
+        let unrelated = try orphan()
+        defer { reap(unrelated.process) }
+        let pidFile = try tempDir("pid").appending(path: "jarvis-whisper-wake.pid")
+        // Same pid, different start time: the pid was recycled by another process.
+        try "\(unrelated.process.processIdentifier) 1 17455".write(to: pidFile, atomically: true, encoding: .utf8)
+        let server = WhisperServerProcess(binary: unrelated.binary, model: URL(filePath: "/m.bin"),
+                                          port: WhisperServerProcess.freePort(from: 17_711), pidFile: pidFile)
+        defer { server.stop() }
+
+        try? await server.start(timeout: 0.3)
+
+        #expect(unrelated.process.isRunning)
+        #expect(server.port != 17_455)
+    }
+
+    @Test func aServerThatKeepsExitingStopsRelaunchingAndSurfacesTheError() async throws {
+        let launches = try tempDir("launches").appending(path: "launches.txt")
+        let dying = try fakeExecutable("whisper-server", "echo x >> '\(launches.path)'\nexit 1")
+        let server = WhisperServerProcess(binary: dying, model: URL(filePath: "/m.bin"),
+                                          port: WhisperServerProcess.freePort(from: 17_601))
+        defer { server.stop() }
+
+        await #expect(throws: WhisperError.serverKeepsExiting) { try await server.start(timeout: 10) }
+
+        #expect(lines(launches).count == 4)             // the first launch plus 3 relaunches
+        #expect(server.pid == nil)
+        await #expect(throws: WhisperError.serverKeepsExiting) {
+            try await WhisperTranscriber(backend: .server(server)).transcribe(self.oneSecond)
+        }
+    }
+
+    @Test func readinessWaitsForA200FromHealth() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubHealth.self]
+        let server = WhisperServerProcess(binary: URL(filePath: "/bin/false"), model: URL(filePath: "/m.bin"),
+                                          port: 17_171, session: URLSession(configuration: config))
+
+        StubHealth.status = 503                         // whisper-server while the model is loading
+        await #expect(throws: WhisperError.serverNotReady) { try await server.waitUntilReady(timeout: 0.5) }
+
+        StubHealth.status = 200
+        try await server.waitUntilReady(timeout: 2)
+        #expect(StubHealth.lastURL?.absoluteString == "http://127.0.0.1:17171/health")
+    }
+
+    @Test func relaunchMovesToTheNextFreePortWhenItsPortWasTakenMeanwhile() async throws {
+        let fake = try flakyServer()
+        let server = WhisperServerProcess(binary: fake.binary, model: URL(filePath: "/m.bin"),
+                                          port: WhisperServerProcess.freePort(from: 17_501))
+        defer { server.stop() }
+        try? await server.start(timeout: 0.2)          // the fake never answers HTTP
+        let first = server.port
+        let holder = try occupy(first)
+        defer { close(holder) }
+
+        for _ in 0..<50 where lines(fake.ports).count < 2 { try await Task.sleep(nanoseconds: 100_000_000) }
+
+        let ports = lines(fake.ports)
+        try #require(ports.count >= 2)
+        #expect(ports[0] == String(first))
+        #expect(ports[1] != String(first))
+        #expect(server.port != first)
+    }
+
+    /// Wherever whisper.cpp is installed, and the best model in the repo's `models/` (main, else wake-word).
+    static let install = WhisperInstall.locate()
+    static let repoRoot = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent()
+    static let smokeModel = WhisperInstall.preferredModel(in: repoRoot.appending(path: "models"))
+        ?? WhisperInstall.wakeWordModel(in: repoRoot.appending(path: "models"))
+    static let evidence = repoRoot.appending(path: ".agentic/jarvis-ambient-memory/evidence/airpods3.wav")
+    static var smokeInputsAvailable: Bool {
+        smokeModel != nil && FileManager.default.fileExists(atPath: evidence.path)
     }
 
     private func evidenceChunk() throws -> AudioChunk {
@@ -206,10 +379,12 @@ import Testing
         return AudioChunk(samples: samples, sampleRate: file.processingFormat.sampleRate, start: Date(), source: .mic)
     }
 
-    @Test(.enabled(if: serverSmokeAvailable, "needs whisper-server, models/ggml-base.en.bin and the evidence WAV"))
+    @Test(.enabled(if: install.server != nil && smokeInputsAvailable,
+                   "needs whisper-server, a model in models/ and the evidence WAV"))
     func realServerTranscribesTakesTheNextPortAndRelaunchesAfterACrash() async throws {
-        let main = WhisperServerProcess(binary: Self.serverBinary, model: Self.englishModel, port: 17_271)
-        let wake = WhisperServerProcess(binary: Self.serverBinary, model: Self.englishModel, port: 17_271)
+        let binary = try #require(Self.install.server), model = try #require(Self.smokeModel)
+        let main = WhisperServerProcess(binary: binary, model: model, port: 17_271)
+        let wake = WhisperServerProcess(binary: binary, model: model, port: 17_271)
         defer { main.stop(); wake.stop() }
 
         try await main.start()
@@ -248,12 +423,11 @@ import Testing
         #expect(abs(frames - 16_000) < 200)     // one second at 16 kHz, give or take converter latency
     }
 
-    static let cliBinary = URL(filePath: "/opt/homebrew/bin/whisper-cli")
-
-    @Test(.enabled(if: FileManager.default.fileExists(atPath: cliBinary.path) && serverSmokeAvailable,
-                   "needs whisper-cli, models/ggml-base.en.bin and the evidence WAV"))
+    @Test(.enabled(if: install.cli != nil && smokeInputsAvailable,
+                   "needs whisper-cli, a model in models/ and the evidence WAV"))
     func realCLITranscribesTheEvidenceFile() async throws {
-        let transcriber = WhisperTranscriber(backend: .cli(binary: Self.cliBinary, model: Self.englishModel))
+        let transcriber = WhisperTranscriber(backend: .cli(binary: try #require(Self.install.cli),
+                                                           model: try #require(Self.smokeModel)))
         let text = try await transcriber.transcribe(evidenceChunk())
         #expect(text.localizedCaseInsensitiveContains("test recording"))
     }
@@ -305,6 +479,22 @@ final class StubModel: URLProtocol {
                                        headerFields: ["Content-Length": "\(Self.payload.count)"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Self.payload)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+/// Answers every request with an empty body and `status`, and keeps the last URL asked for.
+final class StubHealth: URLProtocol {
+    nonisolated(unsafe) static var status = 200
+    nonisolated(unsafe) static var lastURL: URL?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lastURL = request.url
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

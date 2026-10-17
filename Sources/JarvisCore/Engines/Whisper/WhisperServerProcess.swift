@@ -3,6 +3,8 @@ import Foundation
 
 /// A long-lived `whisper-server` child on 127.0.0.1 that loads its model once (D-5).
 /// Relaunched on an unexpected exit, at most 3 times in 60 s; after that `failure` is set.
+/// With a `pidFile`, a server left running by a previous Jarvis run (crash, SIGKILL) is terminated
+/// at `start()` and its port reused, so orphaned servers do not pile up.
 public final class WhisperServerProcess: @unchecked Sendable {
     /// Default ports: the main model and the wake-word model.
     public static let mainPort = 17_171
@@ -10,34 +12,45 @@ public final class WhisperServerProcess: @unchecked Sendable {
 
     public let binary: URL
     public let model: URL
+    /// Holds `<pid> <start time> <port>` of the running child; removed by `stop()`.
+    public let pidFile: URL?
     private let lock = NSLock()
     private var requestedPort: Int
     private var process: Process?
     private var stopping = false
     private var budget = RestartBudget()
     private var _failure: Error?
+    private let session: URLSession
 
-    public init(binary: URL, model: URL, port: Int) {
+    public init(binary: URL, model: URL, port: Int, pidFile: URL? = nil, session: URLSession = .shared) {
         self.binary = binary
         self.model = model
+        self.pidFile = pidFile
         self.requestedPort = port
+        self.session = session
     }
 
     deinit { stop() }
 
-    /// The port in use — the requested one, or the next free one if it was taken at `start()`.
+    /// One pidfile per role (`"main"`, `"wake"`), in Jarvis's temp directory.
+    public static func pidFile(role: String) -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "jarvis-whisper-\(role).pid")
+    }
+
+    /// The port in use — the requested one, or the next free one if it was taken at `start()` or a relaunch.
     public var port: Int { lock.withLock { requestedPort } }
     public var baseURL: URL { URL(string: "http://127.0.0.1:\(port)")! }
     /// Set when the server kept dying and relaunching stopped.
     public var failure: Error? { lock.withLock { _failure } }
     var pid: Int32? { lock.withLock { process.map(\.processIdentifier) } }
 
-    /// Launches the server and returns once it answers HTTP.
+    /// Launches the server and returns once `/health` answers 200.
     public func start(timeout: TimeInterval = 120) async throws {
+        let orphanPort = try await reapOrphan()
         try lock.withLock {
             stopping = false
             _failure = nil
-            requestedPort = Self.freePort(from: requestedPort)
+            requestedPort = Self.freePort(from: orphanPort ?? requestedPort)
             try launch()
         }
         try await waitUntilReady(timeout: timeout)
@@ -50,19 +63,21 @@ public final class WhisperServerProcess: @unchecked Sendable {
             defer { process = nil }
             return process
         }
+        if let pidFile { try? FileManager.default.removeItem(at: pidFile) }
         guard let running, running.isRunning else { return }
         running.terminate()
         running.waitUntilExit()
     }
 
-    /// Polls `/` until the server answers (model loaded), the child dies, or `timeout` passes.
+    /// Polls `/health` until it answers 200 (whisper-server answers 503 while the model loads),
+    /// the server keeps dying, or `timeout` passes.
     public func waitUntilReady(timeout: TimeInterval = 120) async throws {
         let deadline = Date() + timeout
         while Date() < deadline {
             if let failure { throw failure }
-            var probe = URLRequest(url: baseURL)
+            var probe = URLRequest(url: baseURL.appending(path: "health"))
             probe.timeoutInterval = 1
-            if (try? await URLSession.shared.data(for: probe))?.1 is HTTPURLResponse { return }
+            if ((try? await session.data(for: probe))?.1 as? HTTPURLResponse)?.statusCode == 200 { return }
             try await Task.sleep(nanoseconds: 200_000_000)
         }
         throw WhisperError.serverNotReady
@@ -79,6 +94,31 @@ public final class WhisperServerProcess: @unchecked Sendable {
         child.terminationHandler = { [weak self] exited in self?.exited(exited) }
         try child.run()
         process = child
+        if let pidFile, let started = Self.startTime(of: child.processIdentifier) {
+            try? "\(child.processIdentifier) \(started) \(requestedPort)".write(to: pidFile, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Terminates the server the pidfile records, if that exact process still runs, and returns its port.
+    /// Identity is pid plus start time, so a recycled pid now owned by another process is never signalled.
+    private func reapOrphan() async throws -> Int? {
+        guard let pidFile, let fields = try? String(contentsOf: pidFile, encoding: .utf8).split(separator: " "),
+              fields.count == 3, let pid = Int32(fields[0]), let started = UInt64(fields[1]), let port = Int(fields[2])
+        else { return nil }
+        try? FileManager.default.removeItem(at: pidFile)
+        guard Self.startTime(of: pid) == started else { return nil }
+        kill(pid, SIGTERM)
+        for _ in 0..<100 where Self.startTime(of: pid) == started { try await Task.sleep(nanoseconds: 50_000_000) }
+        if Self.startTime(of: pid) == started { kill(pid, SIGKILL) }
+        return port
+    }
+
+    /// When `pid` started, in microseconds since 1970; `nil` if no such process.
+    static func startTime(of pid: Int32) -> UInt64? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
     }
 
     private func exited(_ child: Process) {
@@ -86,6 +126,8 @@ public final class WhisperServerProcess: @unchecked Sendable {
             guard !stopping, child === process else { return }
             process = nil
             guard budget.allow(at: Date()) else { _failure = WhisperError.serverKeepsExiting; return }
+            // The port may have been taken since `start()` (e.g. by the other role's server).
+            requestedPort = Self.freePort(from: requestedPort)
             do { try launch() } catch { _failure = error }
         }
     }

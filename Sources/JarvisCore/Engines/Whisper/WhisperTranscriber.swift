@@ -10,6 +10,14 @@ public enum WhisperError: Error, Equatable {
 }
 
 /// The baseline on-device `Transcriber`: whisper.cpp, fed a temporary 16 kHz WAV deleted as soon as it is read.
+///
+/// Deviations from the blueprint's signatures, on purpose:
+/// - `Backend.cli(binary:model:)` rather than `.cli(binary:)`: whisper-cli loads the model on every run (`-m`),
+///   so the backend carries it; `.server` gets it from its `WhisperServerProcess`.
+/// - `init(backend:language:session:)`: `language` defaults to `"auto"` (auto-detect) and `session` exists so tests
+///   can stub `/inference`.
+/// - `WhisperModelDownloader.download(_:into:progress:)` keeps the ticket's unlabelled first parameter rather
+///   than the blueprint's `download(name:into:progress:)`.
 public final class WhisperTranscriber: Transcriber {
     public enum Backend {
         /// A running `whisper-server` (the default, D-5).
@@ -82,17 +90,26 @@ public final class WhisperTranscriber: Transcriber {
         let stdout = Pipe(), stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
+        // Awaited rather than `waitUntilExit()`, which blocks a cooperative thread.
+        let (exit, exited) = AsyncStream.makeStream(of: Int32.self)
+        process.terminationHandler = { exited.yield($0.terminationStatus); exited.finish() }
         try process.run()
-        // Both pipes are drained concurrently so a chatty stderr cannot block the child.
-        async let out = Task.detached { stdout.fileHandleForReading.readDataToEndOfFile() }.value
-        async let err = Task.detached { stderr.fileHandleForReading.readDataToEndOfFile() }.value
-        let (outData, errData) = await (out, err)
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw WhisperError.cliFailed(status: process.terminationStatus,
-                                         stderr: String(decoding: errData, as: UTF8.self))
+        // Cancelling terminates the child, which closes its pipes and ends the reads below.
+        return try await withTaskCancellationHandler {
+            // Both pipes are drained concurrently so a chatty stderr cannot block the child.
+            async let out = Task.detached { stdout.fileHandleForReading.readDataToEndOfFile() }.value
+            async let err = Task.detached { stderr.fileHandleForReading.readDataToEndOfFile() }.value
+            let (outData, errData) = await (out, err)
+            var status: Int32 = -1
+            for await code in exit { status = code }
+            try Task.checkCancellation()
+            guard status == 0 else {
+                throw WhisperError.cliFailed(status: status, stderr: String(decoding: errData, as: UTF8.self))
+            }
+            return String(decoding: outData, as: UTF8.self)
+        } onCancel: {
+            process.terminate()
         }
-        return String(decoding: outData, as: UTF8.self)
     }
 
     /// Drops bracket-only tokens (`[BLANK_AUDIO]`, `[Music]`), joins lines, collapses whitespace.
