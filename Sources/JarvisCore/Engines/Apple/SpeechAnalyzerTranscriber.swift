@@ -1,11 +1,12 @@
-#if canImport(Speech)
+// Swift 6.2 ships with the macOS 26 SDK (Xcode 26); older toolchains lack SpeechAnalyzer even though
+// the Speech module exists, so `canImport(Speech)` alone does not detect the API.
+#if canImport(Speech) && compiler(>=6.2)
 import AVFoundation
 import Foundation
 import Speech
 
 /// Apple's on-device SpeechAnalyzer (macOS 26+): transcription with no model download of our own.
-/// Usable only when it supports **every** preferred locale — a mixed-language speaker needs one
-/// engine for all of them, else selection falls back to whisper.
+/// Usable only when it supports **every** preferred locale (`LocaleCoverage`).
 @available(macOS 26, *)
 public struct SpeechAnalyzerTranscriber: Transcriber {
     public struct Unavailable: Error {}
@@ -21,31 +22,14 @@ public struct SpeechAnalyzerTranscriber: Transcriber {
         await SpeechTranscriber.supportedLocales
     }
 
-    public static func supports(
-        _ locale: Locale,
-        supportedLocales provider: () async -> [Locale] = supportedLocales
-    ) async -> Bool {
-        matches(locale, in: await provider())
-    }
-
-    public static func isUsable(
-        forPreferred locales: [Locale],
-        supportedLocales provider: () async -> [Locale] = supportedLocales
-    ) async -> Bool {
-        let supported = await provider()
-        return locales.allSatisfy { matches($0, in: supported) }
-    }
-
-    /// Same language; same region too when the preferred locale names one ("hi" matches "hi-IN").
-    private static func matches(_ locale: Locale, in supported: [Locale]) -> Bool {
-        supported.contains {
-            $0.language.languageCode == locale.language.languageCode
-                && (locale.region == nil || $0.region == locale.region)
-        }
+    public static func isUsable(forPreferred locales: [Locale]) async -> Bool {
+        LocaleCoverage.coversAll(locales, in: await supportedLocales())
     }
 
     public func transcribe(_ chunk: AudioChunk) async throws -> String {
-        let resolved = await SpeechTranscriber.supportedLocale(equivalentTo: locale) ?? locale
+        guard !chunk.samples.isEmpty,
+              let resolved = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+        else { throw Unavailable() }
         let transcriber = SpeechTranscriber(locale: resolved, preset: .transcription)
         // Supported but not yet downloaded: the request is nil once the asset is installed.
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
@@ -67,10 +51,16 @@ public struct SpeechAnalyzerTranscriber: Transcriber {
         let (input, feed) = AsyncStream.makeStream(of: AnalyzerInput.self)
         feed.yield(AnalyzerInput(buffer: buffer))
         feed.finish()
-        if let end = try await analyzer.analyzeSequence(input) {
-            try await analyzer.finalizeAndFinish(through: end)
-        } else {
+        do {
+            if let end = try await analyzer.analyzeSequence(input) {
+                try await analyzer.finalizeAndFinish(through: end)
+            } else {
+                await analyzer.cancelAndFinishNow()
+            }
+        } catch {
+            collector.cancel()
             await analyzer.cancelAndFinishNow()
+            throw error
         }
         return try await collector.value.trimmingCharacters(in: .whitespacesAndNewlines)
     }

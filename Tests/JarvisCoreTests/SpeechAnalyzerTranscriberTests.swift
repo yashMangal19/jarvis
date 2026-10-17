@@ -1,4 +1,5 @@
-#if canImport(Speech)
+// Same guard as SpeechAnalyzerTranscriber: Swift 6.2 ships with the macOS 26 SDK.
+#if canImport(Speech) && compiler(>=6.2)
 import Foundation
 import Testing
 import JarvisCore
@@ -6,28 +7,20 @@ import AVFoundation
 import Speech
 
 @Suite struct SpeechAnalyzerTranscriberTests {
-    private static let en = Locale(identifier: "en-IN")
-    private static let hi = Locale(identifier: "hi-IN")
-
-    @Test func notUsableWhenAnyPreferredLocaleIsUnsupported() async throws {
-        guard #available(macOS 26, *) else { return }
-        let usable = await SpeechAnalyzerTranscriber.isUsable(forPreferred: [Self.en, Self.hi]) { [Self.en] }
-        #expect(usable == false)
-    }
-
-    @Test func usableWhenEveryPreferredLocaleIsSupported() async throws {
-        guard #available(macOS 26, *) else { return }
-        // A region-less preference ("hi") is met by any region of that language.
-        let usable = await SpeechAnalyzerTranscriber.isUsable(forPreferred: [Self.en, Locale(identifier: "hi")]) {
-            [Locale(identifier: "en-US"), Self.en, Self.hi]
+    @available(macOS 26, *)
+    @Test func emptyChunkThrowsUnavailable() async {
+        let chunk = AudioChunk(samples: [], sampleRate: 16_000, start: Date(), source: .mic)
+        await #expect(throws: SpeechAnalyzerTranscriber.Unavailable.self) {
+            try await SpeechAnalyzerTranscriber(locale: Locale(identifier: "en-US")).transcribe(chunk)
         }
-        #expect(usable)
     }
 
-    @Test func notUsableWhenOnlyAnotherRegionIsSupported() async throws {
-        guard #available(macOS 26, *) else { return }
-        let usable = await SpeechAnalyzerTranscriber.isUsable(forPreferred: [Self.en]) { [Locale(identifier: "en-US")] }
-        #expect(usable == false)
+    @available(macOS 26, *)
+    @Test func unsupportedLocaleThrowsUnavailable() async {
+        let chunk = AudioChunk(samples: [Float](repeating: 0, count: 16_000), sampleRate: 16_000, start: Date(), source: .mic)
+        await #expect(throws: SpeechAnalyzerTranscriber.Unavailable.self) {
+            try await SpeechAnalyzerTranscriber(locale: Locale(identifier: "sw")).transcribe(chunk)
+        }
     }
 
     private static let sample = URL(fileURLWithPath: #filePath)
@@ -43,9 +36,9 @@ import Speech
         return false
     }
 
+    @available(macOS 26, *)
     @Test(.enabled("macOS 26+, English SpeechTranscriber asset installed, sample present") { await canSmoke() })
     func transcribesEnglishSample() async throws {
-        guard #available(macOS 26, *) else { return }
         let file = try AVAudioFile(forReading: Self.sample)
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)))
         try file.read(into: buffer)
