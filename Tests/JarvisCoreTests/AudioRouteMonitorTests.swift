@@ -6,27 +6,39 @@ import Testing
     private let builtIn = (id: UInt32(80), device: InputDevice(name: "Test Built-in Mic", isBluetoothHeadset: false))
 
     @Test func removingTheDefaultHeadsetReportsItLostThenTheNewInput() {
-        let events = AudioRouteMonitor.events(previous: airPods, newDefault: builtIn, present: [80])
+        var tracker = RouteTracker(current: airPods)
+
+        let events = tracker.update(newDefault: builtIn, present: [80])
 
         #expect(events.map(routeTestDescribe) == ["lost Test AirPods", "changed Test Built-in Mic"])
     }
 
-    @Test func listChangingBeforeTheDefaultReportsTheLossOnce() {
-        let first = AudioRouteMonitor.events(previous: airPods, newDefault: airPods, present: [80])
-        let second = AudioRouteMonitor.events(previous: nil, newDefault: builtIn, present: [80])
+    @Test func theDefaultSwitchingBeforeTheHeadsetLeavesStillReportsTheHeadsetLostOnce() {
+        var tracker = RouteTracker(current: airPods)
 
-        #expect(first.map(routeTestDescribe) == ["lost Test AirPods"])
-        #expect(second.map(routeTestDescribe) == ["changed Test Built-in Mic"])
+        let switched = tracker.update(newDefault: builtIn, present: [70, 80])
+        let removed = tracker.update(newDefault: builtIn, present: [80])
+        let later = tracker.update(newDefault: builtIn, present: [80])
+
+        #expect(switched.map(routeTestDescribe) == ["changed Test Built-in Mic"])
+        #expect(removed.map(routeTestDescribe) == ["lost Test AirPods"])
+        #expect(later.isEmpty)
     }
 
-    @Test func pickingAnotherInputWhileTheOldOneStaysIsOnlyAChange() {
-        let events = AudioRouteMonitor.events(previous: builtIn, newDefault: airPods, present: [70, 80])
+    @Test func theHeadsetLeavingBeforeTheDefaultSwitchesReportsTheLossOnce() {
+        var tracker = RouteTracker(current: airPods)
 
-        #expect(events.map(routeTestDescribe) == ["changed Test AirPods"])
+        let removed = tracker.update(newDefault: airPods, present: [80])
+        let switched = tracker.update(newDefault: builtIn, present: [80])
+
+        #expect(removed.map(routeTestDescribe) == ["lost Test AirPods"])
+        #expect(switched.map(routeTestDescribe) == ["changed Test Built-in Mic"])
     }
 
     @Test func anUnchangedDefaultReportsNothing() {
-        #expect(AudioRouteMonitor.events(previous: airPods, newDefault: airPods, present: [70, 80]).isEmpty)
+        var tracker = RouteTracker(current: airPods)
+
+        #expect(tracker.update(newDefault: airPods, present: [70, 80]).isEmpty)
     }
 }
 
