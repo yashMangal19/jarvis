@@ -190,6 +190,29 @@ import Testing
         }
     }
 
+    // T-26 F-3, DEC-9: a ticked id that Claude Code no longer lists stays visible, so it can be unticked.
+    @Test func checklistAddsTickedToolsNoLongerListedAsUnlistedRows() {
+        let read = ToolDescriptor(id: "Read", title: "Read", isShell: false, isFileEdit: false)
+        let calendar = ToolDescriptor(id: "mcp__calendar", title: "calendar", isShell: false, isFileEdit: false)
+
+        let rows = ToolDescriptor.checklist(available: [read, calendar],
+                                            allowed: ["mcp__calendar", "mcp__gone", "Bash", "Read"])
+
+        #expect(rows.map(\.id) == ["Read", "mcp__calendar", "mcp__gone", "Bash"])
+        #expect(rows.map(\.isUnlisted) == [false, false, true, true])
+        #expect(rows[3].isShell)
+        #expect(ToolDescriptor.checklist(available: [read], allowed: []) == [read])
+    }
+
+    // With no Claude Code nothing is listed, and every ticked id is still shown.
+    @Test func checklistWithNothingListedShowsEveryTickedTool() {
+        let rows = ToolDescriptor.checklist(available: [], allowed: ["Edit", "mcp__notes"])
+
+        #expect(rows.map(\.id) == ["Edit", "mcp__notes"])
+        #expect(rows.allSatisfy { $0.isUnlisted })
+        #expect(rows[0].isFileEdit)
+    }
+
     @Test func availableToolsListsBuiltInsThenEachMCPServer() async throws {
         let listing = """
         Checking MCP server health…

@@ -31,6 +31,23 @@ import JarvisCore
         #expect(found == [nine, ten])
     }
 
+    // T-26 F-1: the Ask panel opens a note through the store, so it follows the paths Jarvis was built with.
+    @Test func fileFindsTheNoteOfAnyKindByIDAndNothingOnceItIsGone() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = NoteStore(paths: paths, calendar: Self.calendar)
+        let ten = hourly(17, 10, store)
+        let day = Note(kind: .daily, id: "2026-10-17", period: DateInterval(start: at(17, 0), end: at(18, 0)), body: "Day")
+        let tenFile = try store.write(ten)
+        let dayFile = try store.write(day)
+
+        #expect(store.file(id: ten.id) == tenFile)
+        #expect(store.file(id: day.id) == dayFile)
+        #expect(store.file(id: "2026-10-17-23") == nil)
+
+        try store.delete(id: ten.id)
+        #expect(store.file(id: ten.id) == nil)
+    }
+
     @Test func onWriteSeesEachWrittenNoteAndDeleteRemovesIt() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = NoteStore(paths: paths, calendar: Self.calendar)

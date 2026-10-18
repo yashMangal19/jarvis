@@ -1,18 +1,15 @@
 import JarvisCore
 import SwiftUI
 
-/// The Settings window: the Engines line, the allowed-tools checklist and quiet hours. Every value comes from
-/// JarvisCore. Each change reads `settings.json` whole and writes it back whole, so keys this window does not
-/// show (DEC-28's `screenRecordingAsked`) survive.
+/// The Settings window: the Engines line, the allowed-tools checklist, quiet hours and the AirPods stem squeeze.
+/// Every value comes from JarvisCore. Each change reads `settings.json` whole and writes it back whole, so keys
+/// this window does not show (DEC-28's `screenRecordingAsked`) survive.
 struct SettingsView: View {
     @ObservedObject var jarvis: Jarvis
     @State private var settings = JarvisCore.Settings.default
     @State private var tools = ToolList.loading
     @State private var saveError: String?
     private let store = SettingsStore(paths: .standard)
-
-    /// What the pickers show when quiet hours are first switched on.
-    private static let suggestedQuietHours = QuietHours(startMinutes: 22 * 60, endMinutes: 7 * 60)
 
     var body: some View {
         Form {
@@ -25,6 +22,20 @@ struct SettingsView: View {
             }
             Section("Quiet hours") {
                 quietHours
+            }
+            Section("AirPods") {
+                Toggle("AirPods stem squeeze (experimental)", isOn: Binding(
+                    get: { jarvis.stemTriggerChosen },
+                    set: { on in
+                        do { try jarvis.setStemTrigger(on); saveError = nil } catch {
+                            saveError = "Couldn't save settings: \(error.localizedDescription)"
+                        }
+                    }))
+                Text("Squeeze a stem to start a command, and again to send it. While Jarvis is listening or paused, "
+                     + "it plays silence to stay Now Playing: the Mac may not idle-sleep, the AirPods stay with this "
+                     + "Mac, and Music loses Now Playing. Taking an AirPod out, a Bluetooth drop and the keyboard "
+                     + "play/pause key can also start a command.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if let saveError {
                 Text(saveError).foregroundStyle(.red)
@@ -42,17 +53,25 @@ struct SettingsView: View {
             ProgressView().controlSize(.small)
         case .noClaude:
             Text("Install Claude Code to run commands")
+            toolRows([])
         case .loaded(let list):
             Text("Spoken commands can use only the tools ticked here.")
                 .font(.caption).foregroundStyle(.secondary)
-            ForEach(list, id: \.id) { tool in
-                Toggle(isOn: isAllowed(tool.id)) {
-                    Text(tool.title)
-                    if tool.isShell {
-                        Text("Off by default — when ticked, Jarvis can run commands on this Mac.")
-                    } else if tool.isFileEdit {
-                        Text("Off by default — when ticked, Jarvis can change files.")
-                    }
+            toolRows(list)
+        }
+    }
+
+    /// The listed tools, then any ticked tool Claude Code no longer lists, so it can be unticked (DEC-9).
+    private func toolRows(_ available: [ToolDescriptor]) -> some View {
+        ForEach(ToolDescriptor.checklist(available: available, allowed: settings.allowedTools), id: \.id) { tool in
+            Toggle(isOn: isAllowed(tool.id)) {
+                Text(tool.title)
+                if tool.isUnlisted {
+                    Text("Not listed by Claude Code now, but still allowed. Untick to remove it.")
+                } else if tool.isShell {
+                    Text("Off by default — when ticked, Jarvis can run commands on this Mac.")
+                } else if tool.isFileEdit {
+                    Text("Off by default — when ticked, Jarvis can change files.")
                 }
             }
         }
@@ -61,7 +80,7 @@ struct SettingsView: View {
     @ViewBuilder private var quietHours: some View {
         Toggle("Stop listening during quiet hours", isOn: Binding(
             get: { settings.quietHours != nil },
-            set: { on in update { $0.quietHours = on ? Self.suggestedQuietHours : nil } }))
+            set: { on in update { $0.quietHours = on ? .suggested : nil } }))
         if let window = settings.quietHours {
             DatePicker("From", selection: time(\.startMinutes), displayedComponents: .hourAndMinute)
             DatePicker("Until", selection: time(\.endMinutes), displayedComponents: .hourAndMinute)

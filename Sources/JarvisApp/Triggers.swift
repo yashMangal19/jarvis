@@ -1,3 +1,4 @@
+import Foundation
 import JarvisCore
 
 /// Installs the ⌥Space hold, the stem squeeze, the chime and speech. Nothing else holds these objects,
@@ -15,7 +16,10 @@ enum Triggers {
         // Works while Stopped and during quiet hours: `Jarvis` decides what a hold does (DEC-22).
         hotKey = HotKey(pressed: { Sounds.tick(); jarvis.beginHoldCommand() },
                         released: { jarvis.endHoldCommand(); Sounds.tick() })
-        stem = StemTrigger(onPress: { jarvis.stemPressed() })
+        if hotKey == nil { jarvis.reportHoldKeyUnavailable() }
+        // Plays nothing until Settings turns the stem squeeze on (DEC-33).
+        stem = StemTrigger(jarvis: jarvis)
+        if stem == nil { NSLog("Jarvis: the AirPods stem trigger could not load its silent clip") }
         self.speech = speech
     }
 }

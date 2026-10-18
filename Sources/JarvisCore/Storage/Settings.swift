@@ -14,11 +14,15 @@ public struct Settings: Codable, Equatable {
     public var quietHours: QuietHours?
     /// Jarvis has explained Screen Recording and asked for it; it never asks again (DEC-28).
     public var screenRecordingAsked: Bool
+    /// The experimental AirPods stem squeeze is on. Off by default (DEC-33).
+    public var stemTrigger: Bool
 
-    public init(allowedTools: [String] = [], quietHours: QuietHours? = nil, screenRecordingAsked: Bool = false) {
+    public init(allowedTools: [String] = [], quietHours: QuietHours? = nil, screenRecordingAsked: Bool = false,
+                stemTrigger: Bool = false) {
         self.allowedTools = allowedTools
         self.quietHours = quietHours
         self.screenRecordingAsked = screenRecordingAsked
+        self.stemTrigger = stemTrigger
     }
 
     public static let `default` = Settings()
@@ -29,6 +33,7 @@ public struct Settings: Codable, Equatable {
         allowedTools = try c.decodeIfPresent([String].self, forKey: .allowedTools) ?? []
         quietHours = try c.decodeIfPresent(QuietHours.self, forKey: .quietHours)
         screenRecordingAsked = try c.decodeIfPresent(Bool.self, forKey: .screenRecordingAsked) ?? false
+        stemTrigger = try c.decodeIfPresent(Bool.self, forKey: .stemTrigger) ?? false
     }
 }
 
@@ -42,6 +47,9 @@ public struct QuietHours: Codable, Equatable {
         self.startMinutes = startMinutes
         self.endMinutes = endMinutes
     }
+
+    /// What Settings shows when quiet hours are first switched on: 22:00–07:00.
+    public static let suggested = QuietHours(startMinutes: 22 * 60, endMinutes: 7 * 60)
 
     public func contains(_ date: Date, calendar: Calendar) -> Bool {
         let time = calendar.dateComponents([.hour, .minute], from: date)

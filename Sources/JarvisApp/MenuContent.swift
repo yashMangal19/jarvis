@@ -33,6 +33,9 @@ private struct JarvisMenu: View {
             Text("Microphone access is off")
             Button("Open Microphone Settings…") { NSWorkspace.shared.open(Links.microphone) }
         }
+        if jarvis.holdKeyUnavailable {
+            Text("Option-Space hold is off: macOS refused the shortcut")
+        }
         Divider()
         Button(session.topMenuItem) { jarvis.chooseTopMenuItem() }
         if !session.isStopped {

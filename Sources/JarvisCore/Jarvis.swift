@@ -15,10 +15,19 @@ public final class Jarvis: ObservableObject {
     public var speak: (String) -> Void = { _ in }
     /// The wake word was heard.
     public var onChime: () -> Void = {}
-    /// A spoken memory question was answered, for the Ask panel.
+    /// A spoken memory question was answered. The Ask panel reads `lastMemoryAnswer` instead.
     public var onMemoryAnswer: (MemoryAnswer) -> Void = { _ in }
-    /// Set by the app around its own speech; mutes the wake word meanwhile (D-8).
-    @Published public var isSpeaking = false
+    /// The latest memory answer since launch, typed or spoken, for the Ask panel (story 22: spoken and shown).
+    @Published public private(set) var lastMemoryAnswer: ShownMemoryAnswer?
+    /// Jarvis is saying something, so the wake word is muted (D-8). Driven by `speechStarted`/`speechEnded`.
+    @Published public private(set) var isSpeaking = false
+    /// The user turned on the experimental AirPods stem squeeze in Settings (DEC-33).
+    @Published public private(set) var stemTriggerChosen: Bool
+    /// The stem squeeze may listen now: chosen, and Jarvis is listening or paused, never Stopped, in quiet
+    /// hours or locked (DEC-33). The app plays its silence and holds Now Playing only while this is true.
+    @Published public private(set) var stemTriggerActive = false
+    /// The app could not register the Option-Space hold, so it does nothing (shown like DEC-31's mic line).
+    @Published public private(set) var holdKeyUnavailable = false
     @Published public private(set) var voiceMemosNeedFullDiskAccess = false
     /// macOS has refused the microphone, so nothing is heard whatever the icon says (DEC-31).
     @Published public private(set) var microphoneAccessOff = false
@@ -49,10 +58,13 @@ public final class Jarvis: ObservableObject {
     private let voiceMemos: VoiceMemosImporter
     private let tickInterval: TimeInterval
     private lazy var commands = CommandSession(runner: { [engines] in engines.commandRunner }, clock: clock,
-                                               speak: { [unowned self] in speak($0) })
+                                               speak: { [unowned self] in say($0) })
     private lazy var router = VoiceControlRouter(session: session, search: search, forget: forget,
-                                                 commands: commands, speak: { [unowned self] in speak($0) },
-                                                 onAnswer: { [unowned self] in onMemoryAnswer($0) }, clock: clock)
+                                                 commands: commands, speak: { [unowned self] in say($0) },
+                                                 onAnswer: { [unowned self] in
+                                                     lastMemoryAnswer = ShownMemoryAnswer(answer: $0, spoken: true)
+                                                     onMemoryAnswer($0)
+                                                 }, clock: clock)
     private var started = false
     /// Set first thing by `shutdown`: a `start` still under way stops where it is (F-4).
     private var shuttingDown = false
@@ -62,6 +74,7 @@ public final class Jarvis: ObservableObject {
     /// Set by a hold, so the command it captures routes even while Stopped (DEC-22). Ceiling: a hold that
     /// captures nothing leaves it set, and the next wake-word command is then routed as a held one.
     private var heldCommandPending = false
+    private var speaking = SpeakingTracker()
     private(set) var timer: Task<Void, Never>?
     private var lastMaintenance = Date.distantPast
     private var servers: [WhisperServerProcess] = []
@@ -81,6 +94,7 @@ public final class Jarvis: ObservableObject {
         self.screenLock = screenLock
         self.routes = routes
         self.tickInterval = tickInterval
+        stemTriggerChosen = settings.load().stemTrigger
         session = ListeningSession(clock: clock, sleepGuard: sleepGuard,
                                    quietHoursEnd: { settings.load().quietHours?.end(of: $0, calendar: .current) })
         let (mic, frames) = sources.makeMic()
@@ -239,6 +253,8 @@ public final class Jarvis: ObservableObject {
     func tick() async {
         refreshPermissions()
         let now = clock.now
+        speaking.expire(now: now)
+        publishSpeaking()
         session.tick(now: now)
         commands.tick(now: now)
         try? await hourlyNotes.tick(now: now)
@@ -261,11 +277,16 @@ public final class Jarvis: ObservableObject {
         await startImporters()
     }
 
+    /// A typed question; its answer is also published as `lastMemoryAnswer`.
     public func askMemory(_ question: String) async -> MemoryAnswer {
-        do { return try await search.answer(question) } catch {
-            return MemoryAnswer(text: "I couldn't search my notes.", usedNoteIDs: [])
-        }
+        let answer = (try? await search.answer(question))
+            ?? MemoryAnswer(text: "I couldn't search my notes.", usedNoteIDs: [])
+        lastMemoryAnswer = ShownMemoryAnswer(answer: answer, spoken: false)
+        return answer
     }
+
+    /// The file of the note with this id, in the notes folder this Jarvis was built with; `nil` if it is gone.
+    public func noteFile(id: String) -> URL? { notes.file(id: id) }
 
     /// The question the menu asks before `forgetLastHour(_:)`, with live counts. The hour it names is
     /// fixed now, so a Delete clicked later removes that hour and no other (DEC-30).
@@ -281,8 +302,44 @@ public final class Jarvis: ObservableObject {
 
     /// The menu's top item: the session acts, and a resume after a lost headset is spoken (DEC-16).
     public func chooseTopMenuItem() {
-        if let notice = session.chooseTopMenuItem() { speak(notice) }
+        if let notice = session.chooseTopMenuItem() { say(notice) }
     }
+
+    // MARK: speech
+
+    /// The app calls this as each sentence starts, and `speechEnded` when it finishes or is cancelled.
+    public func speechStarted() {
+        speaking.begin(now: clock.now)
+        publishSpeaking()
+    }
+
+    public func speechEnded() {
+        speaking.end()
+        publishSpeaking()
+    }
+
+    /// Every sentence goes out here. An empty one is dropped: it would get no finish to end it.
+    private func say(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        speak(text)
+    }
+
+    private func publishSpeaking() {
+        if speaking.isSpeaking != isSpeaking { isSpeaking = speaking.isSpeaking }
+    }
+
+    // MARK: triggers
+
+    /// Saves the Settings choice with the other keys kept (DEC-28) and applies it at once.
+    public func setStemTrigger(_ on: Bool) throws {
+        var saved = settings.load()
+        saved.stemTrigger = on
+        try settings.save(saved)
+        stemTriggerChosen = on
+        follow()
+    }
+
+    public func reportHoldKeyUnavailable() { holdKeyUnavailable = true }
 
     // MARK: permissions
 
@@ -323,7 +380,11 @@ public final class Jarvis: ObservableObject {
         follow()
     }
 
-    public func stemPressed() { wakeWord.pressToTalk() }
+    /// A play/pause remote command while the stem trigger is active; ignored otherwise (DEC-33).
+    public func stemPressed() {
+        guard stemTriggerActive else { return }
+        wakeWord.pressToTalk()
+    }
 
     // MARK: engines
 
@@ -361,6 +422,8 @@ public final class Jarvis: ObservableObject {
             wakeWordOn = wake
             wake ? wakeWord.start() : wakeWord.stop()
         }
+        let stem = stemTriggerChosen && !session.isStopped
+        if stem != stemTriggerActive { stemTriggerActive = stem }
         listenForReplyIfAwaited()
     }
 
@@ -404,6 +467,17 @@ public final class Jarvis: ObservableObject {
                 commands.tick(now: clock.now)
             }
         }
+    }
+}
+
+/// A memory answer and whether it answered a spoken question.
+public struct ShownMemoryAnswer: Equatable {
+    public let answer: MemoryAnswer
+    public let spoken: Bool
+
+    public init(answer: MemoryAnswer, spoken: Bool) {
+        self.answer = answer
+        self.spoken = spoken
     }
 }
 

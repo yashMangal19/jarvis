@@ -162,4 +162,26 @@ import JarvisCore
         try Data(#"{"allowedTools":[]}"#.utf8).write(to: paths.settingsFile)
         #expect(!store.load().screenRecordingAsked)
     }
+
+    // T-26 F-4: the window the Settings pickers start from is a product default, kept here.
+    @Test func suggestedQuietHoursRunFromTenAtNightToSevenInTheMorning() {
+        #expect(QuietHours.suggested == QuietHours(startMinutes: 22 * 60, endMinutes: 7 * 60))
+    }
+
+    // T-27 F-1/F-2, DEC-33: the stem squeeze is opt-in; a file without the key keeps it off.
+    @Test func stemTriggerIsOffByDefaultAndRemembered() throws {
+        let paths = tempPaths()
+        defer { try? fm.removeItem(at: paths.root) }
+        try fm.createDirectory(at: paths.root, withIntermediateDirectories: true)
+        try Data(#"{"allowedTools": ["Read"]}"#.utf8).write(to: paths.settingsFile)
+        let store = SettingsStore(paths: paths)
+        #expect(Settings.default.stemTrigger == false)
+        #expect(store.load().stemTrigger == false)
+
+        var settings = store.load()
+        settings.stemTrigger = true
+        try store.save(settings)
+        #expect(store.load().stemTrigger)
+        #expect(store.load().allowedTools == ["Read"])
+    }
 }

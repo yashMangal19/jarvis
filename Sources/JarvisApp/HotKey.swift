@@ -1,7 +1,10 @@
 import Carbon
 
 /// ⌥Space as a system-wide hot key with press and release (story 25a). A Carbon hot key needs no
-/// Accessibility permission. `nil` when it can't be registered, e.g. another app already owns ⌥Space.
+/// Accessibility permission. `nil` when `InstallEventHandler` or `RegisterEventHotKey` returns anything but
+/// `noErr`; `Triggers` then shows it in the menu. The registration is not exclusive (options 0), and
+/// `eventHotKeyExistsErr` is returned only when both registrations pass `kEventHotKeyExclusive` (CarbonEvents.h),
+/// so a clash with another app's hot key or a system shortcut is not reported: which one gets ⌥Space is macOS's.
 @MainActor
 final class HotKey {
     private let pressed: () -> Void

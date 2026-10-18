@@ -311,13 +311,13 @@ import Testing
         wake.saying = "Jarvis, what did we decide"
         transcriber.saying = "Jarvis, what did we decide"
 
-        jarvis.isSpeaking = true
+        jarvis.speechStarted()
         await Task.yield()
         sources.say(speech: 8, silence: 8)
         try await Task.sleep(nanoseconds: 300_000_000)
         #expect(chimes == 0)
 
-        jarvis.isSpeaking = false
+        jarvis.speechEnded()
         await swapWaitUntil {
             if self.chimes == 0 { self.sources.say(speech: 8, silence: 8) }
             return self.chimes > 0
@@ -516,6 +516,124 @@ extension SwappabilityTests {
         await jarvis.tick()
         #expect(!jarvis.microphoneAccessOff)
         await jarvis.shutdown()
+    }
+
+    // T-26 F-2, story 22: every memory answer is published from launch, typed or spoken, so the Ask panel
+    // shows a spoken answer even if it was never opened before. `onMemoryAnswer` still hears spoken ones.
+    @Test func everyMemoryAnswerIsPublishedFromLaunchWithWhetherItWasSpoken() async throws {
+        let jarvis = makeJarvis()
+        var heard: [MemoryAnswer] = []
+        jarvis.onMemoryAnswer = { heard.append($0) }
+        #expect(jarvis.lastMemoryAnswer == nil)
+
+        let typed = await jarvis.askMemory("What did we decide about Friday?")
+        #expect(jarvis.lastMemoryAnswer == ShownMemoryAnswer(answer: typed, spoken: false))
+        #expect(heard.isEmpty)
+
+        await jarvis.start()
+        await swapWaitUntil { self.sources.mic.isRunning }
+        wake.saying = "Jarvis, what did we decide about Friday"
+        transcriber.saying = "Jarvis, what did we decide about Friday"
+        await swapWaitUntil {
+            if jarvis.lastMemoryAnswer?.spoken != true { self.sources.say(speech: 8, silence: 8) }
+            return jarvis.lastMemoryAnswer?.spoken == true
+        }
+        #expect(jarvis.lastMemoryAnswer?.spoken == true)
+        #expect(heard == [jarvis.lastMemoryAnswer?.answer])
+        await jarvis.shutdown()
+    }
+
+    // T-26 F-1: a note opens from the paths this Jarvis was built with, not the standard ones.
+    @Test func noteFileFollowsThePathsJarvisWasBuiltWith() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        await swapWaitUntil { self.sources.mic.isRunning }
+        sayChunk("We ship the launch on Friday.")
+        await swapWaitUntil { self.transcriptText().contains("We ship the launch on Friday.") }
+        clock.now += 3600
+        await jarvis.tick()
+
+        #expect(jarvis.noteFile(id: "2026-10-14-10") == paths.notesHourly.appending(path: "2026-10-14-10.md"))
+        #expect(jarvis.noteFile(id: "2026-10-14-09") == nil)
+        await jarvis.shutdown()
+    }
+
+    // T-27 F-3: a sentence whose finish never arrives mutes the wake word only until the timeout.
+    @Test func aLostSpeechFinishUnmutesTheWakeWordAtTheNextTickPastTheTimeout() async {
+        let jarvis = makeJarvis()
+        jarvis.speechStarted()
+        #expect(jarvis.isSpeaking)
+        clock.now += SpeakingTracker.timeout - 1
+        await jarvis.tick()
+        #expect(jarvis.isSpeaking)
+        clock.now += 1
+        await jarvis.tick()
+        #expect(!jarvis.isSpeaking)
+    }
+
+    // T-27 F-1/F-2, DEC-33: the stem trigger is off by default. Once chosen it is active only while Jarvis
+    // listens or is paused, never Stopped, in quiet hours or locked; the choice is saved with the other keys.
+    @Test func theStemTriggerIsActiveOnlyWhenChosenAndListeningOrPaused() async throws {
+        try SettingsStore(paths: paths).save(Settings(allowedTools: ["Read"], screenRecordingAsked: true))
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        #expect(!jarvis.stemTriggerChosen && !jarvis.stemTriggerActive)
+
+        try jarvis.setStemTrigger(true)
+        #expect(jarvis.stemTriggerChosen && jarvis.stemTriggerActive)
+        let saved = SettingsStore(paths: paths).load()
+        #expect(saved.stemTrigger && saved.allowedTools == ["Read"] && saved.screenRecordingAsked)
+        #expect(makeJarvis().stemTriggerChosen)
+
+        jarvis.session.pause(.user)
+        await swapWaitUntil { jarvis.session.state == .paused(.user) }
+        await Task.yield()
+        #expect(jarvis.stemTriggerActive)
+        for stop in [StopReason.user, .quietHours, .screenLock] {
+            jarvis.session.resume()
+            await swapWaitUntil { jarvis.stemTriggerActive }
+            jarvis.session.stop(stop)
+            await swapWaitUntil { !jarvis.stemTriggerActive }
+            #expect(!jarvis.stemTriggerActive, "stopped by \(stop)")
+        }
+        jarvis.session.resume()
+        await swapWaitUntil { jarvis.stemTriggerActive }
+        try jarvis.setStemTrigger(false)
+        #expect(!jarvis.stemTriggerActive)
+        #expect(!SettingsStore(paths: paths).load().stemTrigger)
+        await jarvis.shutdown()
+    }
+
+    // DEC-33: while the stem trigger is not active, a play/pause event starts no command.
+    @Test func aSqueezeStartsACommandOnlyWhileTheStemTriggerIsActive() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        await swapWaitUntil { self.sources.mic.isRunning }
+        transcriber.saying = "create a file"
+
+        jarvis.stemPressed()
+        await swapWaitUntil(timeout: 2) {
+            if !self.spoken.contains(SwapCommandRunner.draft) { self.sources.say(speech: 8, silence: 8) }
+            return self.spoken.contains(SwapCommandRunner.draft)
+        }
+        #expect(!spoken.contains(SwapCommandRunner.draft))
+
+        try jarvis.setStemTrigger(true)
+        jarvis.stemPressed()
+        await swapWaitUntil {
+            if !self.spoken.contains(SwapCommandRunner.draft) { self.sources.say(speech: 8, silence: 8) }
+            return self.spoken.contains(SwapCommandRunner.draft)
+        }
+        #expect(spoken.contains(SwapCommandRunner.draft))
+        await jarvis.shutdown()
+    }
+
+    // T-27 F-5, DEC-31: an Option-Space the app could not register is shown, not dropped.
+    @Test func aHoldKeyThatCouldNotBeRegisteredIsShown() {
+        let jarvis = makeJarvis()
+        #expect(!jarvis.holdKeyUnavailable)
+        jarvis.reportHoldKeyUnavailable()
+        #expect(jarvis.holdKeyUnavailable)
     }
 
     // F-5, DEC-16: Resume from the menu after the headset left says what voice resume says.

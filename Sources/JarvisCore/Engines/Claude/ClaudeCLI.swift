@@ -12,6 +12,20 @@ public struct ToolDescriptor: Equatable {
     public let title: String
     public let isShell: Bool
     public let isFileEdit: Bool
+    /// Ticked in Settings but not listed by Claude Code now (a removed MCP server, a failing `claude mcp list`, no
+    /// Claude Code): still on `--allowedTools`, so the row stays until it is unticked (DEC-9).
+    public var isUnlisted = false
+
+    /// The Settings checklist: every listed tool, then each ticked id that is not listed, as an unlisted row.
+    public static func checklist(available: [ToolDescriptor], allowed: [String]) -> [ToolDescriptor] {
+        let listed = Set(available.map(\.id))
+        var seen = Set<String>()
+        let leftovers = allowed.filter { !listed.contains($0) && seen.insert($0).inserted }.map {
+            ToolDescriptor(id: $0, title: $0, isShell: ToolIDs.shell.contains($0),
+                           isFileEdit: ToolIDs.fileEdits.contains($0), isUnlisted: true)
+        }
+        return available + leftovers
+    }
 }
 
 /// The Claude Code command-line tool, run as a child process.

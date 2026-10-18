@@ -74,6 +74,12 @@ public final class NoteStore {
         return nil
     }
 
+    /// The file of the note with this id, of whichever kind; `nil` if there is none.
+    public func file(id: String) -> URL? {
+        NoteKind.allCases.lazy.map { self.folder($0).appending(path: "\(id).md") }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     /// Removes the note with this id, of whichever kind; no such note is not an error.
     public func delete(id: String) throws {
         for kind in NoteKind.allCases {
