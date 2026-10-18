@@ -204,7 +204,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
         <ul class="plain">
           <li>say <b>"Jarvis, …"</b></li>
           <li>hold <b>⌥Space</b>, speak, then release</li>
-          <li>squeeze an <b>AirPods stem</b> (experimental, off by default: turn it on in Settings)</li>
+          <li>squeeze an <b>AirPods stem</b> (experimental, off by default: turn it on in Settings). Side effects while it's on: the AirPods stay attached to your Mac, the Mac may not idle-sleep, Music loses Now Playing, and taking an AirPod out or pressing play/pause can start a command.</li>
         </ul>
         <p>Claude drafts the action, Jarvis speaks the draft, and you say yes.</p>
         <p>Say it in one breath. There's no need to wait after "Jarvis": it keeps the last few seconds in memory (never on disk), so it catches what you say right after the wake word. A soft chime tells you it heard you.</p>
@@ -277,8 +277,8 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
   <span class="eyebrow">Requirements</span>
   <h2>What you need.</h2>
   <div class="facts">
-    <div><span class="k">Mac</span><span class="v">macOS 13 or later. <b>macOS 27</b> on Apple Silicon for the newest features.</span></div>
-    <div><span class="k">Tools</span><span class="v">Homebrew and the Xcode Command Line Tools. <b>Xcode 27</b> for the newest features.</span></div>
+    <div><span class="k">Mac</span><span class="v">Runs on macOS 13 or later. Installing builds it from source, which needs <b>macOS 14.5+</b> (Swift 6). <b>macOS 27</b> on Apple Silicon for the newest features.</span></div>
+    <div><span class="k">Tools</span><span class="v">Homebrew and the Xcode Command Line Tools 16 or later (Swift 6). <b>Xcode 27</b> for the newest features.</span></div>
     <div><span class="k">AI</span><span class="v">Claude Code with a Claude plan. Without it, Apple's on-device model (macOS 26+) or Ollama writes notes.</span></div>
     <div><span class="k">Mic</span><span class="v">Built-in mic or any earbuds. AirPods are best for your own voice.</span></div>
   </div>
@@ -287,7 +287,8 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
 <section id="install">
   <span class="eyebrow">Install</span>
   <h2>One command. <span class="pill plan">After publish</span></h2>
-  <pre><code>brew install yashMangal19/tap/jarvis</code></pre>
+  <pre><code>brew install yashMangal19/tap/jarvis
+jarvis   # first run: copies the speech models and opens Jarvis</code></pre>
   <p class="muted">Or from source:</p>
   <pre><code>git clone https://github.com/yashMangal19/jarvis
 cd jarvis &amp;&amp; ./install.sh</code></pre>
@@ -341,7 +342,7 @@ protocol CommandRunner {
   <div class="facts">
     <div><span class="k">Controls win</span><span class="v">A control said while Jarvis waits for your yes cancels that command, then runs.</span></div>
     <div><span class="k">Honest privacy</span><span class="v">Audio stays on your Mac. Transcript text goes to Claude only if Claude writes your notes or drafts your commands.</span></div>
-    <div><span class="k">Stem squeeze</span><span class="v">Opt-in. Hearing a squeeze means playing silence, which can keep the AirPods on your Mac and stop it sleeping.</span></div>
+    <div><span class="k">Stem squeeze</span><span class="v">Opt-in. Hearing a squeeze means playing silence while Jarvis listens, which can keep the AirPods on your Mac, stop it sleeping and take Now Playing from Music. Taking an AirPod out, a Bluetooth drop or the play/pause key can also start a command.</span></div>
     <div><span class="k">Hold to talk</span><span class="v">⌥Space works even when Jarvis is stopped. The mic is on only while you hold the key.</span></div>
     <div><span class="k">Clean cuts</span><span class="v">Pausing ends the current recording block on the spot, so no speech is lost either side.</span></div>
     <div><span class="k">No restart</span><span class="v">Transcription starts as soon as the speech model has downloaded.</span></div>

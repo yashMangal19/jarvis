@@ -30,6 +30,8 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 ### DEC-2 · Swift tools 6.0, language mode 5, macOS 13 floor (blueprint D-2)
 - **Why:** Command Line Tools 16 on macOS 15 must build it. Strict concurrency adds cost and gives users nothing.
 - **Affects:** `Package.swift`. Moving to mode 6 later is a mechanical sweep.
+- **Note 18 Oct (T-29 review):** macOS 13 is the floor for *running* Jarvis. *Building* it needs Swift 6 (Xcode 16 /
+  CLT 16), which needs macOS 14.5 or later. Both install paths build from source, so installing needs 14.5+. See DEC-38.
 
 ### DEC-3 · Observation uses Combine `ObservableObject`, never `@Observable` (blueprint D-3)
 - **Why:** `@Observable` needs macOS 14; the floor is 13.
@@ -217,6 +219,22 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   new app: it asks for the mic again, and Screen Recording or Full Disk Access can switch off silently. You turn
   them back on from Jarvis's menu lines. The README explains this. A stable signing identity is deferred.
 - **Checked against:** DEC-28 (asked once, so the menu line is the way back), DEC-31.
+
+### DEC-38 · The Homebrew formula requires macOS Sonoma
+- **Decided by:** human (T-29 review, option A)
+- **Why:** every Homebrew install builds from source, and Swift 6 needs macOS 14.5+. On Ventura the install would
+  download about 620 MB and then fail.
+- **Checked against:** DEC-2 (note added: runs on 13+, builds on 14.5+).
+
+### DEC-39 · Installs never replace a running Jarvis, including on `brew upgrade`
+- **Decided by:** human (T-29 review, option A)
+- **What:** the installer refuses when Jarvis is running from any Homebrew version folder, not only the one being
+  built. The caveat "Quit Jarvis before brew upgrade" stays as well.
+
+### DEC-40 · Homebrew installs copy the models on the first `jarvis` run
+- **Decided by:** review (T-29), forced by Homebrew 7 (no `post_install`, and its sandbox can't write to your home folder)
+- **What:** the `jarvis` command copies any missing model into `~/Jarvis/models` (never over an existing file),
+  then opens the app. The caveats say to open it with `jarvis` the first time.
 
 ### DEC-36 · `uninstall.sh --purge` never deletes without a typed confirmation
 - **Decided by:** review (T-28 F-2)
