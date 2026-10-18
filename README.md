@@ -18,6 +18,8 @@ Full guide: [`docs/guide.html`](docs/guide.html), published at
   Command Line Tools 16 and later. Xcode 16 needs macOS 14.5 or later, so on an older Mac the build
   may not be possible. The installer checks `swift --version` first and stops, before downloading
   anything, if Swift is older than 6.0.
+- **The Homebrew install needs macOS 14.5 or later**, because it builds from source with Swift 6. Jarvis
+  itself runs on macOS 13 and later.
 - **Optional:** Claude Code with a Claude plan, for the best notes and for voice commands. Without it,
   Apple's on-device model (macOS 26+) or Ollama writes notes.
 - A built-in mic or any earbuds. AirPods are best for your own voice.
@@ -29,6 +31,9 @@ One command (once the Homebrew tap is published):
 ```sh
 brew install yashMangal19/tap/jarvis
 ```
+
+Then run `jarvis`. The first run copies the whisper models into `~/Jarvis/models` and opens the app.
+Opening Jarvis from Finder or Spotlight the first time skips that copy.
 
 Or from source:
 
@@ -63,7 +68,7 @@ missing. For `claude`, link it into `~/.local/bin`.
 | `--with-whisper` | download the whisper model on macOS 26+ too |
 | `--model small\|medium\|large-v3-turbo` | pick the whisper model to download (implies `--with-whisper`) |
 | `--with-ollama` | install Ollama and the `llama3.2` model without asking |
-| `--bundle-only --prefix <dir>` | only build and sign `<dir>/Jarvis.app` (used by the Homebrew formula) |
+| `--bundle-only --prefix <dir>` | only build and sign `<dir>/Jarvis.app` (used by the Homebrew formula). Builds with `swift build --disable-sandbox`, because SwiftPM's sandbox can't start inside Homebrew's, and refuses while a Jarvis runs from any folder next to `<dir>` or from Homebrew's `opt/jarvis` link |
 | `--dry-run` | print every step without changing anything |
 
 ### First launch

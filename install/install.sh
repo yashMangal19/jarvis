@@ -20,7 +20,8 @@ Usage:
   ./install.sh --with-ollama           install Ollama for notes when Claude Code is missing (~2 GB)
   ./install.sh --bundle-only --prefix <dir>
                                        release build + signed <dir>/Jarvis.app only (used by the Homebrew formula);
-                                       no downloads or launch
+                                       no downloads or launch. Builds with swift build --disable-sandbox, because
+                                       SwiftPM's own sandbox can't start inside Homebrew's build sandbox
   ./install.sh --dry-run               print every action, change nothing
 HELP
 }
@@ -51,6 +52,9 @@ case "$model" in small|medium|large-v3-turbo) ;; *) die "--model must be small, 
 
 app="$prefix/Jarvis.app"
 models="$jarvis_home/models"
+# --bundle-only runs inside Homebrew's build sandbox, where macOS refuses SwiftPM's nested sandbox.
+swift_flags=()
+[ "$bundle_only" = 1 ] && swift_flags=(--disable-sandbox)
 
 # Jarvis is opened from Finder or with `open`, so it gets launchd's short PATH (/usr/bin:/bin:/usr/sbin:/sbin),
 # not Terminal's. These are the folders the app actually searches: WhisperInstall.defaultSearchPath
@@ -105,19 +109,33 @@ check_swift() {
   [ -n "$version" ] || die "Swift wasn't found. Building Jarvis needs Swift 6.0 or later (Xcode 16 or its Command Line Tools). Run: xcode-select --install"
   major="${version%%.*}"
   if [ "$major" -lt 6 ]; then
+    # Under Homebrew the source and dependencies are already downloaded by now, so say only what is true.
+    local outcome="Nothing was downloaded or changed."
+    [ "$bundle_only" = 1 ] && outcome="Jarvis wasn't built or installed."
     die "Building Jarvis needs Swift 6.0 or later, and this Mac has Swift $version.
        Update the Command Line Tools in System Settings > General > Software Update, or install Xcode 16 or later.
-       Xcode 16 needs macOS 14.5 or later. Nothing was downloaded or changed."
+       Xcode 16 needs macOS 14.5 or later. $outcome"
   fi
   note "Swift $version"
 }
 
 # Swapping the bundle under a running Jarvis would leave it running from a deleted binary. Same rule
 # and message as uninstall.sh.
-# With --bundle-only, only a Jarvis running from that very bundle counts (the formula builds elsewhere).
+# With --bundle-only, a Jarvis counts if it runs from this bundle, from any sibling folder of the prefix
+# (Homebrew's other version folders, <cellar>/jarvis/*/Jarvis.app, which brew cleanup deletes after an
+# upgrade), or from Homebrew's opt link (<homebrew prefix>/opt/jarvis/Jarvis.app).
+re_escape() { printf '%s' "$1" | sed 's/[][\\.*^$+?(){}|]/\\&/g'; }
 refuse_if_running() {
   local running
-  if [ "$bundle_only" = 1 ]; then running="$(pgrep -f "^$app/Contents/MacOS/JarvisApp" || true)"
+  if [ "$bundle_only" = 1 ]; then
+    local tail='/Jarvis\.app/Contents/MacOS/JarvisApp( |$)' kegs cellar pattern
+    kegs="$(dirname "$prefix")"
+    cellar="$(dirname "$kegs")"
+    pattern="^$(re_escape "$prefix")$tail|^$(re_escape "$kegs")/[^/]+$tail"
+    if [ "$(basename "$cellar")" = Cellar ]; then
+      pattern="$pattern|^$(re_escape "$(dirname "$cellar")/opt/$(basename "$kegs")")$tail"
+    fi
+    running="$(pgrep -f "$pattern" || true)"   # macOS pgrep patterns are extended regular expressions
   else running="$(pgrep -x JarvisApp || true)"; fi
   if [ -n "$running" ]; then
     die "Jarvis is running. Quit it from its menu (Quit), then run this again."
@@ -211,9 +229,9 @@ choose_note_writer() {
 build_and_bundle() {
   say "Building Jarvis (swift build -c release)"
   local started=$SECONDS bin
-  run swift build --package-path "$repo" -c release --product JarvisApp
+  run swift build ${swift_flags[@]+"${swift_flags[@]}"} --package-path "$repo" -c release --product JarvisApp
   note "Build took $((SECONDS - started)) s."
-  bin="$(swift build --package-path "$repo" -c release --show-bin-path)"
+  bin="$(swift build ${swift_flags[@]+"${swift_flags[@]}"} --package-path "$repo" -c release --show-bin-path)"
 
   # Built beside the old bundle and swapped in, so a failed step never leaves a half-built app.
   say "Building $app"
