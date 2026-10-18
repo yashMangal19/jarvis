@@ -89,19 +89,19 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
   <span class="eyebrow">Swift Mumbai · What if you could clone yourself?</span>
   <h1>Jarvis for Mac</h1>
   <p class="lede">A small menu-bar app that <b>listens</b>, <b>remembers</b> and <b>acts</b>, so you don't have to hold everything in your head.</p>
-  <p class="note"><b>Status:</b> v1 is being built in the open. Items marked <span class="pill plan">Planned</span> are decided but not final. The code is open source (MIT) at <a href="https://github.com/yashMangal19/jarvis">github.com/yashMangal19/jarvis</a>: fork it.</p>
+  <p class="note"><b>Status:</b> v1 is being built in the open. Items marked <span class="pill plan">Planned</span> are decided but not final. The code is open source (<a href="https://github.com/yashMangal19/jarvis/blob/main/LICENSE">MIT</a>) at <a href="https://github.com/yashMangal19/jarvis">github.com/yashMangal19/jarvis</a>: fork it.</p>
 </header>
 
 <section id="idea">
   <span class="eyebrow">The idea</span>
   <h2>A clone for the part of you that forgets.</h2>
   <div class="verbs"><span>It listens.</span><span>It remembers.</span><span>It acts.</span></div>
-  <p class="muted">And it always asks before doing anything that leaves your Mac.</p>
+  <p class="muted">And it always asks before it acts on your behalf.</p>
 </section>
 
 <section id="how">
   <span class="eyebrow">How it works</span>
-  <h2>Five steps, all on your Mac.</h2>
+  <h2>Five steps. Your audio never leaves your Mac.</h2>
   <ol class="steps">
     <li><span class="n">01</span><div><h3>Listen</h3><p>Records you, your calls and, if you want, the room.</p></div></li>
     <li><span class="n">02</span><div><h3>Transcribe</h3><p>Turns speech into text on your Mac, then deletes the audio.</p></div></li>
@@ -162,6 +162,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
       <p class="muted">Turn on Demo mode to get a note every 2 minutes.</p>
       <details><summary>How it's built</summary><div>
         <p>The first available writer is used: Claude Code (<code>claude -p</code>), then Apple <code>FoundationModels</code> on-device, then a local Ollama model (optional, about 2 GB).</p>
+        <p>With Claude Code, the hour's transcript text is sent to Anthropic to write the note. Apple's model and Ollama run entirely on your Mac.</p>
         <p>With none available, the menu says <b>"Notes off — install Claude Code or Ollama"</b>, and transcripts and search keep working.</p>
         <p>Edit <code>prompts/hourly.md</code> to change how notes read.</p>
       </div></details>
@@ -203,7 +204,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
         <ul class="plain">
           <li>say <b>"Jarvis, …"</b></li>
           <li>hold <b>⌥Space</b>, speak, then release</li>
-          <li>squeeze an <b>AirPods stem</b> (experimental)</li>
+          <li>squeeze an <b>AirPods stem</b> (experimental, off by default: turn it on in Settings)</li>
         </ul>
         <p>Claude drafts the action, Jarvis speaks the draft, and you say yes.</p>
         <p>Say it in one breath. There's no need to wait after "Jarvis": it keeps the last few seconds in memory (never on disk), so it catches what you say right after the wake word. A soft chime tells you it heard you.</p>
@@ -226,7 +227,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
     <div class="feature">
       <div class="tags"><span class="pill all">Any Mac</span></div>
       <h3>It asks before it acts</h3>
-      <p>Nothing leaves your Mac until you've heard it and said yes.</p>
+      <p>Nothing is sent, booked or changed until you've heard the plan and said yes.</p>
       <details><summary>How it's built</summary><div>
         <p>Every command runs in two phases: a read-only draft, then execution.</p>
         <p>The read-back says exactly what will happen, to whom, and with what content.</p>
@@ -264,7 +265,8 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
     <li>It stops on its own when your screen locks and during quiet hours you set, checked from the moment it launches. Quiet hours stop it even while paused, and when they end your pause is still in place. Want it on anyway? Click <b>Start listening</b>: it stays on until that night's quiet hours end.</li>
     <li>Pausing cuts the recording at that exact moment. Nothing after a pause is saved, and nothing before it is lost.</li>
     <li>Audio is never stored and never uploaded. Audio stays in memory. The one exception: if the whisper server is down, the fallback writes a temporary file and deletes it once transcribed.</li>
-    <li>Only text goes to the model you choose.</li>
+    <li><b>What leaves your Mac:</b> only text, and only to the AI you use. If Claude Code writes your notes, each hour's transcript text goes to Anthropic. A voice command's words go to Claude so it can draft the plan, before you say yes. Only the action itself waits for your yes.</li>
+    <li>Want nothing to leave? Use Apple's on-device model (macOS 26+) or Ollama for notes, and skip voice commands.</li>
     <li><b>Forget last hour</b> deletes that hour's transcript, notes and search entries, including anything still being written. It deletes exactly the hour it showed you, even if you take a while to confirm.</li>
     <li>If the microphone permission is off, the menu says so, with a button to fix it. A red icon always means it can really hear.</li>
   </ul>
@@ -338,6 +340,8 @@ protocol CommandRunner {
   <p class="muted">Every decision is recorded in <code>DECISIONS.md</code> in the repo. Each new one is checked against it first. These are the ones you'll notice. <span class="muted">Updated 18 Oct 2026.</span></p>
   <div class="facts">
     <div><span class="k">Controls win</span><span class="v">A control said while Jarvis waits for your yes cancels that command, then runs.</span></div>
+    <div><span class="k">Honest privacy</span><span class="v">Audio stays on your Mac. Transcript text goes to Claude only if Claude writes your notes or drafts your commands.</span></div>
+    <div><span class="k">Stem squeeze</span><span class="v">Opt-in. Hearing a squeeze means playing silence, which can keep the AirPods on your Mac and stop it sleeping.</span></div>
     <div><span class="k">Hold to talk</span><span class="v">⌥Space works even when Jarvis is stopped. The mic is on only while you hold the key.</span></div>
     <div><span class="k">Clean cuts</span><span class="v">Pausing ends the current recording block on the spot, so no speech is lost either side.</span></div>
     <div><span class="k">No restart</span><span class="v">Transcription starts as soon as the speech model has downloaded.</span></div>
