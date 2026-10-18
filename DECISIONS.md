@@ -92,6 +92,14 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 ### DEC-13 · Jarvis's own speech is kept out of system-audio capture, not out of the mic (blueprint D-8)
 - **Accepted residual:** a read-back sentence may show up in a transcript. The wake-word input is muted while speaking (T-27).
 
+### DEC-32 · Privacy wording says exactly what leaves the Mac
+- **Decided by:** review (T-28 F-1, blocker)
+- **What:** audio never leaves the Mac. When Claude Code writes the notes (the first choice), each hour's
+  transcript **text** goes to Anthropic. A voice command's words go to Claude to draft the plan *before* your yes.
+  Only the action itself waits for the yes. Apple's on-device model or Ollama keep everything local. The README,
+  the Jarvis page and `docs/guide.html` must never say "all on your Mac" or "nothing leaves until yes".
+- **Checked against:** DEC-9, DEC-11, DEC-29.
+
 ## Listening behaviour
 
 ### DEC-14 · Quiet hours always Stop, even over a user pause; afterwards return to the prior state
@@ -164,6 +172,15 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **What:** the menu shows "Microphone access is off" with a button that opens the right Settings page, like the
   Full Disk Access line.
 
+### DEC-33 · The AirPods stem squeeze is opt-in
+- **Decided by:** human (T-27 review, option A)
+- **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,
+  keeps the AirPods attached to the Mac and takes Now Playing from Music. Taking an AirPod out, a Bluetooth drop and
+  the keyboard play/pause key also look like squeezes.
+- **What:** a Settings toggle "AirPods stem squeeze (experimental)", off by default. When it's on, the silence plays
+  only while Jarvis is listening or paused, never when Stopped, in quiet hours or with the screen locked. The side effects are listed in the README.
+- **Checked against:** DEC-14, DEC-22 (⌥Space hold is unaffected).
+
 ## Imports
 
 ### DEC-18 · Imported recordings are labelled "Me" (blueprint D-7)
@@ -190,6 +207,25 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Affects:** `Notes/HourlyNoteScheduler.swift`.
 
 ## Process and scope
+
+### DEC-34 · Jarvis is MIT-licensed
+- **Decided by:** human (wave-9 review). `LICENSE` at the repo root, © 2026 Yash Mangal.
+
+### DEC-35 · Ad-hoc signing: permission resets after a reinstall are a known v1 limit
+- **Decided by:** human (T-28 review, option A)
+- **What:** the installer signs Jarvis locally without a developer certificate. macOS may treat each reinstall as a
+  new app: it asks for the mic again, and Screen Recording or Full Disk Access can switch off silently. You turn
+  them back on from Jarvis's menu lines. The README explains this. A stable signing identity is deferred.
+- **Checked against:** DEC-28 (asked once, so the menu line is the way back), DEC-31.
+
+### DEC-36 · `uninstall.sh --purge` never deletes without a typed confirmation
+- **Decided by:** review (T-28 F-2)
+- **What:** when not run from a terminal, it refuses unless `--yes` is also passed.
+
+### DEC-37 · The installer looks for tools where the app looks
+- **Decided by:** review (T-28 F-3)
+- **What:** it checks the fixed folders the app searches (an app opened from Finder gets no shell PATH), and warns
+  when a tool is found only through Terminal's PATH.
 
 ### DEC-29 · The setup guide is published from `docs/guide.html`
 - **Decided by:** human (T-25 review, F-9, option A)
