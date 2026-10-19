@@ -314,14 +314,19 @@ The 88 spec cases were written at the spec gate.
 | Update the README stem squeeze line once the hardware result is in | T-27 N |
 | LICENSE: **done** (`fb0665a`, DEC-34) | — |
 
-**Before tagging, once, by hand:** run `JARVIS_HW_TESTS=1 swift test` on a Mac with Apple Intelligence, the
-mic and Screen Recording allowed, and AirPods connected. The default gate skips the real-device tests (mic, room
-mic, call audio, the on-device note model), because the hardware and the model's output vary (J-011). The gate
-itself must be 10 full runs green in a row (J-010).
+**v0.1.0 release checklist** (in order; every step after 1 is outward or the user's, J-024):
 
-**Outward steps** (they must be done in this order, because the formula no longer patches `install.sh`):
-merge this branch to `main` and push. Create and push the tap (`gh repo create yashMangal19/homebrew-tap --public
---source . --remote origin --push`). Tag `v0.1.0` and push the tag. Fill in the two sha256 placeholders in
-`Formula/jarvis.rb` (the tarball and `ggml-small.bin`; the `base.en` value is already set and is checked against
-`a03779c8…`), then commit and push. Then run the install and audit list in section 7. The exact commands are in
-`implement/T-29.fix.json` `notes_for_human`.
+1. **Release candidate.** The RC is the HEAD named in J-024. QA runs the regression pass on it (the case list
+   is in J-024), and QA-23 (J-017) is fixed or accepted.
+2. **Hardware tests, by the user, once:** `JARVIS_HW_TESTS=1 swift test` on a Mac with Apple Intelligence, the
+   mic and Screen Recording allowed, and AirPods connected. The default gate skips these (DEC-44). The gate itself
+   must be 10 full runs green in a row (J-010).
+3. **Merge:** a PR from `feature/jarvis-ambient-memory` into `main`, reviewed and merged.
+4. **Tag:** `git tag -a v0.1.0 -m "Jarvis 0.1.0"` on the merged `main`, then push the tag.
+5. **Formula:** `install/release-formula.sh --tag v0.1.0` (dry run: it shows the checksum changes), then the same
+   with `--apply`. That checksums the tag's source tarball and `ggml-small.bin`, and commits in `~/homebrew-tap`.
+6. **Push the tap:** `git -C ~/homebrew-tap push` (the repo is public since D14).
+7. **Smoke test, by the user:** `brew tap yashMangal19/tap`, `brew install yashMangal19/tap/jarvis`, `jarvis`,
+   then `brew test jarvis` and `brew audit --strict --new yashMangal19/tap/jarvis`.
+8. **GitHub Pages** for `/docs` (the guide link in the app), and the GitHub release with the notes Content wrote
+   from J-024's facts.
