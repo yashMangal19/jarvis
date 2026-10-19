@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "generated_at": "2026-10-19T09:00:00+05:30",
+  "build": { "waves_done": 6, "waves_total": 10, "tickets_done": 17, "tickets_total": 29, "tests": 198 },
+  "qa": { "total": 88, "pass": 0, "fail": 0, "blocked": 88 },
+  "commits": [
+    { "sha": "4b1e9c2", "message": "T-17: hourly memory note", "at": "2026-10-19T08:41:00+05:30" }
+  ],
+  "release": { "tag": "v0.1.0", "shipped": false, "shipped_at": null },
+  "launch": { "deadline": "2026-10-19T21:00:00+05:30", "note_kind": null, "note": null }
+}

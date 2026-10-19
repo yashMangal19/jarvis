@@ -1,0 +1,20 @@
+/* p. 4: a popped plate lifts out and is ringed in red marker; ticking an engine snaps it back. */
+.suit .plate { border: 3px solid transparent; border-radius: 50%; transition: transform .25s ease-out, border-color .25s, color .25s; }
+.suit .plate.popped { transform: translate(-6px, 8px) scale(1.12); border-color: var(--red); color: var(--red); }
+
+/* The index card: plate name on the red rule, then one radio row per engine. */
+.index-card legend {
+  margin-bottom: 28px; padding: 0; font-family: var(--typed); font-size: 16px; font-weight: 700;
+  letter-spacing: .3em; text-transform: uppercase;
+}
+.index-card label {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; column-gap: 20px;
+  min-height: 46px; margin-bottom: 18px; font-family: var(--hand); font-size: clamp(24px, 2.2vw, 30px); font-weight: 700;
+  cursor: pointer;
+}
+.index-card label input { width: 26px; height: 26px; margin: 0; accent-color: var(--red); cursor: pointer; }
+.index-card label:has(input:checked) { color: var(--red); }
+
+@media (prefers-reduced-motion: reduce) {
+  .suit .plate { transition: none; }
+}
