@@ -9,8 +9,9 @@
   content: "← this one" / ""; position: absolute; left: calc(100% + 24px); top: 50%; translate: 0 -50%;
   font: 700 clamp(22px, 2vw, 28px) var(--hand); color: var(--red); white-space: nowrap;
 }
-/* An arrow or the card caption shows with the step it points from. */
-.try :is(.wave[hidden] ~ .to-wave, .transcript[hidden] ~ .to-card, [data-slot="read-back"][hidden] ~ .card-caption) { visibility: hidden; }
+/* An arrow or the card caption shows with what it points at or captions. */
+.try :is(.wave[hidden] ~ .to-wave, [data-slot="read-back"][hidden] ~ .card-caption) { visibility: hidden; }
+.card-slot:has(> [data-slot="read-back"][hidden]):has(> [data-slot="answer"][hidden]) > .to-card { visibility: hidden; }
 /* 3lh: the longest scripted read-back (priya) is 3 lines, so swapping slips never resizes the card. */
 .read-back [data-slot="read-back-text"] { white-space: pre-line; min-height: 3lh; }
 .answers [aria-disabled="true"] { opacity: .45; cursor: default; }
@@ -30,7 +31,11 @@
 }
 
 @media (max-width: 600px) {
-  .try .result { margin-top: 24px; }
-  /* M5: under the slip, at its right end. */
-  .slips li:has(> .slip[aria-pressed="true"])::after { position: static; display: block; translate: none; margin-top: 4px; text-align: end; }
+  /* M5 draws the stamp just under the card's corner. Absolute, so its reserve is not a band of its own: the stamp
+     overlaps the card's bottom padding (clear of the buttons) and the reserved line sits beside it. */
+  .try .result { position: relative; margin-top: 12px; justify-items: start; }
+  .try .stamp { position: absolute; top: -26px; right: -6px; pointer-events: none; }
+  /* M5: under the slip, at its right end. Absolute in a gap every slip has, so moving it moves no slip. */
+  .slips ul { gap: 28px; }
+  .slips li:has(> .slip[aria-pressed="true"])::after { top: calc(100% + 2px); left: auto; right: 0; translate: none; line-height: 1; }
 }

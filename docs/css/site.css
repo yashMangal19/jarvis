@@ -351,13 +351,21 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .stage { display: contents; }
 .flow {
   grid-area: flow; display: grid; align-content: start; column-gap: 16px; margin-top: 64px;
-  grid-template-columns: 120px 80px minmax(0, 1fr) 80px; grid-template-areas: "mic to-wave wave to-card" "mic to-wave transcript to-card";
+  grid-template-columns: 120px 80px minmax(0, 1fr); grid-template-areas: "mic to-wave wave" "mic to-wave transcript";
 }
 .mic { grid-area: mic; } .wave { grid-area: wave; } .transcript { grid-area: transcript; }
 /* D5's hand-drawn arrows mic → wave → card; the second turns up toward the card. */
-.flow .arrow { width: 100%; height: auto; align-self: start; }
-.to-wave { grid-area: to-wave; margin-top: 44px; }
-.to-card { grid-area: to-card; margin-top: 8px; transform: rotate(-38deg); }
+.try .arrow { height: auto; }
+.to-wave { grid-area: to-wave; width: 100%; align-self: start; margin-top: 44px; }
+/* The card arrow lives in the card's cell and is placed from the card's left edge: transform-origin is its tip
+   (150,28 of 160×60, so 113px across and 21px down at 120px wide), and it turns up about that tip. The read-back is
+   the taller card and fills the cell, so end + -24px puts the tip on its bottom-left corner, as D5 draws it. */
+.to-card {
+  grid-area: 1 / 1; justify-self: start; align-self: end; width: 120px; margin: 0 0 -24px -113px;
+  transform-origin: 94% 47%; rotate: -32deg;
+}
+/* The shorter answer card: the tip goes on its left edge 180px down (it is ~194px tall at its smallest). */
+.card-slot:has(> [data-slot="answer"]:not([hidden])) > .to-card { align-self: start; margin: 159px 0 0 -113px; }
 .card-caption { margin-top: 20px; font-size: 20px; }
 .step figcaption { font-size: 20px; font-weight: 400; }
 .transcript { min-height: 3.2em; font-size: 16px; }
@@ -510,7 +518,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .slip { font-size: 20px; padding: 10px 16px; }
   .slips li:nth-child(n) .slip { margin-left: 0; }
   .flow { grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "mic wave" "mic transcript"; }
-  .flow .arrow, .card-caption { display: none; }
+  .try .arrow, .card-caption { display: none; }
   .step figcaption { display: none; }
   .read-back { padding: 24px 20px; transform: none; }
   .fits > p.pieces { display: none; }

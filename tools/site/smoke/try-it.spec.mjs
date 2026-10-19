@@ -165,8 +165,8 @@ test("the result line after yes is one line", async ({ page }) => {
 test("during a run the flow arrows and the card caption show on desktop", async ({ page }, info) => {
   test.skip(info.project.name === "phone", "M5 draws no flow arrows or step captions");
   await say(page, "priya");
-  await expect(p5(page).locator(".flow .arrow")).toHaveCount(2);
-  for (const arrow of await p5(page).locator(".flow .arrow").all()) await expect(arrow).toBeVisible();
+  await expect(p5(page).locator(".arrow")).toHaveCount(2);
+  for (const arrow of await p5(page).locator(".arrow").all()) await expect(arrow).toBeVisible();
   await expect(p5(page).getByText("3. reads it back. you say yes.")).toBeVisible();
 });
 
@@ -184,5 +184,34 @@ test("the picked slip is marked '← this one', outside its accessible name", as
   expect(await mark("reminder")).toContain("this one");
   expect(await mark("priya")).toBe("none");
   await expect(slip(page, "reminder")).toHaveAccessibleName("“remind me to call mom at 7”");
+});
+
+// N-12: the marker takes no layout of its own, so moving it to another slip moves no slip.
+test("picking a slip moves no slip", async ({ page }) => {
+  const tops = () => p5(page).locator("[data-slot=slip]").evaluateAll((bs) =>
+    bs.map((b) => Math.round(b.getBoundingClientRect().top - b.closest("#p5").getBoundingClientRect().top)));
+  const opening = await tops();
+  await slip(page, "reminder").click();
+  expect(await tops()).toEqual(opening);
+});
+
+// N-11: the opening state has no blank band between the read-back card and the promise line.
+test("in the opening state the promise line sits within 80px of the read-back card", async ({ page }, info) => {
+  test.skip(info.project.name === "desktop", "D5 puts the caption and the stamp's cell between card and promise");
+  const gap = await p5(page).evaluate((sec) =>
+    sec.querySelector(".promise").getBoundingClientRect().top - sec.querySelector("[data-slot=read-back]").getBoundingClientRect().bottom);
+  expect(gap).toBeLessThan(80);
+});
+
+// N-13: the wave → card arrow ends at the card, as D5 draws it. The tip is the top-right of the up-turned arrow's box.
+test("the arrow to the card ends within 12px of the card", async ({ page }, info) => {
+  test.skip(info.project.name === "phone", "M5 draws no flow arrows");
+  const miss = await p5(page).evaluate((sec) => {
+    const a = sec.querySelector(".to-card").getBoundingClientRect();
+    const c = sec.querySelector("[data-slot=read-back]").getBoundingClientRect();
+    const dx = Math.max(c.left - a.right, 0, a.right - c.right), dy = Math.max(c.top - a.top, 0, a.top - c.bottom);
+    return Math.hypot(dx, dy);
+  });
+  expect(miss).toBeLessThan(12);
 });
 });
