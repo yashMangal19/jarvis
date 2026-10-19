@@ -174,6 +174,19 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **What:** the menu shows "Microphone access is off" with a button that opens the right Settings page, like the
   Full Disk Access line.
 
+### DEC-42 · The mic retries a failed restart, and the status line says when it isn't recording (2026-10-19)
+- **Why:** QA-8 (J-007) found that after the AirPods dropped and came back, the single restart had found no input
+  and given up, while the menu still read "Listening via AirPods Pro" and no transcript was written.
+- **Decided by:** Jarvis-Orc (J-007), within DEC-31's rule.
+- **What:** `MicSource` retries a failed restart after 0.5, 1, 2 and 4 s, then every 5 s, until the input is back
+  or listening stops. While retrying, the status line reads "Reconnecting mic…". After about 12 s it reads
+  "Mic not recording: reconnect it or choose another input", and the retries carry on. DEC-31's "Microphone
+  access is off" line is not used here, because its Settings button would send the user to the wrong page.
+  The icon stays red, as it shows the session's state. The room mic is unchanged: a failed re-pin stops it,
+  as before.
+- **Affects:** `Audio/MicSource.swift` (`AudioTap`, `MicHealth`), `Jarvis.statusLine`/`micHealth`, `MenuContent`.
+- **Checked against:** DEC-31 (kept; a separate case), DEC-24 (each restart still ends the chunk), DEC-25 (none).
+
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)
 - **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,

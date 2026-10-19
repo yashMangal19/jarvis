@@ -25,7 +25,7 @@ private struct JarvisMenu: View {
 
     var body: some View {
         if jarvis.notesAvailable {
-            Text(session.statusLine)
+            Text(jarvis.statusLine)
         } else {
             Button("Notes off — install Claude Code or Ollama") { NSWorkspace.shared.open(Links.installGuide) }
         }

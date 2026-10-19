@@ -87,6 +87,30 @@ import Testing
         return url
     }
 
+    // J-007: the status line follows the mic engine, not only the session.
+    @Test func theStatusLineSaysWhenTheMicIsListeningButNotRecording() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        await swapWaitUntil { self.sources.mic.isRunning }
+        #expect(jarvis.statusLine == "Listening via AirPods Pro")
+
+        sources.mic.report(.reconnecting)
+        await swapWaitUntil { jarvis.micHealth == .reconnecting }
+        #expect(jarvis.statusLine == "Reconnecting mic…")
+
+        sources.mic.report(.unavailable)
+        await swapWaitUntil { jarvis.micHealth == .unavailable }
+        #expect(jarvis.statusLine == "Mic not recording: reconnect it or choose another input")
+
+        jarvis.chooseTopMenuItem()
+        #expect(jarvis.statusLine == "Paused")
+
+        sources.mic.report(.ok)
+        await swapWaitUntil { jarvis.micHealth == .ok }
+        jarvis.chooseTopMenuItem()
+        #expect(jarvis.statusLine == "Listening via AirPods Pro")
+    }
+
     // Stories 9, 13, 22, 25, 28, 31 end to end, every engine a fake.
     @Test func fakeEnginesInAllFourProtocolsRunTheWholeLoop() async throws {
         let jarvis = makeJarvis()
@@ -715,7 +739,12 @@ final class SwapCommandRunner: CommandRunner {
 }
 
 /// A capture stream the test drives. Started and stopped off the main actor, so its state is locked.
-final class FakeSource: AudioSourceStream, @unchecked Sendable {
+final class FakeSource: AudioSourceStream, ReportsMicHealth, @unchecked Sendable {
+    var onHealth: ((MicHealth) -> Void)?
+
+    /// Says what a live mic would after a configuration change.
+    func report(_ health: MicHealth) { onHealth?(health) }
+
     private let lock = NSLock()
     private var _startError: AudioError?
     private var _startDelay: TimeInterval = 0

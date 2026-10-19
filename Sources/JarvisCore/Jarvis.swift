@@ -31,6 +31,9 @@ public final class Jarvis: ObservableObject {
     @Published public private(set) var voiceMemosNeedFullDiskAccess = false
     /// macOS has refused the microphone, so nothing is heard whatever the icon says (DEC-31).
     @Published public private(set) var microphoneAccessOff = false
+    /// The mic stream's own word on whether it is recording, so the menu never says "Listening via …"
+    /// while the engine is down (J-007).
+    @Published public private(set) var micHealth: MicHealth = .ok
     /// Screen Recording was asked for and not granted: call audio is off (DEC-28).
     @Published public private(set) var callAudioNeedsScreenRecording = false
     /// 0…1 while the whisper `small` model downloads in the background; `nil` otherwise.
@@ -138,6 +141,9 @@ public final class Jarvis: ObservableObject {
         voiceMemos = VoiceMemosImporter(locator: locator, coordinator: coordinator, ledger: ImportLedger(paths: paths),
                                         paths: paths)
 
+        (mic as? any ReportsMicHealth)?.onHealth = { [weak self] health in
+            Task { @MainActor in self?.micHealth = health }
+        }
         for driver in [self.mic, systemAudio, roomMic] {
             driver.onChunk = { [weak self] chunk, listening in
                 Task { @MainActor in await self?.store(chunk, heardWhileListening: listening) }
@@ -201,6 +207,16 @@ public final class Jarvis: ObservableObject {
     }
 
     public var notesAvailable: Bool { engines.noteWriter != nil }
+
+    /// The menu's status line: the session's, unless it is listening and the mic is not recording (J-007).
+    public var statusLine: String {
+        guard session.state == .listening else { return session.statusLine }
+        switch micHealth {
+        case .ok: return session.statusLine
+        case .reconnecting: return "Reconnecting mic…"
+        case .unavailable: return "Mic not recording: reconnect it or choose another input"
+        }
+    }
     public var openNotesURL: URL { paths.notesHourly.deletingLastPathComponent() }
 
     /// Lays out the data home, runs maintenance, refreshes the index, starts listening (stopped at once in

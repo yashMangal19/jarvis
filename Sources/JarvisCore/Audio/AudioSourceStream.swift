@@ -20,3 +20,19 @@ public enum AudioError: Error, Equatable {
     /// The default input already is the built-in mic, so the mic stream records the room; run only that.
     case redundantWithDefaultInput
 }
+
+/// Whether a mic stream that should be running is recording (J-007).
+public enum MicHealth: Equatable, Sendable {
+    /// Recording, or stopped on purpose.
+    case ok
+    /// The input went away (AirPods dropping) and restarts are being retried.
+    case reconnecting
+    /// Retries have gone on for a while without an input; they carry on in the background.
+    case unavailable
+}
+
+/// A stream that can lose its input while running and says so (`MicSource`).
+public protocol ReportsMicHealth: AnyObject {
+    /// Set once, before the first start. Called on the stream's own queue when the health changes.
+    var onHealth: ((MicHealth) -> Void)? { get set }
+}

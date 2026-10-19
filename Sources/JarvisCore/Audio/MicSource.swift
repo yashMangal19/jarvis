@@ -4,24 +4,43 @@ import AudioToolbox
 /// The active microphone as 30 s, 16 kHz mono chunks, plus a tee of 250 ms frames for the wake-word
 /// listener. Follows the default input: the engine restarts on `.AVAudioEngineConfigurationChange`.
 /// Never requests microphone permission; without it `start` throws `AudioError.permissionDenied`.
-public final class MicSource: AudioSourceStream {
+public final class MicSource: AudioSourceStream, ReportsMicHealth {
+    public var onHealth: ((MicHealth) -> Void)?
+
     /// 250 ms frames of 16 kHz mono samples. Keeps only the newest few if nobody is reading.
     public let frames: AsyncStream<[Float]>
 
     private let framesOut: AsyncStream<[Float]>.Continuation
     private let queue: DispatchQueue
     private let onQueue = DispatchSpecificKey<Void>()
-    private let tap: InputTap
+    private let tap: any AudioTap
+    private let authorized: () -> Bool
+    private let retryDelays: [TimeInterval]
     private var chunks = ChunkAssembler(source: .mic)
     private var frameCutter = ChunkAssembler(chunkSeconds: 0.25, source: .mic)
     private var onChunk: ((AudioChunk) -> Void)?
+    /// Bumped by every restart and teardown, so a retry scheduled before them does nothing.
+    private var restarts = 0
+    private var health = MicHealth.ok
 
-    public init(clock: any TimeSource = SystemClock()) {
+    public convenience init(clock: any TimeSource = SystemClock()) {
+        self.init(authorized: { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized },
+                  makeTap: { InputTap(queue: $0, clock: clock) })
+    }
+
+    /// `makeTap` receives the queue every tap member is called on.
+    init(authorized: @escaping () -> Bool, retryDelays: [TimeInterval] = MicSource.retryDelays,
+         makeTap: (DispatchQueue) -> any AudioTap) {
         (frames, framesOut) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
         queue = DispatchQueue(label: "jarvis.mic")
-        tap = InputTap(queue: queue, clock: clock)
+        tap = makeTap(queue)
+        self.authorized = authorized
+        self.retryDelays = retryDelays
         queue.setSpecific(key: onQueue, value: ())
     }
+
+    /// Waits between attempts to restart after a configuration change; the last repeats until one starts.
+    static let retryDelays: [TimeInterval] = [0.5, 1, 2, 4, 5]
 
     deinit {
         // The last release can happen inside a block on `queue`; `queue.sync` there would trap.
@@ -32,10 +51,11 @@ public final class MicSource: AudioSourceStream {
     /// A second call while running does nothing: a second tap on the input bus would crash the engine.
     public func start(onChunk: @escaping (AudioChunk) -> Void) throws {
         // Checking status prompts nobody; starting the engine while undetermined would.
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw AudioError.permissionDenied }
+        guard authorized() else { throw AudioError.permissionDenied }
         try queue.sync {
             guard self.onChunk == nil else { return }
-            try startTap()
+            do { try startTap() } catch { report(.unavailable); throw error }
+            report(.ok)
             self.onChunk = onChunk  // set only once running, so a failed start can be retried
             tap.onConfigurationChange = { [weak self] in self?.restart() }
         }
@@ -54,13 +74,15 @@ public final class MicSource: AudioSourceStream {
     // MARK: on `queue`
 
     private func tearDown() {
+        restarts += 1
         tap.onConfigurationChange = nil
         stopTap()
         onChunk = nil
+        report(.ok)
     }
 
     private func startTap() throws {
-        try tap.start { [weak self] samples, time in self?.take(samples, at: time) }
+        try tap.start(device: nil) { [weak self] samples, time in self?.take(samples, at: time) }
     }
 
     /// Ends the current chunk too, so no chunk spans a restart gap.
@@ -73,8 +95,31 @@ public final class MicSource: AudioSourceStream {
     private func restart() {
         guard onChunk != nil else { return }
         stopTap()
-        // A device with no usable input (e.g. the default went away) stays stopped until the next change.
-        try? startTap()
+        restarts += 1
+        attemptStart(restart: restarts, attempt: 0)
+    }
+
+    /// A device mid-switch (AirPods dropping and coming back) has no usable input for a moment, so a failed
+    /// start is retried after each of `retryDelays`, the last repeating, until one starts or the source
+    /// stops (J-007). Health is `reconnecting` until every delay has been waited once, then `unavailable`.
+    private func attemptStart(restart: Int, attempt: Int) {
+        guard restart == restarts, onChunk != nil else { return }
+        do {
+            try startTap()
+            report(.ok)
+        } catch {
+            report(attempt + 1 < retryDelays.count ? .reconnecting : .unavailable)
+            let delay = retryDelays[min(attempt, retryDelays.count - 1)]
+            queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.attemptStart(restart: restart, attempt: attempt + 1)
+            }
+        }
+    }
+
+    private func report(_ new: MicHealth) {
+        guard new != health else { return }
+        health = new
+        onHealth?(new)
     }
 
     private func take(_ samples: [Float], at time: Date) {
@@ -83,6 +128,16 @@ public final class MicSource: AudioSourceStream {
         frameCutter.append(samples, at: time).forEach { framesOut.yield($0.samples) }
     }
 }
+
+/// What `MicSource` needs from an input tap: `InputTap`, or a fake in tests. Call every member on the
+/// owner's queue; `onConfigurationChange` is called there too.
+protocol AudioTap: AnyObject {
+    var onConfigurationChange: (() -> Void)? { get set }
+    func start(device: AudioDeviceID?, onSamples: @escaping (_ samples: [Float], _ heardAt: Date) -> Void) throws
+    func stop()
+}
+
+extension InputTap: AudioTap {}
 
 /// The AVAudioEngine input tap both microphone streams share: 16 kHz mono samples delivered on the
 /// owner's queue, and configuration changes forwarded there. Call every member on that queue.
