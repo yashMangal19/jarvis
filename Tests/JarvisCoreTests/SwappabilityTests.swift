@@ -111,6 +111,32 @@ import Testing
         #expect(jarvis.statusLine == "Listening via AirPods Pro")
     }
 
+    // J-008: in Meeting mode, the status line also says when the room mic is not recording.
+    @Test func theStatusLineSaysWhenTheRoomMicIsNotRecordingInMeetingMode() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        jarvis.session.modes.meetingMode = true
+        await swapWaitUntil { self.sources.roomMic.isRunning }
+
+        sources.roomMic.report(.reconnecting)
+        await swapWaitUntil { jarvis.roomMicHealth == .reconnecting }
+        #expect(jarvis.statusLine == "Listening via AirPods Pro · reconnecting room mic…")
+
+        sources.roomMic.report(.unavailable)
+        await swapWaitUntil { jarvis.roomMicHealth == .unavailable }
+        #expect(jarvis.statusLine == "Listening via AirPods Pro · room mic not recording")
+
+        // The mic's own trouble comes first: without it nothing of the user is heard.
+        sources.mic.report(.reconnecting)
+        await swapWaitUntil { jarvis.micHealth == .reconnecting }
+        #expect(jarvis.statusLine == "Reconnecting mic…")
+
+        sources.mic.report(.ok)
+        sources.roomMic.report(.ok)
+        await swapWaitUntil { jarvis.micHealth == .ok && jarvis.roomMicHealth == .ok }
+        #expect(jarvis.statusLine == "Listening via AirPods Pro")
+    }
+
     // Stories 9, 13, 22, 25, 28, 31 end to end, every engine a fake.
     @Test func fakeEnginesInAllFourProtocolsRunTheWholeLoop() async throws {
         let jarvis = makeJarvis()

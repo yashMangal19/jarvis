@@ -5,7 +5,7 @@ import CoreAudio
 /// 16 kHz mono chunks labelled `.roomMic`. Separate from `MicSource`, never merged with it. Refuses to
 /// start when the built-in mic already is the default input, since `MicSource` records it then.
 /// Never requests microphone permission; without it `start` throws `AudioError.permissionDenied`.
-public final class RoomMicSource: AudioSourceStream {
+public final class RoomMicSource: AudioSourceStream, ReportsMicHealth {
     /// Where the default and built-in inputs are, injected so the redundancy rule runs without hardware.
     struct DeviceResolver {
         var defaultInput: () -> AudioDeviceID?
@@ -22,10 +22,17 @@ public final class RoomMicSource: AudioSourceStream {
         set { lock.lock(); stoppedHandler = newValue; lock.unlock() }
     }
 
+    public var onHealth: ((MicHealth) -> Void)? {
+        get { retry.onHealth }
+        set { retry.onHealth = newValue }
+    }
+
     private let resolver: DeviceResolver
     private let queue: DispatchQueue
     private let onQueue = DispatchSpecificKey<Void>()
-    private let tap: InputTap
+    private let tap: any AudioTap
+    private let authorized: () -> Bool
+    private let retry: RestartRetry
     private let lock = NSLock()
     private var stoppedHandler: (() -> Void)?
     private var chunks = ChunkAssembler(source: .roomMic)
@@ -35,10 +42,19 @@ public final class RoomMicSource: AudioSourceStream {
         self.init(resolver: .system, clock: clock)
     }
 
-    init(resolver: DeviceResolver, clock: any TimeSource = SystemClock()) {
+    convenience init(resolver: DeviceResolver, clock: any TimeSource = SystemClock()) {
+        self.init(resolver: resolver, authorized: { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized },
+                  makeTap: { InputTap(queue: $0, clock: clock) })
+    }
+
+    /// `makeTap` receives the queue every tap member is called on.
+    init(resolver: DeviceResolver, authorized: @escaping () -> Bool, retryDelays: [TimeInterval] = RestartRetry.delays,
+         makeTap: (DispatchQueue) -> any AudioTap) {
         self.resolver = resolver
+        self.authorized = authorized
         queue = DispatchQueue(label: "jarvis.room-mic")
-        tap = InputTap(queue: queue, clock: clock)
+        tap = makeTap(queue)
+        retry = RestartRetry(queue: queue, delays: retryDelays)
         queue.setSpecific(key: onQueue, value: ())
     }
 
@@ -51,10 +67,11 @@ public final class RoomMicSource: AudioSourceStream {
     public func start(onChunk: @escaping (AudioChunk) -> Void) throws {
         let builtIn = try pinnableBuiltIn()
         // Checking status prompts nobody; starting the engine while undetermined would.
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw AudioError.permissionDenied }
+        guard authorized() else { throw AudioError.permissionDenied }
         try queue.sync {
             guard self.onChunk == nil else { return }
-            try startTap(on: builtIn)
+            do { try startTap(on: builtIn) } catch { retry.report(.unavailable); throw error }
+            retry.report(.ok)
             self.onChunk = onChunk  // set only once running, so a failed start can be retried
             tap.onConfigurationChange = { [weak self] in self?.restart() }
         }
@@ -89,9 +106,11 @@ public final class RoomMicSource: AudioSourceStream {
     // MARK: on `queue`
 
     private func tearDown() {
+        retry.cancel()
         tap.onConfigurationChange = nil
         stopTap()
         onChunk = nil
+        retry.report(.ok)
     }
 
     private func startTap(on device: AudioDeviceID) throws {
@@ -104,15 +123,19 @@ public final class RoomMicSource: AudioSourceStream {
         if let partial = chunks.flush() { onChunk?(partial) }
     }
 
-    /// Re-pins after a configuration change, or stops for good and says so through `onStopped`.
+    /// Re-pins after a configuration change. A built-in mic that became the default input, or is gone,
+    /// stops the stream for good and says so through `onStopped`; a pin that fails is retried (J-008).
     private func restart() {
         guard onChunk != nil else { return }
         stopTap()
-        do {
-            try startTap(on: pinnableBuiltIn())
-        } catch {
-            tearDown()
-            onStopped?()
+        retry.begin { [weak self] in
+            guard let self, onChunk != nil else { return true }
+            guard let builtIn = try? pinnableBuiltIn() else {
+                tearDown()
+                onStopped?()
+                return true
+            }
+            return (try? startTap(on: builtIn)) != nil
         }
     }
 

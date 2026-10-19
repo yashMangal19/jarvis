@@ -5,7 +5,10 @@ import AudioToolbox
 /// listener. Follows the default input: the engine restarts on `.AVAudioEngineConfigurationChange`.
 /// Never requests microphone permission; without it `start` throws `AudioError.permissionDenied`.
 public final class MicSource: AudioSourceStream, ReportsMicHealth {
-    public var onHealth: ((MicHealth) -> Void)?
+    public var onHealth: ((MicHealth) -> Void)? {
+        get { retry.onHealth }
+        set { retry.onHealth = newValue }
+    }
 
     /// 250 ms frames of 16 kHz mono samples. Keeps only the newest few if nobody is reading.
     public let frames: AsyncStream<[Float]>
@@ -15,13 +18,10 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
     private let onQueue = DispatchSpecificKey<Void>()
     private let tap: any AudioTap
     private let authorized: () -> Bool
-    private let retryDelays: [TimeInterval]
+    private let retry: RestartRetry
     private var chunks = ChunkAssembler(source: .mic)
     private var frameCutter = ChunkAssembler(chunkSeconds: 0.25, source: .mic)
     private var onChunk: ((AudioChunk) -> Void)?
-    /// Bumped by every restart and teardown, so a retry scheduled before them does nothing.
-    private var restarts = 0
-    private var health = MicHealth.ok
 
     public convenience init(clock: any TimeSource = SystemClock()) {
         self.init(authorized: { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized },
@@ -29,18 +29,15 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
     }
 
     /// `makeTap` receives the queue every tap member is called on.
-    init(authorized: @escaping () -> Bool, retryDelays: [TimeInterval] = MicSource.retryDelays,
+    init(authorized: @escaping () -> Bool, retryDelays: [TimeInterval] = RestartRetry.delays,
          makeTap: (DispatchQueue) -> any AudioTap) {
         (frames, framesOut) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
         queue = DispatchQueue(label: "jarvis.mic")
         tap = makeTap(queue)
         self.authorized = authorized
-        self.retryDelays = retryDelays
+        retry = RestartRetry(queue: queue, delays: retryDelays)
         queue.setSpecific(key: onQueue, value: ())
     }
-
-    /// Waits between attempts to restart after a configuration change; the last repeats until one starts.
-    static let retryDelays: [TimeInterval] = [0.5, 1, 2, 4, 5]
 
     deinit {
         // The last release can happen inside a block on `queue`; `queue.sync` there would trap.
@@ -54,8 +51,8 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
         guard authorized() else { throw AudioError.permissionDenied }
         try queue.sync {
             guard self.onChunk == nil else { return }
-            do { try startTap() } catch { report(.unavailable); throw error }
-            report(.ok)
+            do { try startTap() } catch { retry.report(.unavailable); throw error }
+            retry.report(.ok)
             self.onChunk = onChunk  // set only once running, so a failed start can be retried
             tap.onConfigurationChange = { [weak self] in self?.restart() }
         }
@@ -74,11 +71,11 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
     // MARK: on `queue`
 
     private func tearDown() {
-        restarts += 1
+        retry.cancel()
         tap.onConfigurationChange = nil
         stopTap()
         onChunk = nil
-        report(.ok)
+        retry.report(.ok)
     }
 
     private func startTap() throws {
@@ -95,31 +92,10 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
     private func restart() {
         guard onChunk != nil else { return }
         stopTap()
-        restarts += 1
-        attemptStart(restart: restarts, attempt: 0)
-    }
-
-    /// A device mid-switch (AirPods dropping and coming back) has no usable input for a moment, so a failed
-    /// start is retried after each of `retryDelays`, the last repeating, until one starts or the source
-    /// stops (J-007). Health is `reconnecting` until every delay has been waited once, then `unavailable`.
-    private func attemptStart(restart: Int, attempt: Int) {
-        guard restart == restarts, onChunk != nil else { return }
-        do {
-            try startTap()
-            report(.ok)
-        } catch {
-            report(attempt + 1 < retryDelays.count ? .reconnecting : .unavailable)
-            let delay = retryDelays[min(attempt, retryDelays.count - 1)]
-            queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.attemptStart(restart: restart, attempt: attempt + 1)
-            }
+        retry.begin { [weak self] in
+            guard let self, onChunk != nil else { return true }
+            return (try? startTap()) != nil
         }
-    }
-
-    private func report(_ new: MicHealth) {
-        guard new != health else { return }
-        health = new
-        onHealth?(new)
     }
 
     private func take(_ samples: [Float], at time: Date) {

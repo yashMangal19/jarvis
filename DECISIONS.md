@@ -182,9 +182,12 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   or listening stops. While retrying, the status line reads "Reconnecting mic…". After about 12 s it reads
   "Mic not recording: reconnect it or choose another input", and the retries carry on. DEC-31's "Microphone
   access is off" line is not used here, because its Settings button would send the user to the wrong page.
-  The icon stays red, as it shows the session's state. The room mic is unchanged: a failed re-pin stops it,
-  as before.
-- **Affects:** `Audio/MicSource.swift` (`AudioTap`, `MicHealth`), `Jarvis.statusLine`/`micHealth`, `MenuContent`.
+  The icon stays red, as it shows the session's state.
+- **Amended (J-008):** Meeting mode's room mic re-pins with the same retries (`RestartRetry`). It still stops for
+  good when the built-in mic becomes the default input or is gone. The status line then gets
+  " · reconnecting room mic…" or " · room mic not recording" added. The mic's own trouble is shown first.
+- **Affects:** `Audio/RestartRetry.swift`, `MicSource.swift` (`AudioTap`, `MicHealth`), `RoomMicSource.swift`,
+  `Jarvis.statusLine`/`micHealth`/`roomMicHealth`, `MenuContent`.
 - **Checked against:** DEC-31 (kept; a separate case), DEC-24 (each restart still ends the chunk), DEC-25 (none).
 
 ### DEC-33 · The AirPods stem squeeze is opt-in

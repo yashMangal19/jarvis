@@ -51,7 +51,7 @@ import Testing
     }
 }
 
-private final class HealthLog: @unchecked Sendable {
+final class HealthLog: @unchecked Sendable {
     private let lock = NSLock()
     private var log: [MicHealth] = []
     var values: [MicHealth] { lock.withLock { log } }
@@ -59,7 +59,7 @@ private final class HealthLog: @unchecked Sendable {
 }
 
 /// Counts starts; fails the next few as a device with no usable input would.
-private final class FakeTap: AudioTap, @unchecked Sendable {
+final class FakeTap: AudioTap, @unchecked Sendable {
     var onConfigurationChange: (() -> Void)?
     private let lock = NSLock()
     private var queue: DispatchQueue?
@@ -80,9 +80,13 @@ private final class FakeTap: AudioTap, @unchecked Sendable {
     /// As `InputTap` does: the notification hops to the owner's queue.
     func changeConfiguration() { queue?.async { self.onConfigurationChange?() } }
 
+    private var device: AudioDeviceID?
+    var lastDevice: AudioDeviceID? { lock.withLock { device } }
+
     func start(device: AudioDeviceID?, onSamples: @escaping ([Float], Date) -> Void) throws {
         try lock.withLock {
             startCount += 1
+            self.device = device
             if failures > 0 { failures -= 1; throw AudioError.noInput }
             running = true
         }

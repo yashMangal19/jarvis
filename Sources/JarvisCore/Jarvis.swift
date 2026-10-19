@@ -34,6 +34,8 @@ public final class Jarvis: ObservableObject {
     /// The mic stream's own word on whether it is recording, so the menu never says "Listening via …"
     /// while the engine is down (J-007).
     @Published public private(set) var micHealth: MicHealth = .ok
+    /// The same for Meeting mode's room mic (J-008).
+    @Published public private(set) var roomMicHealth: MicHealth = .ok
     /// Screen Recording was asked for and not granted: call audio is off (DEC-28).
     @Published public private(set) var callAudioNeedsScreenRecording = false
     /// 0…1 while the whisper `small` model downloads in the background; `nil` otherwise.
@@ -103,7 +105,8 @@ public final class Jarvis: ObservableObject {
         let (mic, frames) = sources.makeMic()
         self.mic = SourceDriver(mic, label: "jarvis.drive.mic")
         systemAudio = SourceDriver(sources.makeSystemAudio(), label: "jarvis.drive.system-audio")
-        roomMic = SourceDriver(sources.makeRoomMic(), label: "jarvis.drive.room-mic")
+        let room = sources.makeRoomMic()
+        roomMic = SourceDriver(room, label: "jarvis.drive.room-mic")
         // DEC-5 amended: speech is read per use, so a transcriber installed after launch is used at once.
         let speech = SpeechSlot(main: engines.transcriber, wake: engines.wakeWordTranscriber)
         self.speech = speech
@@ -143,6 +146,9 @@ public final class Jarvis: ObservableObject {
 
         (mic as? any ReportsMicHealth)?.onHealth = { [weak self] health in
             Task { @MainActor in self?.micHealth = health }
+        }
+        (room as? any ReportsMicHealth)?.onHealth = { [weak self] health in
+            Task { @MainActor in self?.roomMicHealth = health }
         }
         for driver in [self.mic, systemAudio, roomMic] {
             driver.onChunk = { [weak self] chunk, listening in
@@ -208,13 +214,19 @@ public final class Jarvis: ObservableObject {
 
     public var notesAvailable: Bool { engines.noteWriter != nil }
 
-    /// The menu's status line: the session's, unless it is listening and the mic is not recording (J-007).
+    /// The menu's status line: the session's, unless it is listening and the mic is not recording (J-007),
+    /// with a note when Meeting mode's room mic is not recording (J-008).
     public var statusLine: String {
         guard session.state == .listening else { return session.statusLine }
         switch micHealth {
-        case .ok: return session.statusLine
+        case .ok: break
         case .reconnecting: return "Reconnecting mic…"
         case .unavailable: return "Mic not recording: reconnect it or choose another input"
+        }
+        switch roomMicHealth {
+        case .ok: return session.statusLine
+        case .reconnecting: return session.statusLine + " · reconnecting room mic…"
+        case .unavailable: return session.statusLine + " · room mic not recording"
         }
     }
     public var openNotesURL: URL { paths.notesHourly.deletingLastPathComponent() }
