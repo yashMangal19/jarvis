@@ -301,7 +301,7 @@ The 88 spec cases were written at the spec gate.
 | `VoiceControlRouter` repeats "Listening through the MacBook mic." instead of reusing `ListeningSession.chooseTopMenuItem`'s line | RESUME, T-25 fix N |
 | `installSpeech` can start whisper servers after `shutdown()` (no guard, no test) | RESUME, T-25 fix N |
 | Stale catch-branch comment in `VoiceMemosImporter` after DEC-23. That path is effectively unreachable | RESUME, T-24 fix N |
-| DEC-23: a partly imported file is retried from the start after a relaunch and can duplicate lines | DEC-23 |
+| DEC-23 relaunch duplicates: **done** (J-023, DEC-52). Import progress is kept on disk per file version | DEC-23 |
 | DEC-35: ad-hoc signing resets permissions after a reinstall. A stable signing identity is deferred | DEC-35, T-28 N |
 | Pin the Hugging Face model URLs to a commit (`resolve/<sha>/…`). `resolve/main` can change and break the sha256 check | T-29 N |
 | Turn on GitHub Pages (default branch, `/docs`) so `guide.html#install` resolves | DEC-29 |
