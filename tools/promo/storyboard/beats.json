@@ -433,7 +433,8 @@
     "font": "Caveat",
     "color": "#8A867C",
     "rot": 0,
-    "w": null
+    "w": null,
+    "after": "marker"
    }
   ]
  },
@@ -554,7 +555,7 @@
   "time": "0:41\u20130:45",
   "secs": 4,
   "shot": "end card",
-  "caption": "build your own suit.",
+  "caption": null,
   "action": "\"build your own suit.\" in big hand lettering, the GitHub URL on masking tape, and \"mit licence\" stamped. Tiny footer: \"not affiliated with marvel or disney\".",
   "texts": [
    {

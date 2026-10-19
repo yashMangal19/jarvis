@@ -90,3 +90,21 @@ test('a non-finite --from or --to exits non-zero', async () => {
     await assert.rejects(run(...args), err => err.code !== 0, args.join(' '));
   }
 });
+
+test('no beat\'s caption repeats a line already drawn in that beat', async () => {
+  const beats = JSON.parse(await readFile(path.resolve(import.meta.dirname, '../storyboard/beats.json'), 'utf8'));
+  const { page, close } = await openPromo();
+  try {
+    let end = 0;
+    for (const beat of beats) {
+      end += beat.secs;
+      const caption = await page.evaluate(t => {
+        window.render(t);
+        return document.getElementById('caption').textContent;
+      }, end - 1 / 30);
+      assert.ok(!beat.texts.some(s => s.t === caption), `beat ${beat.key} caption "${caption}"`);
+    }
+  } finally {
+    await close();
+  }
+});

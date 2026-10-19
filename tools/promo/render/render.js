@@ -5,8 +5,6 @@ const ease = u => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 const span = (u, a, b) => ease((u - a) / (b - a));
 // Where each kind of mark is drawn within a beat (u = 0…1). The rest of the beat holds still.
 const INK = [0, 0.35], WORDS = [0.3, 0.65], MARKER = [0.65, 0.8];
-// Words the action reveals only after the red marker has done its work (beat 7: the page goes blank).
-const AFTER_MARKER = new Set(['(nothing here)']);
 // Every text is shrunk, never stretched, to fit: its `w`, else the filled art it sits on (keeping the same
 // inset on the right as on the left), else the frame less this margin.
 const MARGIN = 60;
@@ -108,8 +106,9 @@ window.ready = (async () => {
     struck.forEach(stretch);
     layer.hidden = true;
     const ink = paths.filter(p => !p.red), marker = paths.filter(p => p.red);
-    const words = beat.texts.filter(s => !s.rot && !AFTER_MARKER.has(s.t));
-    const late = beat.texts.filter(s => s.rot || AFTER_MARKER.has(s.t));
+    // Stamps, and words marked "after": "marker", land with the red marker, after the other words.
+    const late = beat.texts.filter(s => s.rot || s.after === 'marker');
+    const words = beat.texts.filter(s => !late.includes(s));
     const marks = [
       ...ink.map((p, i) => ({ ...p, kind: 'path', at: slots(ink.length, INK)[i] })),
       ...words.map((s, i) => ({ el: els.get(s), kind: s.font === 'Caveat' ? 'letter' : 'type', text: s.t, at: slots(words.length, WORDS)[i] })),
@@ -148,6 +147,6 @@ window.render = t => {
   for (const b of BEATS) b.layer.hidden = b !== beat;
   for (const mark of beat.marks) draw(mark, span(u, ...mark.at));
   const caption = document.getElementById('caption');
-  caption.textContent = beat.caption;
+  caption.textContent = beat.caption ?? '';
   caption.style.opacity = `${span(t - beat.start, 0, 0.3)}`;
 };
