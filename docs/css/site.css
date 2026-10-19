@@ -352,8 +352,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .card-col { grid-area: cards; margin-top: 56px; }
 .index-card {
   position: relative; padding: 28px 32px 32px; background-color: #F6F3EA;
-  background-image: linear-gradient(transparent 58px, rgb(200 48 42 / .55) 58px 60px, transparent 60px),
-    repeating-linear-gradient(transparent 0 45px, rgb(31 63 115 / .14) 45px 46px);
+  background-image: repeating-linear-gradient(transparent 0 45px, rgb(31 63 115 / .14) 45px 46px);
   transform: rotate(1deg); box-shadow: 0 14px 26px rgb(0 0 0 / .14);
 }
 .index-card .t1 { top: -16px; left: 38%; --r: -3deg; }

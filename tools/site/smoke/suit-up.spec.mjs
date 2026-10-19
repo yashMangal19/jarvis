@@ -40,39 +40,97 @@ test("popping transcriber shows one red ring, on the plate drawing, not the labe
   expect(cy).toBeLessThan(0.55);
 });
 
-// The label's drawn text (not its 44px tap box) must sit clear of the ring's box.
-const textBox = (button) => button.evaluate((b) => {
-  const range = document.createRange(); range.selectNodeContents(b);
-  const r = range.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
-});
-const apart = (a, b) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+// The label's drawn text (not its 44px tap box) is what must stay clear and near its plate.
+const IDS = ["ears", "transcriber", "notes", "memory", "hands"];
 const luminance = (rgb) => {
   const [r, g, b] = rgb.match(/\d+/g).slice(0, 3).map((v) => v / 255).map((v) => (v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4));
   return .2126 * r + .7152 * g + .0722 * b;
 };
+const overlap = (a, b) => !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
 
-for (const id of ["ears", "transcriber", "notes", "memory", "hands"]) {
-  test(`open ${id}: its label sits outside the ring and reads at 3:1 or more on the blueprint`, async ({ page }) => {
-    const label = page.locator(`#p4 [data-slot="plate"][value="${id}"]`);
-    await label.click();
-    await page.waitForTimeout(400); // the pop transition settles
-    const ring = await page.locator('#p4 [data-slot="ring"]').boundingBox();
-    const text = await textBox(label);
-    expect(apart(text, ring), JSON.stringify({ text, ring })).toBe(true);
-    const fg = luminance(await label.evaluate((b) => getComputedStyle(b).color));
-    const bg = luminance(await page.locator("#p4 .sheet").evaluate((s) => getComputedStyle(s).backgroundColor));
-    expect((Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05)).toBeGreaterThanOrEqual(3);
+// Everything in screen pixels: label text boxes, each plate's seat centre (read from the art itself), the ring
+// box, and the pulled-out plate's box (its outline from plate-pop.svg, turned by the pop's own rotation).
+const geometry = (page) => page.evaluate(async () => {
+  const points = (d) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]);
+  const box = (pts) => ({ left: Math.min(...pts.map((p) => p[0])), right: Math.max(...pts.map((p) => p[0])),
+    top: Math.min(...pts.map((p) => p[1])), bottom: Math.max(...pts.map((p) => p[1])) });
+  const get = async (name) => (await (await fetch(`assets/art/${name}`)).text());
+  const art = document.querySelector("#p4 .plates"), at = art.getBoundingClientRect(), k = at.width / 760;
+  const px = ([x, y]) => [at.left + x * k, at.top + y * k];
+  // Plates in file order: ears, transcriber, notes, hands, memory. Only hands sits in a translated group.
+  const order = ["ears", "transcriber", "notes", "hands", "memory"];
+  const seats = {};
+  [...(await get("a-plates-bare.svg")).matchAll(/(?:<g transform="translate\(([-\d.]+) ([-\d.]+)\)">)?<path d="([^"]+)"[^>]*stroke-width="2.6"/g)]
+    .forEach(([, dx = 0, dy = 0, d], i) => {
+      const b = box(points(d).map(([x, y]) => [x + +dx, y + +dy]));
+      seats[order[i]] = px([(b.left + b.right) / 2, (b.top + b.bottom) / 2]);
+    });
+  const pop = document.querySelector("#p4 .plates > .pop");
+  const m = new DOMMatrix(getComputedStyle(pop).transform), a = Math.atan2(m.b, m.a);
+  const outline = points([...(await get("plate-pop.svg")).matchAll(/<path d="([^"]+)"[^>]*stroke-width="2.6"/g)][0][1])
+    .map(([x, y]) => px([360 + (x - 360) * Math.cos(a) - (y - 360) * Math.sin(a), 360 + (x - 360) * Math.sin(a) + (y - 360) * Math.cos(a)]));
+  const labels = {};
+  for (const b of art.querySelectorAll('[data-slot="plate"]')) {
+    const r = document.createRange(); r.selectNodeContents(b);
+    const t = r.getBoundingClientRect();
+    labels[b.value] = { left: t.left, right: t.right, top: t.top, bottom: t.bottom, color: getComputedStyle(b).color };
+  }
+  const ring = art.querySelector('[data-slot="ring"]').getBoundingClientRect();
+  return { labels, seats, pop: box(outline), ring: { left: ring.left, right: ring.right, top: ring.top, bottom: ring.bottom },
+    bg: getComputedStyle(art.closest(".sheet")).backgroundColor };
+});
+
+for (const width of [1440, 1024, 390]) {
+  test(`at ${width}, every open plate: each label is nearest its own plate, clear of the ring and the pulled-out plate, and reads at 3:1`, async ({ page }) => {
+    test.skip(page.viewportSize().width !== 1440, "desktop project sets the width");
+    await page.setViewportSize({ width, height: 900 });
+    for (const open of IDS) {
+      await page.locator(`#p4 [data-slot="plate"][value="${open}"]`).click();
+      await page.waitForTimeout(350); // the label's colour transition settles
+      const g = await geometry(page);
+      const where = (id) => `${open} open, ${id}`;
+      for (const id of IDS) {
+        const l = g.labels[id], c = [(l.left + l.right) / 2, (l.top + l.bottom) / 2];
+        const dist = (key) => Math.hypot(c[0] - g.seats[key][0], c[1] - g.seats[key][1]);
+        const nearest = IDS.reduce((best, key) => (dist(key) < dist(best) ? key : best));
+        expect(nearest, `${where(id)}: nearest plate is ${nearest}`).toBe(id);
+        expect(overlap(l, g.ring), `${where(id)} meets the ring ${JSON.stringify({ l, ring: g.ring })}`).toBe(false);
+        expect(overlap(l, g.pop), `${where(id)} meets the pulled-out plate ${JSON.stringify({ l, pop: g.pop })}`).toBe(false);
+      }
+      const fg = luminance(g.labels[open].color), bg = luminance(g.bg);
+      expect((Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05), `${open} open: label contrast`).toBeGreaterThanOrEqual(3);
+    }
   });
 }
 
-test("every tagline fits on one line beside the plate name", async ({ page }) => {
-  for (const id of ["ears", "transcriber", "notes", "memory", "hands"]) {
-    await page.locator(`#p4 [data-slot="other-plate"][value="${id}"]`).click();
-    const lines = await page.locator("#p4 .tagline").evaluate((t) => {
-      const range = document.createRange(); range.selectNodeContents(t);
-      return new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size;
-    });
-    expect(lines, id).toBe(1);
+// The red rule is drawn by the first row's top edge, so it follows the header however many lines the tagline takes.
+test("at every width the red rule sits below the card's header and no tagline leaves one word alone on its last line", async ({ page }) => {
+  test.skip(page.viewportSize().width !== 1440, "desktop project sets the width");
+  for (const width of [1920, 1440, 1280, 1180, 1024, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const id of ["ears", "transcriber", "notes", "memory", "hands"]) {
+      await page.locator(`#p4 [data-slot="other-plate"][value="${id}"]`).click();
+      const m = await page.locator("#p4 fieldset").evaluate((f) => {
+        const card = f.closest(".index-card"), tilt = card.style.transform;
+        card.style.transform = "none"; // the card's 1deg tilt would stagger the words of one line
+        const shown = [...f.querySelectorAll(".tagline span")].find((x) => getComputedStyle(x).display !== "none");
+        const node = shown.firstChild, text = node.data;
+        const tops = [];
+        for (const w of text.matchAll(/\S+/g)) {
+          const r = document.createRange(); r.setStart(node, w.index); r.setEnd(node, w.index + w[0].length);
+          tops.push(Math.round(r.getBoundingClientRect().top));
+        }
+        const last = tops.filter((t) => t === tops.at(-1)).length;
+        card.style.transform = tilt;
+        // Layout offsets, not bounding boxes: the card is tilted 1deg, which skews boxes by several px.
+        const bottom = (el) => el.offsetTop + el.offsetHeight;
+        const first = f.querySelector(".option");
+        return { lines: new Set(tops).size, last, headBottom: Math.max(bottom(f.querySelector("legend")), bottom(f.querySelector(".tagline"))), ruleTop: first.offsetTop, rule: getComputedStyle(first).borderTopWidth };
+      });
+      expect(m.rule, `${id} at ${width}px: rule`).toBe("2px");
+      expect(m.ruleTop, `${id} at ${width}px: rule below header`).toBeGreaterThanOrEqual(m.headBottom - .5);
+      if (m.lines > 1) expect(m.last, `${id} at ${width}px: words on the last line`).toBeGreaterThanOrEqual(2);
+    }
   }
 });
 
@@ -124,6 +182,21 @@ test("opening a plate pulls that plate's drawing out: the pop-out art turns to t
   const hands = await turn();
   await page.locator('#p4 [data-slot="plate"][value="transcriber"]').click();
   expect(await turn()).not.toBe(hands);
+});
+
+// The reserve is two lines (site.css .offline min-height 2.4em); this is what bounds it.
+test("the longest status line wraps to two lines at most, from 320 to 1920", async ({ page }) => {
+  test.skip(page.viewportSize().width !== 1440, "desktop project sets the width");
+  for (const width of [320, 390, 768, 1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const line = page.locator('#p4 [data-slot="offline-line"]');
+    await expect(line).toHaveText("notes and commands still need the internet");
+    const lines = await line.evaluate((el) => {
+      const range = document.createRange(); range.selectNodeContents(el);
+      return new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size;
+    });
+    expect(lines, `${width}px`).toBeLessThanOrEqual(2);
+  }
 });
 
 test("the hint never sits on the bottom tape", async ({ page }) => {

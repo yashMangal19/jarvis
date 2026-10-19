@@ -90,3 +90,11 @@ test("the plates art seats all five plates: every plate outline sits the same di
   assert.ok(Math.max(...centres) - Math.min(...centres) < 15, `plate radii ${centres.map(Math.round)}`);
   assert.doesNotMatch(svg, /stroke-dasharray="6 6"|#C8302A/i, "no empty seat and no ring baked in");
 });
+
+test("the pulled-out plate art hard-codes no blueprint colour: the cover that hides the seated plate is a CSS mask", () => {
+  const art = (name) => readFileSync(new URL(`../../../docs/assets/art/${name}`, import.meta.url), "utf8");
+  assert.doesNotMatch(art("plate-pop.svg"), /#1F3F73|fill="#/i);
+  assert.match(art("plate-cover.svg"), /<path/);
+  assert.match(readFileSync(new URL("../../../docs/css/site.css", import.meta.url), "utf8"),
+    /\.plates \.pop::before\s*{[^}]*var\(--blueprint\)/);
+});
