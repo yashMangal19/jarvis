@@ -367,14 +367,20 @@ import Testing
     @Test func readinessWaitsForA200FromHealth() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubHealth.self]
+        let clock = VirtualScheduler()
         let server = WhisperServerProcess(binary: URL(filePath: "/bin/false"), model: URL(filePath: "/m.bin"),
-                                          port: 17_171, session: URLSession(configuration: config))
+                                          port: 17_171, session: URLSession(configuration: config), scheduler: clock)
 
         StubHealth.status = 503                         // whisper-server while the model is loading
-        await #expect(throws: WhisperError.serverNotReady) { try await server.waitUntilReady(timeout: 0.5) }
+        let waiting = Task { try await server.waitUntilReady(timeout: 0.5) }
+        for _ in 0..<3 {                                // polls at 0, 0.2 and 0.4 s of virtual time, then gives up
+            #expect(await clock.waitForPending())
+            clock.advance(by: 0.2)
+        }
+        await #expect(throws: WhisperError.serverNotReady) { try await waiting.value }
 
         StubHealth.status = 200
-        try await server.waitUntilReady(timeout: 2)
+        try await server.waitUntilReady(timeout: 2)     // the first poll answers
         #expect(StubHealth.lastURL?.absoluteString == "http://127.0.0.1:17171/health")
     }
 

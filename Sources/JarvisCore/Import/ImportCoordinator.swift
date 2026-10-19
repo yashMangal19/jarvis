@@ -23,6 +23,7 @@ public final class ImportCoordinator {
     private let pipeline: CapturePipeline
     private let onImported: (DateInterval) async -> Void
     private let settleDelay: TimeInterval
+    private let scheduler: any Scheduler
     private let lock = NSLock()
     /// Files whose lines are stored but whose delete failed; never imported again, deleted on a later scan.
     private var undeleted: Set<FileStamp> = []
@@ -32,10 +33,11 @@ public final class ImportCoordinator {
     /// `onImported` receives the stored period of the recording; the facade hands it to
     /// `HourlyNoteScheduler.renote`, which notes again the finished hours it touched.
     /// `settleDelay` is how long a file's size must stay unchanged before `scanAndImport` takes it.
-    public init(pipeline: CapturePipeline, settleDelay: TimeInterval = 2,
+    public init(pipeline: CapturePipeline, settleDelay: TimeInterval = 2, scheduler: any Scheduler = SystemScheduler(),
                 onImported: @escaping (DateInterval) async -> Void) {
         self.pipeline = pipeline
         self.settleDelay = settleDelay
+        self.scheduler = scheduler
         self.onImported = onImported
     }
 
@@ -88,7 +90,7 @@ public final class ImportCoordinator {
     @discardableResult
     public func scanAndImport(folder: URL) async -> ScanReport {
         var reports: [ImportReport] = []
-        for url in await ScanScheduler.settledFiles(after: settleDelay, { sizes(in: folder) }) {
+        for url in await ScanScheduler.settledFiles(after: settleDelay, scheduler: scheduler, { sizes(in: folder) }) {
             if Task.isCancelled { break }
             let stamp = FileStamp(url)
             if lock.withLock({ undeleted.contains(stamp) }) {

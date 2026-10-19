@@ -17,8 +17,9 @@ enum ChildProcess {
     /// Throws `CancellationError` if the task is cancelled (the child is terminated). When `stdin` is given and the
     /// child exits 0 without reading all of it, the write error is thrown; a non-zero exit is returned as is, since
     /// its stderr says more than a closed pipe does.
+    /// The timeout runs on `scheduler`'s time, and "timed out" means the timeout terminated it, not a later clock read.
     static func run(_ executable: URL, arguments: [String], stdin: Data? = nil, directory: URL? = nil,
-                    timeout: TimeInterval? = nil) async throws -> Output {
+                    timeout: TimeInterval? = nil, scheduler: any Scheduler = SystemScheduler()) async throws -> Output {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
@@ -35,10 +36,11 @@ enum ChildProcess {
         let (exit, exited) = AsyncStream.makeStream(of: Int32.self)
         process.terminationHandler = { exited.yield($0.terminationStatus); exited.finish() }
         try process.run()
-        let deadline = timeout.map { Date().addingTimeInterval($0) }
+        let fired = TimeoutFlag()
         let timer = timeout.map { timeout in
             Task {
-                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                try await scheduler.sleep(for: timeout)
+                fired.set()
                 DispatchQueue.global().async { process.terminateAndWait() }
             }
         }
@@ -58,13 +60,21 @@ enum ChildProcess {
             var status: Int32 = -1
             for await code in exit { status = code }
             try Task.checkCancellation()
-            let timedOut = process.terminationReason == .uncaughtSignal && deadline.map { Date() >= $0 } == true
+            let timedOut = fired.isSet && process.terminationReason == .uncaughtSignal
             if let writeError, status == 0, !timedOut { throw writeError }
             return Output(status: status, stdout: outData, stderr: errData, timedOut: timedOut)
         } onCancel: {
             DispatchQueue.global().async { process.terminateAndWait() }
         }
     }
+}
+
+/// Set once by the timeout before it terminates the child.
+private final class TimeoutFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
 }
 
 extension Process {

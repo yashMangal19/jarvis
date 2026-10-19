@@ -8,6 +8,7 @@ final class ScanScheduler {
     private let retryDelay: TimeInterval
     private let maxRetries: Int
     private let scan: () async -> Int
+    private let scheduler: any Scheduler
     private let lock = NSLock()
     private var scanTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
@@ -15,9 +16,11 @@ final class ScanScheduler {
     private var retries = 0
     private var stopped = true
 
-    init(retryDelay: TimeInterval, maxRetries: Int, scan: @escaping () async -> Int) {
+    init(retryDelay: TimeInterval, maxRetries: Int, scheduler: any Scheduler = SystemScheduler(),
+         scan: @escaping () async -> Int) {
         self.retryDelay = retryDelay
         self.maxRetries = maxRetries
+        self.scheduler = scheduler
         self.scan = scan
     }
 
@@ -69,9 +72,9 @@ final class ScanScheduler {
                 scanTask = nil
                 if waiting == 0 { retries = 0 } else if retries < maxRetries {
                     retries += 1
-                    let delay = UInt64(retryDelay * 1_000_000_000)
+                    let delay = retryDelay, scheduler = scheduler
                     retryTask = Task { [weak self] in
-                        try? await Task.sleep(nanoseconds: delay)
+                        try? await scheduler.sleep(for: delay)
                         if !Task.isCancelled { self?.request() }
                     }
                 }
@@ -82,9 +85,10 @@ final class ScanScheduler {
 
     /// The files of `look()` whose size is non-zero and unchanged across two looks `delay` seconds
     /// apart, by path, so a file still being copied in is left for a later scan.
-    static func settledFiles(after delay: TimeInterval, _ look: () -> [URL: Int]) async -> [URL] {
+    static func settledFiles(after delay: TimeInterval, scheduler: any Scheduler = SystemScheduler(),
+                             _ look: () -> [URL: Int]) async -> [URL] {
         let before = look()
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        try? await scheduler.sleep(for: delay)
         return look().filter { $0.value > 0 && before[$0.key] == $0.value }.keys.sorted { $0.path < $1.path }
     }
 

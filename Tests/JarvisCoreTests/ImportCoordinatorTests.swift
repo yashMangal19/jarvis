@@ -1,7 +1,7 @@
 import AVFAudio
 import Foundation
 import Testing
-import JarvisCore
+@testable import JarvisCore
 
 /// Answers every chunk with the same line and counts the calls.
 final class ImportFakeTranscriber: Transcriber {
@@ -60,16 +60,18 @@ final class ImportFailingTranscriber: Transcriber {
     }
 
     func makeCoordinator(transcriber: any Transcriber = ImportFakeTranscriber(), settleDelay: TimeInterval = 2,
+                         scheduler: any Scheduler = SystemScheduler(),
                          onImported: @escaping (DateInterval) async -> Void = { _ in }) -> (ImportCoordinator, TranscriptStore) {
-        makeCoordinator(installed: { transcriber }, settleDelay: settleDelay, onImported: onImported)
+        makeCoordinator(installed: { transcriber }, settleDelay: settleDelay, scheduler: scheduler, onImported: onImported)
     }
 
     /// `installed` is read per chunk, as the facade's swappable transcriber is (DEC-5).
     func makeCoordinator(installed: @escaping () -> (any Transcriber)?, settleDelay: TimeInterval = 2,
+                         scheduler: any Scheduler = SystemScheduler(),
                          onImported: @escaping (DateInterval) async -> Void = { _ in }) -> (ImportCoordinator, TranscriptStore) {
         let store = TranscriptStore(paths: paths)
         let pipeline = CapturePipeline(transcriber: installed, store: store)
-        return (ImportCoordinator(pipeline: pipeline, settleDelay: settleDelay, onImported: onImported), store)
+        return (ImportCoordinator(pipeline: pipeline, settleDelay: settleDelay, scheduler: scheduler, onImported: onImported), store)
     }
 
     func allLines(_ store: TranscriptStore) throws -> [TranscriptLine] {
@@ -77,9 +79,15 @@ final class ImportFailingTranscriber: Transcriber {
     }
 
     func makeImporter(_ coordinator: ImportCoordinator, retryDelay: TimeInterval = 60, maxRetries: Int = 12,
-                      watcher: FakeFolderWatcher = FakeFolderWatcher()) -> InboxImporter {
+                      watcher: FakeFolderWatcher = FakeFolderWatcher(), scheduler: any Scheduler = SystemScheduler()) -> InboxImporter {
         InboxImporter(paths: paths, coordinator: coordinator, watcher: watcher,
-                      retryDelay: retryDelay, maxRetries: maxRetries)
+                      retryDelay: retryDelay, maxRetries: maxRetries, scheduler: scheduler)
+    }
+
+    /// Moves virtual time on once something is waiting on it.
+    func advance(_ clock: VirtualScheduler, by seconds: TimeInterval) async {
+        #expect(await clock.waitForPending())
+        clock.advance(by: seconds)
     }
 
     func inboxRecordings() -> [String] {
@@ -263,14 +271,19 @@ final class ImportFailingTranscriber: Transcriber {
         try FileManager.default.createDirectory(at: paths.inbox, withIntermediateDirectories: true)
         let url = paths.inbox.appending(path: "memo.wav")
         FileManager.default.createFile(atPath: url.path, contents: nil)
-        let (coordinator, store) = makeCoordinator(settleDelay: 0.1)
-        let importer = makeImporter(coordinator, retryDelay: 0.3)
+        let clock = VirtualScheduler()
+        let transcriber = ImportFakeTranscriber()
+        let (coordinator, store) = makeCoordinator(transcriber: transcriber, settleDelay: 0.1, scheduler: clock)
+        let importer = makeImporter(coordinator, retryDelay: 0.3, scheduler: clock)
         try importer.start()
 
-        try await Task.sleep(nanoseconds: 250_000_000)
-        // The copy completes over the empty file in one step, as a finished copy does: deleting it first
-        // left a moment with no file, and a scan landing there saw nothing to retry.
+        await advance(clock, by: 0.1)  // the first scan's settle look: the empty file is still copying
+        #expect(await clock.waitForPending())  // so a retry waits
+        #expect(transcriber.calls == 0)
+        // The copy completes over the empty file in one step, as a finished copy does.
         _ = try importWAV(seconds: 5)
+        clock.advance(by: 0.3)  // the retry
+        await advance(clock, by: 0.1)  // its settle look
         await waitUntil { inboxRecordings().isEmpty }
         await importer.stop()
 
@@ -283,13 +296,19 @@ final class ImportFailingTranscriber: Transcriber {
         defer { try? FileManager.default.removeItem(at: root) }
         let url = try importWAV(seconds: 5)
         let transcriber = ImportFailingTranscriber(succeeding: 0)
-        let (coordinator, _) = makeCoordinator(transcriber: transcriber, settleDelay: 0.05)
-        let importer = makeImporter(coordinator, retryDelay: 0.1, maxRetries: 2)
+        let clock = VirtualScheduler()
+        let (coordinator, _) = makeCoordinator(transcriber: transcriber, settleDelay: 0.05, scheduler: clock)
+        let importer = makeImporter(coordinator, retryDelay: 0.1, maxRetries: 2, scheduler: clock)
         try importer.start()
 
-        await waitUntil { transcriber.calls >= 3 }
-        // A fourth try would come 0.15 s after the third; 1 s of quiet shows there is none.
-        try await Task.sleep(nanoseconds: 1_000_000_000)
+        for _ in 0..<2 {
+            await advance(clock, by: 0.05)  // settle look, then the try fails
+            await advance(clock, by: 0.1)  // the retry
+        }
+        await advance(clock, by: 0.05)
+        await waitUntil { importer.scanIsIdle }
+        #expect(clock.pending == 0)  // no fourth try is scheduled
+        clock.advance(by: 3600)
         await importer.stop()
 
         #expect(transcriber.calls == 3)
@@ -317,8 +336,9 @@ final class ImportFailingTranscriber: Transcriber {
     @Test func folderWatcherReportsABurstOfWritesOnce() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: paths.inbox, withIntermediateDirectories: true)
-        // Writes 50 ms apart against a 1 s debounce: load would have to stretch a gap twentyfold to split the burst.
-        let watcher = DispatchFolderWatcher(url: paths.inbox, debounce: 1)
+        // Virtual time: however slowly the writes' events arrive, no debounce passes between them.
+        let clock = VirtualScheduler()
+        let watcher = DispatchFolderWatcher(url: paths.inbox, debounce: 1, scheduler: clock)
         let counter = ImportCallCounter()
         watcher.onChange = { counter.increment() }
         try watcher.start()
@@ -326,13 +346,18 @@ final class ImportFailingTranscriber: Transcriber {
 
         for i in 0..<3 {
             try Data("x".utf8).write(to: paths.inbox.appending(path: "f\(i).wav"))
-            try await Task.sleep(nanoseconds: 50_000_000)
         }
-        await waitUntil { counter.value >= 1 }
-        // A second call would come within one debounce of the first.
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+        #expect(await clock.waitForPending())
+        try await Task.sleep(nanoseconds: 100_000_000)  // let the events still in flight reschedule
+        #expect(clock.pending == 1)
+        clock.advance(by: 0.9)
+        #expect(clock.pending == 1)  // not before the debounce: still waiting
+        #expect(counter.value == 0)
+        clock.advance(by: 0.1)
+        await waitUntil { counter.value == 1 }
 
         #expect(counter.value == 1)
+        #expect(clock.pending == 0)
     }
 
     // F-7: stop() called from inside onChange returns instead of deadlocking on the watcher's queue.

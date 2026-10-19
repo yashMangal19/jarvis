@@ -23,8 +23,11 @@ public final class WhisperServerProcess: @unchecked Sendable {
     private var budget = RestartBudget()
     private var _failure: Error?
     private let session: URLSession
+    private let scheduler: any Scheduler
 
-    public init(binary: URL, model: URL, port: Int, pidFile: URL? = nil, session: URLSession = .shared) {
+    public init(binary: URL, model: URL, port: Int, pidFile: URL? = nil, session: URLSession = .shared,
+                scheduler: any Scheduler = SystemScheduler()) {
+        self.scheduler = scheduler
         self.binary = binary
         self.model = model
         self.pidFile = pidFile
@@ -73,13 +76,13 @@ public final class WhisperServerProcess: @unchecked Sendable {
     /// Polls `/health` until it answers 200 (whisper-server answers 503 while the model loads),
     /// the server keeps dying, or `timeout` passes.
     public func waitUntilReady(timeout: TimeInterval = 120) async throws {
-        let deadline = Date() + timeout
-        while Date() < deadline {
+        let deadline = scheduler.now + timeout
+        while scheduler.now < deadline {
             if let failure { throw failure }
             var probe = URLRequest(url: baseURL.appending(path: "health"))
             probe.timeoutInterval = 1
             if ((try? await session.data(for: probe))?.1 as? HTTPURLResponse)?.statusCode == 200 { return }
-            try await Task.sleep(nanoseconds: 200_000_000)
+            try await scheduler.sleep(for: 0.2)
         }
         throw WhisperError.serverNotReady
     }
@@ -110,7 +113,7 @@ public final class WhisperServerProcess: @unchecked Sendable {
         try? FileManager.default.removeItem(at: pidFile)
         guard Self.startTime(of: pid) == started else { return nil }
         kill(pid, SIGTERM)
-        for _ in 0..<100 where Self.startTime(of: pid) == started { try await Task.sleep(nanoseconds: 50_000_000) }
+        for _ in 0..<100 where Self.startTime(of: pid) == started { try await scheduler.sleep(for: 0.05) }
         if Self.startTime(of: pid) == started { kill(pid, SIGKILL) }
         return port
     }

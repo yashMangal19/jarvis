@@ -37,9 +37,11 @@ public struct ClaudeCLI {
                                       "WebFetch", "WebSearch", "Task"]
 
     public let executable: URL
+    private let scheduler: any Scheduler
 
-    public init(executable: URL) {
+    public init(executable: URL, scheduler: any Scheduler = SystemScheduler()) {
         self.executable = executable
+        self.scheduler = scheduler
     }
 
     /// Homebrew dirs and `$PATH`, then the native (`~/.local/bin`) and legacy (`~/.claude/local`) installers' homes —
@@ -67,7 +69,7 @@ public struct ClaudeCLI {
     public func run(arguments: [String], stdin: String, timeout: TimeInterval) async throws -> String {
         try FileManager.default.createDirectory(at: Self.workingDirectory, withIntermediateDirectories: true)
         let output = try await ChildProcess.run(executable, arguments: arguments, stdin: Data(stdin.utf8),
-                                                directory: Self.workingDirectory, timeout: timeout)
+                                                directory: Self.workingDirectory, timeout: timeout, scheduler: scheduler)
         if output.timedOut { throw ClaudeError.timeout }
         guard output.status == 0 else {
             throw ClaudeError.exit(code: output.status, stderr: String(decoding: output.stderr, as: UTF8.self))

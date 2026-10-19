@@ -8,10 +8,11 @@ final class CaptureSupervisor {
     let systemAudio: CaptureDriver
     let roomMic: CaptureDriver
 
-    init(sources: any SourceFactory, mic: any AudioSourceStream, retryDelays: [TimeInterval] = RestartRetry.delays) {
-        self.mic = CaptureDriver(mic, name: "mic", retryDelays: retryDelays)
-        systemAudio = CaptureDriver(sources.makeSystemAudio(), name: "call audio", retryDelays: retryDelays)
-        roomMic = CaptureDriver(sources.makeRoomMic(), name: "room mic", retryDelays: retryDelays)
+    init(sources: any SourceFactory, mic: any AudioSourceStream, retryDelays: [TimeInterval] = RestartRetry.delays,
+         scheduler: any Scheduler = SystemScheduler()) {
+        self.mic = CaptureDriver(mic, name: "mic", retryDelays: retryDelays, scheduler: scheduler)
+        systemAudio = CaptureDriver(sources.makeSystemAudio(), name: "call audio", retryDelays: retryDelays, scheduler: scheduler)
+        roomMic = CaptureDriver(sources.makeRoomMic(), name: "room mic", retryDelays: retryDelays, scheduler: scheduler)
     }
 
     var all: [CaptureDriver] { [mic, systemAudio, roomMic] }
@@ -49,11 +50,12 @@ final class CaptureDriver: @unchecked Sendable {
     /// On `queue`.
     private var running = false
 
-    init(_ source: any AudioSourceStream, name: String, retryDelays: [TimeInterval] = RestartRetry.delays) {
+    init(_ source: any AudioSourceStream, name: String, retryDelays: [TimeInterval] = RestartRetry.delays,
+         scheduler: any Scheduler = SystemScheduler()) {
         self.source = source
         self.name = name
         queue = DispatchQueue(label: "jarvis.capture.\(name)")
-        retry = RestartRetry(queue: queue, delays: retryDelays, name: name)
+        retry = RestartRetry(queue: queue, delays: retryDelays, scheduler: scheduler, name: name)
         source.onStopped = { [weak self] reason in
             guard let self else { return }
             queue.async { self.stoppedByItself(reason) }

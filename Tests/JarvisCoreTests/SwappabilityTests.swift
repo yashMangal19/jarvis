@@ -446,15 +446,19 @@ import Testing
 
     // F-3: a capture stream that is slow to start (ScreenCaptureKit can take 20 s) never blocks the main
     // actor, so the menu stays responsive.
+    /// A source start that blocks (ScreenCaptureKit can) runs off the main actor: Jarvis finishes starting and the
+    /// mic runs while it is still blocked. Proven by order, not by a time bound (J-022).
     @Test func aSlowSourceStartNeverBlocksTheMainActor() async throws {
-        sources.systemAudio.startDelay = 2
+        sources.systemAudio.holdStarts()
         let jarvis = makeJarvis()
-        let began = Date()
         await jarvis.start()
-        await swapWaitUntil { self.sources.systemAudio.startCalls > 0 }
-        await swapWaitUntil { self.sources.mic.isRunning }
+        await swapWaitUntil { self.sources.systemAudio.startCalls > 0 && self.sources.mic.isRunning }
 
-        #expect(Date().timeIntervalSince(began) < 1)
+        #expect(sources.mic.isRunning)
+        #expect(!sources.systemAudio.isRunning)  // its start is still blocked
+        sources.systemAudio.releaseStarts()
+        await swapWaitUntil { self.sources.systemAudio.isRunning }
+        #expect(sources.systemAudio.isRunning)
         await jarvis.shutdown()
     }
 
@@ -807,7 +811,8 @@ final class FakeSource: AudioSourceStream, @unchecked Sendable {
 
     private let lock = NSLock()
     private var _startError: AudioError?
-    private var _startDelay: TimeInterval = 0
+    private let gate = DispatchSemaphore(value: 0)
+    private var _held = false
     private var _isRunning = false
     private var _startCalls = 0
     private var onChunk: ((AudioChunk) -> Void)?
@@ -818,17 +823,18 @@ final class FakeSource: AudioSourceStream, @unchecked Sendable {
         get { lock.withLock { _startError } }
         set { lock.withLock { _startError = newValue } }
     }
-    /// How long `start` blocks, as `SystemAudioSource.start` does on ScreenCaptureKit.
-    var startDelay: TimeInterval {
-        get { lock.withLock { _startDelay } }
-        set { lock.withLock { _startDelay = newValue } }
+    /// Makes `start` block, as `SystemAudioSource.start` can on ScreenCaptureKit, until `releaseStarts`.
+    func holdStarts() { lock.withLock { _held = true } }
+    func releaseStarts() {
+        let held = lock.withLock { () -> Bool in defer { _held = false }; return _held }
+        if held { gate.signal() }
     }
     var isRunning: Bool { lock.withLock { _isRunning } }
     var startCalls: Int { lock.withLock { _startCalls } }
 
     func start(onChunk: @escaping (AudioChunk) -> Void) throws {
-        let delay = lock.withLock { _startCalls += 1; return _startDelay }
-        if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+        let held = lock.withLock { _startCalls += 1; return _held }
+        if held { gate.wait() }
         try lock.withLock {
             if let _startError { throw _startError }
             _isRunning = true

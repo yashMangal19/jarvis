@@ -65,6 +65,8 @@ public final class Jarvis: ObservableObject {
     private let inbox: InboxImporter
     private let voiceMemos: VoiceMemosImporter
     private let tickInterval: TimeInterval
+    /// DEC-51: the one clock every wait in Jarvis runs on.
+    private let scheduler: any Scheduler
     private lazy var commands = CommandSession(runner: { [engines] in engines.commandRunner }, clock: clock,
                                                speak: { [unowned self] in say($0) })
     private lazy var router = VoiceControlRouter(session: session, search: search, forget: forget,
@@ -94,7 +96,7 @@ public final class Jarvis: ObservableObject {
                 sources: any SourceFactory, screenLock: any ScreenLockObserving, sleepGuard: any SleepGuard,
                 routes: any RouteEventSource, voiceMemos locator: @escaping () -> VoiceMemosAccess,
                 permissions: PermissionStatus, tickInterval: TimeInterval = 30,
-                captureRetryDelays: [TimeInterval]? = nil) {
+                captureRetryDelays: [TimeInterval]? = nil, scheduler: (any Scheduler)? = nil) {
         self.paths = paths
         self.settings = settings
         self.permissions = permissions
@@ -107,7 +109,10 @@ public final class Jarvis: ObservableObject {
         session = ListeningSession(clock: clock, sleepGuard: sleepGuard,
                                    quietHoursEnd: { settings.load().quietHours?.end(of: $0, calendar: .current) })
         let (mic, frames) = sources.makeMic()
-        capture = CaptureSupervisor(sources: sources, mic: mic, retryDelays: captureRetryDelays ?? RestartRetry.delays)
+        let scheduler = scheduler ?? SystemScheduler()
+        self.scheduler = scheduler
+        capture = CaptureSupervisor(sources: sources, mic: mic, retryDelays: captureRetryDelays ?? RestartRetry.delays,
+                                    scheduler: scheduler)
         // DEC-5 amended: speech is read per use, so a transcriber installed after launch is used at once.
         let speech = SpeechSlot(main: engines.transcriber, wake: engines.wakeWordTranscriber)
         self.speech = speech
@@ -275,9 +280,9 @@ public final class Jarvis: ObservableObject {
         session.tick(now: clock.now)
         await startImporters()
         guard !shuttingDown else { return }
-        timer = Task { [weak self, tickInterval] in
+        timer = Task { [weak self, tickInterval, scheduler] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(tickInterval * 1_000_000_000))
+                try? await scheduler.sleep(for: tickInterval)
                 guard let self else { return }
                 await self.tick()
             }

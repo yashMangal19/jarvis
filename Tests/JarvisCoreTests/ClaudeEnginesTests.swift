@@ -10,7 +10,7 @@ import Testing
     /// A fake `claude` in a fresh temp dir: records each argument on its own line in `args`, its working directory in
     /// `pwd`, stdin in `stdin`, prints `stdout` and exits with `status`. `before` runs ahead of reading stdin.
     private func claudeTestFake(stdout: String = "", status: Int32 = 0, before: String = "",
-                                extra: String = "") throws -> (ClaudeCLI, URL) {
+                                extra: String = "", scheduler: any Scheduler = SystemScheduler()) throws -> (ClaudeCLI, URL) {
         let dir = FileManager.default.temporaryDirectory.appending(path: "claude-fake-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         claudeTestDirs.append(dir)
@@ -29,7 +29,7 @@ import Testing
         exit \(status)
         """.write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-        return (ClaudeCLI(executable: script), dir)
+        return (ClaudeCLI(executable: script, scheduler: scheduler), dir)
     }
 
     private func claudeTestArgs(_ dir: URL) throws -> [String] {
@@ -169,10 +169,21 @@ import Testing
         }
     }
 
+    /// The timeout fires on virtual time, after the child has started its own child (J-022): how fast the
+    /// script starts no longer decides what is tested.
     @Test func aTimeoutAlsoTerminatesWhatTheChildStarted() async throws {
-        let (cli, dir) = try claudeTestFake(extra: #"sleep 30 >/dev/null 2>&1 </dev/null & echo $! > "$d/child"; wait"#)
-        await #expect(throws: ClaudeError.timeout) { try await cli.run(arguments: [], stdin: "", timeout: 0.5) }
-        let child = try #require(Int32(String(contentsOf: dir.appending(path: "child"), encoding: .utf8)
+        let clock = VirtualScheduler()
+        let (cli, dir) = try claudeTestFake(extra: #"sleep 30 >/dev/null 2>&1 </dev/null & echo $! > "$d/child"; wait"#,
+                                            scheduler: clock)
+        let run = Task { try await cli.run(arguments: [], stdin: "", timeout: 0.5) }
+        let childFile = dir.appending(path: "child")
+        for _ in 0..<500 where (try? String(contentsOf: childFile, encoding: .utf8))?.hasSuffix("\n") != true {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(await clock.waitForPending())
+        clock.advance(by: 0.5)
+        await #expect(throws: ClaudeError.timeout) { try await run.value }
+        let child = try #require(Int32(String(contentsOf: childFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)))
         var alive = true
         for _ in 0..<20 where alive {
@@ -240,7 +251,7 @@ import Testing
 
     @Test(.enabled(if: claudeTestSmoke, "set JARVIS_CLAUDE_SMOKE=1 with claude installed"))
     func smokeNoteWriterReturnsMarkdown() async throws {
-        let cli = try #require(ClaudeCLI.locate().map(ClaudeCLI.init))
+        let cli = try #require(ClaudeCLI.locate().map { ClaudeCLI(executable: $0) })
         let note = try await ClaudeNoteWriter(cli: cli)
             .note(from: "Me: let's ship the Jarvis demo on Friday.\nOthers: I'll book the room.",
                   prompt: "Write a short Markdown note with a heading and bullet points.")
@@ -249,7 +260,7 @@ import Testing
 
     @Test(.enabled(if: claudeTestSmoke, "set JARVIS_CLAUDE_SMOKE=1 with claude installed"))
     func smokeDraftReturnsOneSentenceWithoutActing() async throws {
-        let cli = try #require(ClaudeCLI.locate().map(ClaudeCLI.init))
+        let cli = try #require(ClaudeCLI.locate().map { ClaudeCLI(executable: $0) })
         let draft = try await ClaudeCommandRunner(cli: cli, settings: { .default })
             .draft("Create a file called jarvis-smoke.txt in my home folder saying hello.")
         #expect(!draft.isEmpty)

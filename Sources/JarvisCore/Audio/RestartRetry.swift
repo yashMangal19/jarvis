@@ -12,15 +12,18 @@ final class RestartRetry {
 
     private let queue: DispatchQueue
     private let delays: [TimeInterval]
+    private let scheduler: any Scheduler
     /// Names the source in the log: "mic", "room mic", "call audio".
     private let name: String
     /// Bumped by every `begin` and `cancel`, so a try scheduled before them does nothing.
     private var generation = 0
     private var health = SourceHealth.ok
 
-    init(queue: DispatchQueue, delays: [TimeInterval] = RestartRetry.delays, name: String) {
+    init(queue: DispatchQueue, delays: [TimeInterval] = RestartRetry.delays, scheduler: any Scheduler = SystemScheduler(),
+         name: String) {
         self.queue = queue
         self.delays = delays
+        self.scheduler = scheduler
         self.name = name
     }
 
@@ -47,7 +50,7 @@ final class RestartRetry {
         guard generation == self.generation else { return }
         if attempt() { report(.ok); return }
         report(index + 1 < delays.count ? .reconnecting : .unavailable)
-        queue.asyncAfter(deadline: .now() + delays[min(index, delays.count - 1)]) { [weak self] in
+        scheduler.after(delays[min(index, delays.count - 1)], on: queue) { [weak self] in
             self?.run(attempt, generation: generation, index: index + 1)
         }
     }

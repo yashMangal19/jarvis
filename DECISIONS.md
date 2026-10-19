@@ -273,6 +273,26 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Checked against:** DEC-15 (a control during a read-back still cancels it), DEC-47 (recorded as
   `didYouMean(<control>)`).
 
+### DEC-51 · Every wait in production runs on an injected Scheduler (2026-10-19)
+- **Why:** D12 review (J-018) of J-010. Production code waited on wall-clock time (`Task.sleep`/`asyncAfter`/`Date()`
+  deadlines), so timing tests could only use small real delays and bounds. They failed under load, and some needed
+  internal hooks.
+- **Decided by:** Jarvis-Orc (J-022).
+- **What:** `Scheduler` (`now`, `sleep(for:)`, `after(_:on:_:)`), with `SystemScheduler` in production and a virtual
+  scheduler in tests that moves only when advanced. It is used by:
+  - capture restarts (`RestartRetry` via `CaptureDriver`);
+  - import retries and settle looks (`ScanScheduler`, `ImportCoordinator`, both importers, including the J-011 gap);
+  - the folder-watcher debounce;
+  - the `ChildProcess` timeout ("timed out" now means the timeout fired, not a later clock read);
+  - whisper readiness and orphan reap;
+  - the Jarvis tick.
+
+  Timing tests advance virtual time, so they test when things happen, not how fast the machine is. A blocking source
+  start is tested by order (a start held open), not by a time bound. `CommandCapture` already took its sleep as a
+  parameter.
+- **Checked against:** DEC-10 (bounded child waits unchanged), DEC-43 and DEC-48 (gap semantics unchanged; its clock
+  is now the scheduler's).
+
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)
 - **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,

@@ -17,14 +17,16 @@ public final class DispatchFolderWatcher: FolderWatcher {
     public var onChange: (() -> Void)?
     private let url: URL
     private let debounce: TimeInterval
+    private let scheduler: any Scheduler
     private let queue = DispatchQueue(label: "jarvis.folder-watcher")
     private let onQueue = DispatchSpecificKey<Void>()
     private var source: DispatchSourceFileSystemObject?
     private var pending: DispatchWorkItem?
 
-    public init(url: URL, debounce: TimeInterval = 2) {
+    public init(url: URL, debounce: TimeInterval = 2, scheduler: any Scheduler = SystemScheduler()) {
         self.url = url
         self.debounce = debounce
+        self.scheduler = scheduler
         queue.setSpecific(key: onQueue, value: ())
     }
 
@@ -49,8 +51,6 @@ public final class DispatchFolderWatcher: FolderWatcher {
     /// On `queue`.
     private func schedule() {
         pending?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.onChange?() }
-        pending = work
-        queue.asyncAfter(deadline: .now() + debounce, execute: work)
+        pending = scheduler.after(debounce, on: queue) { [weak self] in self?.onChange?() }
     }
 }

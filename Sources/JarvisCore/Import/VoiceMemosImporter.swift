@@ -28,6 +28,7 @@ public final class VoiceMemosImporter: ObservableObject {
     /// at least `retryDelay` later finds them unchanged.
     private var undecodable: [URL: (stamp: FileStamp, since: Date)] = [:]
     private let retryDelay: TimeInterval
+    private let clock: any Scheduler
     /// Set once at the end of `init`; it calls back into `self`, so it cannot be built before.
     private var scheduler: ScanScheduler!
 
@@ -37,7 +38,8 @@ public final class VoiceMemosImporter: ObservableObject {
     public init(locator: @escaping () -> VoiceMemosAccess = { VoiceMemosLocator.probe() },
                 watcherFactory: @escaping (URL) -> any FolderWatcher = { DispatchFolderWatcher(url: $0) },
                 coordinator: ImportCoordinator, ledger: ImportLedger, paths: JarvisPaths,
-                settleDelay: TimeInterval = 2, retryDelay: TimeInterval = 5, maxRetries: Int = 12) {
+                settleDelay: TimeInterval = 2, retryDelay: TimeInterval = 5, maxRetries: Int = 12,
+                scheduler clock: any Scheduler = SystemScheduler()) {
         self.locator = locator
         self.watcherFactory = watcherFactory
         self.coordinator = coordinator
@@ -45,7 +47,8 @@ public final class VoiceMemosImporter: ObservableObject {
         self.imports = paths.imports
         self.settleDelay = settleDelay
         self.retryDelay = retryDelay
-        scheduler = ScanScheduler(retryDelay: retryDelay, maxRetries: maxRetries) { [weak self] in
+        self.clock = clock
+        scheduler = ScanScheduler(retryDelay: retryDelay, maxRetries: maxRetries, scheduler: clock) { [weak self] in
             await self?.importNew() ?? 0
         }
     }
@@ -90,7 +93,7 @@ public final class VoiceMemosImporter: ObservableObject {
     /// Imports every new, size-stable memo; returns how many new memos are left for a later scan.
     private func importNew() async -> Int {
         guard let folder = lock.withLock({ self.folder }) else { return 0 }
-        for original in await ScanScheduler.settledFiles(after: settleDelay, { newMemos(in: folder) }) {
+        for original in await ScanScheduler.settledFiles(after: settleDelay, scheduler: clock, { newMemos(in: folder) }) {
             if Task.isCancelled { break }
             await importCopy(of: original)
         }
@@ -123,7 +126,7 @@ public final class VoiceMemosImporter: ObservableObject {
             // then, a memo still changing keeps being retried; it is set aside once a scan at least `retryDelay`
             // after the first finds it unchanged. That gap is for promptness, not correctness (J-011).
             let settled = lock.withLock { () -> Bool in
-                let now = Date()
+                let now = clock.now
                 if let seen = undecodable[original], seen.stamp == stamp {
                     return now.timeIntervalSince(seen.since) >= retryDelay
                 }
