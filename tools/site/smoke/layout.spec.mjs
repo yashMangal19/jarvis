@@ -284,3 +284,35 @@ test("p. 2: a play() that fails leaves the frame as it is, with no unhandled rej
   await expect(play).toBeVisible();
   await expect(page.locator("#p2 video")).not.toHaveAttribute("controls");
 });
+
+// M3 shows four short rows on the phone: the commits card is ≈330px tall, not the ≈556px of five two-line rows.
+test("p. 3: on the phone the commits card with a full feed is no taller than ≈360px", async ({ page }, info) => {
+  phoneOnly(info);
+  const s = JSON.parse(FRESH);
+  const at = (m) => new Date(NOW.getTime() - m * 60e3).toISOString();
+  s.commits = [18, 60, 120, 180, 300].map((m, i) => ({ sha: `c0ffee${i}`, message: `memory search returns ranked notes ${i + 1}`, at: at(m) }));
+  await page.route(STATUS, (route) => route.fulfill({ status: 200, body: JSON.stringify(s), headers: { "access-control-allow-origin": "*" } }));
+  await page.clock.install({ time: NOW.getTime() - 1000 });
+  await page.clock.pauseAt(NOW);
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page.locator("#p3 [data-slot=commit-msg]").first()).toHaveText(/memory search/);
+  const card = await page.locator("#p3 .commits").evaluate((el) => el.offsetHeight); // unrotated height
+  expect(card).toBeLessThanOrEqual(360);
+  for (const age of await page.locator("#p3 [data-slot=commit-age]").all()) {
+    if (await age.isVisible()) expect((await ink(age)).lines).toBe(1);
+  }
+});
+
+test("p. 2: while the promo plays the 'no sound' tag steps aside, and it is back when paused", async ({ page }) => {
+  await open(page);
+  const label = page.locator("#p2 .player-label");
+  const video = page.locator("#p2 video");
+  await expect(label).toHaveCSS("opacity", "1");
+  await page.getByRole("button", { name: "play the promo" }).click();
+  await expect(video).toHaveAttribute("controls", "");
+  await expect(label).toHaveCSS("opacity", "0");
+  await expect(video).toHaveAttribute("aria-describedby", "player-label"); // still read out, still in the page
+  await video.evaluate((v) => v.pause());
+  await expect(label).toHaveCSS("opacity", "1");
+});

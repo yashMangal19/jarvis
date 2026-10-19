@@ -20,6 +20,9 @@ play.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true" focusable="false
 player.append(play);
 play.addEventListener("click", () => video.play().catch(() => {})); // a refused play leaves the frame as it was
 video.addEventListener("play", () => { video.controls = true; play.hidden = true; }, { once: true });
+// While it plays, the "no sound" tag steps aside (it sits on the picture); paused or ended, it is back.
+video.addEventListener("play", () => { player.dataset.playing = ""; });
+for (const stop of ["pause", "ended"]) video.addEventListener(stop, () => { delete player.dataset.playing; });
 
 const ready = () => { card.hidden = true; play.hidden = !video.paused; };
 if (video.readyState >= HTMLMediaElement.HAVE_METADATA) ready();
