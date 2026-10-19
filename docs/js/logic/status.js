@@ -46,7 +46,7 @@ export function liveLine(status, now) {
 
 // A commit's age as the page prints it: "18m ago", "3h ago", "2d ago".
 export function ageLabel(at, now) {
-  const minutes = Math.floor((Number(now) - Date.parse(at)) / 60e3);
+  const minutes = Math.max(0, Math.floor((Number(now) - Date.parse(at)) / 60e3));
   if (minutes < 60) return `${minutes}m ago`;
   if (minutes < 48 * 60) return `${Math.floor(minutes / 60)}h ago`;
   return `${Math.floor(minutes / (24 * 60))}d ago`;

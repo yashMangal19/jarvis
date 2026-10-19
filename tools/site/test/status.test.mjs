@@ -98,3 +98,7 @@ test("commit age: minutes under an hour, hours under two days, then days", () =>
   assert.equal(ageLabel(at(48 * 60), NOW), "2d ago");
   assert.equal(ageLabel(at(9 * 24 * 60), NOW.getTime()), "9d ago");
 });
+
+test("commit age: a commit stamped after now (clock skew) reads 0m ago", () => {
+  assert.equal(ageLabel(new Date(NOW.getTime() + 5 * 60e3).toISOString(), NOW), "0m ago");
+});

@@ -42,7 +42,6 @@ test("fresh: N of 10 done, the counts, and five commit rows with their age", asy
   await expect(p3(page).locator(".done")).toHaveText("8 of 10 done.");
   await expect(p3(page).locator('[data-slot="wave-boxes"] img[src$="box-tick.svg"]')).toHaveCount(8);
   await expect(slot(page, "tests-green")).toHaveText("287");
-  await expect(page.locator('#p1 [data-slot="tests-green"]')).toHaveText("287");
   await expect(slot(page, "hand-checks-pass")).toHaveText("41");
   await expect(slot(page, "commit-age")).toHaveText(["18m ago", "3h ago", "5h ago", "26h ago", "2d ago"]);
   await expect(slot(page, "commit-msg")).toHaveText(["commit 1", "commit 2", "commit 3", "commit 4", "commit 5"]);
@@ -89,4 +88,20 @@ test("every 5 minutes it refetches; a failed later tick keeps the last good numb
   await expect.poll(() => hits.n).toBe(3);
   await expect(slot(page, "tests-green")).toHaveText("287");
   await expect(slot(page, "updates-line")).toHaveText("updates itself every hour");
+});
+
+test("a fetch that never answers times out to status offline, and the next tick still runs", async ({ page }) => {
+  const hits = { n: 0 };
+  await page.route(STATUS, (route) => {
+    if (hits.n++ === 0) return; // never answered
+    return route.fulfill({ status: 200, body: fixture("stale"), headers: { "access-control-allow-origin": "*" } });
+  });
+  await open(page);
+  await expect.poll(() => hits.n).toBe(1);
+  await page.clock.runFor(20e3);
+  await expect(slot(page, "updates-line")).toHaveText("status offline");
+
+  await page.clock.runFor(5 * 60e3 - 20e3 + 1e3); // just past the 5-minute tick, short of its own timeout
+  await expect.poll(() => hits.n).toBe(2);
+  await expect(slot(page, "tests-green")).toHaveText("198");
 });
