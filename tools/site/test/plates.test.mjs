@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { PLATES, offlineLine, defaultTicks } from "../../../docs/js/logic/plates.js";
 
 test("the load state says notes and commands still need the internet", () => {
@@ -66,4 +67,26 @@ test("every option has a lowercase sub-line that is true about the internet", ()
       assert.equal(o.note.includes("needs the internet"), o.needsInternet, `${p.id}/${o.id}`);
     }
   }
+});
+
+test("a short tagline, where a plate has one, is the phone line and is shorter", () => {
+  assert.equal(plate("hands").shortTagline, "does things. always asks first.");
+  for (const p of PLATES.filter((x) => x.shortTagline)) {
+    assert.match(p.shortTagline, /^[a-z][a-z ,.]+\.$/, p.id);
+    assert.ok(p.shortTagline.length < p.tagline.length, p.id);
+  }
+});
+
+test("the plates art seats all five plates: every plate outline sits the same distance from the core", () => {
+  const svg = readFileSync(new URL("../../../docs/assets/art/a-plates-bare.svg", import.meta.url), "utf8");
+  // A plate outline is a closed hand-drawn path at stroke-width 2.6; its centre is placed by any <g translate>.
+  const centres = [...svg.matchAll(/(?:<g transform="translate\(([-\d.]+) ([-\d.]+)\)">)?<path d="([^"]+)"[^>]*stroke-width="2.6"/g)]
+    .map(([, dx = 0, dy = 0, d]) => {
+      const pts = [...d.matchAll(/([-\d.]+),([-\d.]+)/g)].map((m) => [+m[1] + +dx, +m[2] + +dy]);
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      return Math.hypot((Math.min(...xs) + Math.max(...xs)) / 2 - 360, (Math.min(...ys) + Math.max(...ys)) / 2 - 360);
+    });
+  assert.equal(centres.length, 5);
+  assert.ok(Math.max(...centres) - Math.min(...centres) < 15, `plate radii ${centres.map(Math.round)}`);
+  assert.doesNotMatch(svg, /stroke-dasharray="6 6"|#C8302A/i, "no empty seat and no ring baked in");
 });

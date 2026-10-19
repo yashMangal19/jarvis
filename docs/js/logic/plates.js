@@ -1,6 +1,7 @@
 // The five suit-up plates and the status line computed from one tick per plate. Pure: no DOM.
 
-// tagline heads each card; note is the typed sub-line under each option (copy from D4/M4 where shown).
+// tagline heads each card (shortTagline, where set, is the phone line); note is the typed sub-line under each
+// option. Copy from D4/M4 where shown.
 const OWN = { id: "own", label: "your own", note: "bring your own model or tool.", needsInternet: false };
 const row = (id, label, note, needsInternet = false) => ({ id, label, note, needsInternet });
 
@@ -25,7 +26,7 @@ export const PLATES = [
     row("contextual", "apple contextual", "built into macos. offline."),
     row("core-ai", "core ai", "runs on your mac. offline."),
     OWN] },
-  { id: "hands", name: "hands", tagline: "does things for you. always asks first.", defaultId: "claude", options: [
+  { id: "hands", name: "hands", tagline: "does things for you. always asks first.", shortTagline: "does things. always asks first.", defaultId: "claude", options: [
     row("claude", "claude", "smartest. needs the internet.", true),
     OWN] },
 ];

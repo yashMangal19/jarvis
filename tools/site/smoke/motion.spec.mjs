@@ -48,7 +48,7 @@ test.describe("with GSAP served from the pinned local copy", () => {
     await expect.poll(() => page.evaluate(() => window.flyMax)).toBeGreaterThan(0);
     const ears = plates.and(page.locator('[value="ears"]'));
     await expect.poll(() => ears.evaluate((b) => [b.style.opacity, b.style.transform, b.style.getPropertyValue("--x")]))
-      .toEqual(["", "", "47%"]);
+      .toEqual(["", "", "72%"]);
     expect(await page.evaluate(() => window.flyMax)).toBeLessThan(400);
     await ears.click();
     await expect(ears).toHaveAttribute("aria-expanded", "true");

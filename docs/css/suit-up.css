@@ -1,20 +1,15 @@
-/* p. 4: a popped plate lifts out; one red ring marks the chosen plate's drawing; ticking an engine snaps the label back. */
-.suit .plate { transition: transform .25s ease-out, color .25s; }
-.suit .plate.popped { transform: translate(-6px, 8px) scale(1.12); }
-.suit .plate[aria-expanded="true"] { color: var(--red); }
-
-/* The ring is ring.svg (the stroke that used to be baked into the art), centred on the open plate's drawing.
-   --rx/--ry are the plate drawing's centre as a share of the art (760 units); --turn fits the ring to the plate. */
-.plates .ring {
-  position: absolute; left: var(--rx); top: var(--ry); width: 43.4%;
-  transform: translate(-50%, -50%) rotate(var(--turn, 0deg)); opacity: 0; pointer-events: none; transition: opacity .25s;
-}
-.plates:has(.plate[aria-expanded="true"]) .ring { opacity: 1; }
-.plates:has(.plate[value="ears"][aria-expanded="true"]) .ring { --rx: 47.4%; --ry: 23%; }
-.plates:has(.plate[value="transcriber"][aria-expanded="true"]) .ring { --rx: 70%; --ry: 38.6%; --turn: 90deg; }
-.plates:has(.plate[value="notes"][aria-expanded="true"]) .ring { --rx: 63.7%; --ry: 67.6%; --turn: -35deg; }
-.plates:has(.plate[value="memory"][aria-expanded="true"]) .ring { --rx: 24.7%; --ry: 38.6%; --turn: 90deg; }
-.plates:has(.plate[value="hands"][aria-expanded="true"]) .ring { --rx: 27%; --ry: 75.7%; }
+/* p. 4: opening a plate pulls its drawing out (plate-pop.svg turned to it) and rings it; the label turns red. */
+.suit .plate { transition: color .25s; }
+.suit .plate[aria-expanded="true"] { color: var(--red-on-blueprint); }
+.suit .plates { --ring-color: var(--red-on-blueprint); }
+.suit .plates :is(.pop, .ring) { opacity: 0; transition: opacity .25s; }
+.suit .plates:has(.plate[aria-expanded="true"]) :is(.pop, .ring) { opacity: 1; }
+/* --turn carries the pulled-out plate round the core; --rx/--ry centre the ring on it (share of the art). */
+.suit .plates:has(.plate[value="ears"][aria-expanded="true"]) { --turn: 144deg; --rx: 47.3%; --ry: 12.5%; }
+.suit .plates:has(.plate[value="transcriber"][aria-expanded="true"]) { --turn: -144deg; --rx: 80.5%; --ry: 36.5%; --ring-turn: 90deg; }
+.suit .plates:has(.plate[value="notes"][aria-expanded="true"]) { --turn: -72deg; --rx: 68%; --ry: 75.6%; }
+.suit .plates:has(.plate[value="memory"][aria-expanded="true"]) { --turn: 72deg; --rx: 14.1%; --ry: 36.7%; --ring-turn: 90deg; }
+.suit .plates:has(.plate[value="hands"][aria-expanded="true"]) { --turn: 0deg; --rx: 26.9%; --ry: 75.7%; }
 
 /* The hint names the gesture the visitor has. */
 .suit .on-touch { display: none; }
@@ -30,7 +25,7 @@
 }
 /* overflow: hidden keeps a long tagline in its own column beside the floated legend instead of wrapping under it. */
 .index-card .tagline { overflow: hidden; margin: 0 0 32px; font-size: clamp(20px, 1.8vw, 24px); font-weight: 400; line-height: 30px; color: #5d5a52; }
-.index-card .option { clear: both; margin-bottom: 14px; }
+.index-card .option { clear: both; margin-bottom: 10px; }
 .index-card label {
   display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; column-gap: 12px;
   min-height: 44px; font-family: var(--hand); font-size: clamp(26px, 2.2vw, 30px); font-weight: 700; line-height: 1.1;
@@ -38,20 +33,23 @@
 }
 /* The radio stays a real radio (keyboard, screen reader); appearance: none lets it wear the drawn box. */
 .index-card label input {
-  appearance: none; width: 52px; height: 49px; margin: 0;
+  appearance: none; width: 52px; height: 40px; margin: 0; /* the tick's drawing ends 36px down */
   background: url("../assets/art/box.svg") 0 0 / 40px 40px no-repeat; cursor: pointer;
 }
 .index-card label input:checked { background-image: url("../assets/art/box-tick.svg"); background-size: 52px 49px; }
 .index-card label input:focus-visible { outline: 2px dashed var(--red); outline-offset: 2px; }
 .index-card label:has(input:checked) { color: var(--red); }
+.index-card .tagline .short { display: none; }
 .index-card .note { display: block; margin: -4px 0 0 64px; font-size: 15px; line-height: 1.4; letter-spacing: .04em; color: #4a4741; }
 
 @media (max-width: 600px) {
   .index-card legend { margin-right: 16px; letter-spacing: .2em; }
-  .index-card .tagline { margin-bottom: 28px; font-size: 19px; line-height: 24px; }
+  .index-card .tagline { margin-bottom: 28px; font-size: 19px; line-height: 30px; }
+  .index-card .tagline .long:has(+ .short) { display: none; }
+  .index-card .tagline .short { display: inline; }
   .index-card .note { font-size: 13px; letter-spacing: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .suit .plate, .plates .ring { transition: none; }
+  .suit .plate, .suit .plates :is(.pop, .ring) { transition: none; }
 }
