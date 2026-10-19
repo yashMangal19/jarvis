@@ -9,13 +9,18 @@
   transform: rotate(calc(-90deg + 180deg * var(--needle, 0)));
 }
 
-.launch-extra { height: auto; min-height: 34px; }
-.stamp {
+/* After the deadline the first paint is late-unknown (no status yet); the status then brings a longer
+   line, a reason and the busy art. Reserve the tallest of those (late + reason + art, measured at
+   1440, 1024 and 820 px) so nothing below moves. At 600 px and under, the column flex-basis already
+   gives .countdown a 200 px floor that fits every state. */
+#p1:not([data-state="countdown"]) .countdown { min-height: 240px; }
+
+#p1 .stamp {
   display: none; width: max-content;
   font-family: "Courier Prime", monospace; font-weight: 700; font-size: 44px; letter-spacing: .12em;
   color: var(--red); border: 4px double currentColor; padding: 2px 14px; transform: rotate(-4deg);
 }
-.stamp .hand { display: block; font-size: 20px; letter-spacing: 0; text-align: center; }
+#p1 .stamp .hand { display: block; font-size: 20px; letter-spacing: 0; text-align: center; }
 
 #p1[data-state="online"] .stamp { display: block; }
 #p1[data-state="online"] .countdown .clock,

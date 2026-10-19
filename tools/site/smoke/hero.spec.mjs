@@ -16,7 +16,7 @@ async function serve(page, body) {
 
 async function open(page, body, time = NOW) {
   await serve(page, body);
-  // Paused at exactly `time`, so a few real ms cannot turn 9 h 0 m into 8 h 59 m; runFor drives it.
+  // Paused at exactly `time`, so a few real ms cannot turn 9 h 0 m into 8 h 59 m; fastForward drives it.
   await page.clock.install({ time: time.getTime() - 1000 });
   await page.clock.pauseAt(time);
   await page.goto("/");
@@ -42,9 +42,9 @@ test("before the deadline: the countdown shows 0 d 9 h 0 m", async ({ page }) =>
 test("missing status: the countdown still runs, ticking on the minute", async ({ page }) => {
   await open(page, null, new Date("2026-10-19T12:00:30+05:30"));
   await expectClock(page, "0", "8", "59");
-  await page.clock.runFor(31e3); // past 12:01:00 → 8 h 58 m 59 s left
+  await page.clock.fastForward(31e3); // past 12:01:00 → 8 h 58 m 59 s left
   await expectClock(page, "0", "8", "58");
-  await page.clock.runFor(60e3);
+  await page.clock.fastForward(60e3);
   await expectClock(page, "0", "8", "57");
 });
 
@@ -122,7 +122,7 @@ test("needle: rests at empty with no status, and follows final checks (41/88)", 
   expect(await needleDeg(page)).toBe(-90);
   await page.unrouteAll();
   await serve(page, fixture("fresh"));
-  await page.clock.runFor(5 * 60e3);
+  await page.clock.fastForward(5 * 60e3); // jump to the next feed tick; runFor would step every timer on the page
   await expect.poll(() => needleDeg(page)).toBe(-6); // -90 + 180 × 41/88
 });
 
@@ -145,4 +145,46 @@ test("the countdown digits are not in a live region; the stamp is hidden before 
   await expect(slot(page, "days")).toHaveText("0");
   await expect(p1(page).locator('[aria-live] [data-slot="days"]')).toHaveCount(0);
   await expect(slot(page, "stamp")).toBeHidden();
+});
+
+// Story 41 (CLS < 0.1): after the deadline a load renders late-unknown first (no status yet), then
+// late + reason + busy art when the status lands. Nothing below the launch block may move.
+async function statusArrivesLate(page) {
+  await page.route(STATUS, async (route) => {
+    await new Promise((r) => setTimeout(r, 500));
+    await route.fulfill({ status: 200, body: fixture("late-busy"), headers: { "access-control-allow-origin": "*" } })
+      .catch(() => {}); // the page may already be gone
+  });
+  await page.clock.install({ time: LATE.getTime() - 1000 });
+  await page.clock.pauseAt(LATE);
+  await page.goto("/");
+  await expect(slot(page, "launch-line")).toHaveText("running late · status offline");
+  const below = page.locator("#p2");
+  const before = await below.boundingBox();
+  await expect(slot(page, "busy-art")).toBeVisible();
+  await expect(slot(page, "reason-line")).toBeVisible();
+  expect((await below.boundingBox()).y).toBe(before.y);
+}
+
+test("after the deadline, the status arriving late does not move the page below the hero", ({ page }) =>
+  statusArrivesLate(page));
+
+test.describe("tablet width (601–960 px)", () => {
+  test.use({ viewport: { width: 820, height: 1000 } });
+  test("after the deadline, the status arriving late does not move the page below the hero", ({ page }) =>
+    statusArrivesLate(page));
+});
+
+test("shipped: the ONLINE stamp keeps the hero look, not p. 5's", async ({ page }) => {
+  await open(page, fixture("shipped-early"), LATE);
+  const stamp = slot(page, "stamp");
+  await expect(stamp).toBeVisible();
+  await expect(stamp).toHaveCSS("font-size", "44px");
+  await expect(stamp).toHaveCSS("border-top-style", "double");
+  await expect(stamp).not.toHaveCSS("min-height", "120px"); // p. 5's stamp cell
+  const deg = await stamp.evaluate((el) => {
+    const m = new DOMMatrix(getComputedStyle(el).transform);
+    return Math.round((Math.atan2(m.b, m.a) * 180) / Math.PI);
+  });
+  expect(deg).toBe(-4);
 });

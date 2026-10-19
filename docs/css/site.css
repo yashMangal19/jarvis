@@ -92,8 +92,6 @@ ol { padding: 0; list-style: none; }
 .countdown .clock { font-weight: 700; font-size: 52px; line-height: 1; }
 .countdown .sep { display: none; }
 .when { display: block; }
-.launch-extra { position: relative; height: 34px; }
-.launch-extra img { position: absolute; left: 0; top: 0; width: 34px; height: 34px; }
 
 .sheet {
   grid-area: sheet; position: relative; align-self: start; margin-top: -40px;
@@ -343,7 +341,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .read-back h3 { font: 700 12px var(--typed); letter-spacing: .3em; text-transform: uppercase; color: #6f6b62; margin-bottom: 16px; }
 .answers { display: flex; gap: 24px; margin-top: 40px; }
 .answers button { min-width: 120px; min-height: 48px; font-size: 28px; border: 2px solid currentColor; }
-.stamp { grid-area: stamp; justify-self: end; min-height: 120px; }
+.try .stamp { grid-area: stamp; justify-self: end; min-height: 120px; }
 .promise { grid-area: promise; font-size: clamp(26px, 2.2vw, 32px); margin-top: 24px; }
 
 /* p. 6 how it fits: the pipeline inside the dashed "your mac" box. */

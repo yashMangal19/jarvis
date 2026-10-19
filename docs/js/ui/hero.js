@@ -1,5 +1,6 @@
 // p. 1: countdown, gauge needle, build log and the launch state, from the status feed and a minute tick.
-// The state is one attribute on #p1 that CSS reads; no node is added or removed, so nothing jumps.
+// The state is one attribute on #p1 that CSS reads. Nothing below the hero moves between states because
+// hero.css reserves the tallest post-deadline height on .countdown.
 import { subscribe } from "../status-feed.js";
 import { launchState } from "../logic/launch.js";
 import { ageLabel } from "../logic/status.js";
@@ -37,5 +38,5 @@ function render(s, now) {
 render(null, Date.now()); // the countdown runs before (and without) a status
 subscribe(render);
 const tick = () => render(last, Date.now());
-// 1 ms past each :00 — at :00 exactly the floored minutes have not turned over yet.
+// Ticks 1 ms past each :00. The remaining time is floored, so the shown minute drops just after :00.
 setTimeout(() => { tick(); setInterval(tick, 60e3); }, 60e3 - (Date.now() % 60e3) + 1);
