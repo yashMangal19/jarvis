@@ -50,6 +50,22 @@ import Testing
         #expect(!tap.isRunning)
     }
 
+    @Test func aMissingBuiltInMicIsUnavailableButARedundantOneIsNoTrouble() {
+        let missing = HealthLog(), redundant = HealthLog()
+        let gone = RoomMicSource(resolver: .init(defaultInput: { 1 }, builtIn: { nil }), authorized: { true },
+                                 makeTap: FakeTap().attach)
+        gone.onHealth = missing.append
+        let same = RoomMicSource(resolver: .init(defaultInput: { 2 }, builtIn: { 2 }), authorized: { true },
+                                 makeTap: FakeTap().attach)
+        same.onHealth = redundant.append
+
+        #expect(throws: AudioError.noInput) { try gone.start { _ in } }
+        #expect(throws: AudioError.redundantWithDefaultInput) { try same.start { _ in } }
+
+        #expect(missing.values == [.unavailable])
+        #expect(redundant.values == [])
+    }
+
     @Test func stoppingCancelsAPendingRePin() async throws {
         let tap = FakeTap(), devices = Devices()
         let room = RoomMicSource(resolver: devices.resolver, authorized: { true }, retryDelays: [0.01],

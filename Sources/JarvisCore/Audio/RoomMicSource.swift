@@ -5,7 +5,7 @@ import CoreAudio
 /// 16 kHz mono chunks labelled `.roomMic`. Separate from `MicSource`, never merged with it. Refuses to
 /// start when the built-in mic already is the default input, since `MicSource` records it then.
 /// Never requests microphone permission; without it `start` throws `AudioError.permissionDenied`.
-public final class RoomMicSource: AudioSourceStream, ReportsMicHealth {
+public final class RoomMicSource: AudioSourceStream, ReportsMicHealth, StopsItself {
     /// Where the default and built-in inputs are, injected so the redundancy rule runs without hardware.
     struct DeviceResolver {
         var defaultInput: () -> AudioDeviceID?
@@ -65,7 +65,13 @@ public final class RoomMicSource: AudioSourceStream, ReportsMicHealth {
 
     /// A second call while running does nothing: a second tap on the input bus would crash the engine.
     public func start(onChunk: @escaping (AudioChunk) -> Void) throws {
-        let builtIn = try pinnableBuiltIn()
+        let builtIn: AudioDeviceID
+        do {
+            builtIn = try pinnableBuiltIn()
+        } catch {
+            queue.sync { retry.report(Self.health(whenUnpinnable: error)) }
+            throw error
+        }
         // Checking status prompts nobody; starting the engine while undetermined would.
         guard authorized() else { throw AudioError.permissionDenied }
         try queue.sync {
@@ -95,6 +101,11 @@ public final class RoomMicSource: AudioSourceStream, ReportsMicHealth {
         guard let builtIn = resolver.builtIn() else { throw AudioError.noInput }
         guard resolver.defaultInput() != builtIn else { throw AudioError.redundantWithDefaultInput }
         return builtIn
+    }
+
+    /// Redundant is no trouble: the mic stream records the room then. A missing built-in mic is (J-009).
+    private static func health(whenUnpinnable error: Error) -> MicHealth {
+        (error as? AudioError) == .redundantWithDefaultInput ? .ok : .unavailable
     }
 
     private static func hasInput(_ id: AudioDeviceID) -> Bool {
@@ -130,8 +141,12 @@ public final class RoomMicSource: AudioSourceStream, ReportsMicHealth {
         stopTap()
         retry.begin { [weak self] in
             guard let self, onChunk != nil else { return true }
-            guard let builtIn = try? pinnableBuiltIn() else {
+            let builtIn: AudioDeviceID
+            do {
+                builtIn = try pinnableBuiltIn()
+            } catch {
                 tearDown()
+                retry.report(Self.health(whenUnpinnable: error))
                 onStopped?()
                 return true
             }

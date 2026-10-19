@@ -137,6 +137,45 @@ import Testing
         #expect(jarvis.statusLine == "Listening via AirPods Pro")
     }
 
+    // J-009: a room mic that stops itself is re-evaluated at once, shown when it is a problem, and back
+    // when the inputs change.
+    @Test func aRoomMicThatStopsItselfIsShownAndComesBackWhenTheInputsChange() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        jarvis.session.modes.meetingMode = true
+        await swapWaitUntil { self.sources.roomMic.isRunning }
+        let startsBefore = sources.roomMic.startCalls
+
+        // The built-in mic is gone: the room mic stops itself and can't start again yet.
+        sources.roomMic.startError = .noInput
+        sources.roomMic.stopItself(health: .unavailable)
+        await swapWaitUntil { self.sources.roomMic.startCalls > startsBefore }
+        await swapWaitUntil { jarvis.roomMicHealth == .unavailable }
+        #expect(sources.roomMic.startCalls > startsBefore)
+        #expect(!sources.roomMic.isRunning)
+        #expect(jarvis.statusLine == "Listening via AirPods Pro · room mic not recording")
+
+        // It is back, and the inputs change.
+        sources.roomMic.startError = nil
+        routes.onEvent?(.inputChanged(InputDevice(name: "AirPods Pro", isBluetoothHeadset: true)))
+        await swapWaitUntil { self.sources.roomMic.isRunning && jarvis.roomMicHealth == .ok }
+        #expect(jarvis.statusLine == "Listening via AirPods Pro")
+
+        // Redundant (the built-in mic became the default): stopped, and nothing to warn about.
+        sources.roomMic.startError = .redundantWithDefaultInput
+        sources.roomMic.stopItself(health: .ok)
+        await swapWaitUntil { !self.sources.roomMic.isRunning }
+        #expect(jarvis.roomMicHealth == .ok)
+        #expect(!jarvis.statusLine.contains("room mic"))
+
+        // Meeting mode off: no room note whatever the room mic last said.
+        sources.roomMic.report(.unavailable)
+        await swapWaitUntil { jarvis.roomMicHealth == .unavailable }
+        jarvis.session.modes.meetingMode = false
+        #expect(jarvis.statusLine == "Listening via AirPods Pro")
+        await jarvis.shutdown()
+    }
+
     // Stories 9, 13, 22, 25, 28, 31 end to end, every engine a fake.
     @Test func fakeEnginesInAllFourProtocolsRunTheWholeLoop() async throws {
         let jarvis = makeJarvis()
@@ -765,11 +804,22 @@ final class SwapCommandRunner: CommandRunner {
 }
 
 /// A capture stream the test drives. Started and stopped off the main actor, so its state is locked.
-final class FakeSource: AudioSourceStream, ReportsMicHealth, @unchecked Sendable {
+final class FakeSource: AudioSourceStream, ReportsMicHealth, StopsItself, @unchecked Sendable {
     var onHealth: ((MicHealth) -> Void)?
+    var onStopped: (() -> Void)?
 
     /// Says what a live mic would after a configuration change.
     func report(_ health: MicHealth) { onHealth?(health) }
+
+    /// As `RoomMicSource` does when a re-pin finds the built-in mic gone or redundant.
+    func stopItself(health: MicHealth) {
+        lock.withLock {
+            _isRunning = false
+            onChunk = nil
+        }
+        report(health)
+        onStopped?()
+    }
 
     private let lock = NSLock()
     private var _startError: AudioError?
@@ -800,6 +850,7 @@ final class FakeSource: AudioSourceStream, ReportsMicHealth, @unchecked Sendable
             _isRunning = true
             self.onChunk = onChunk
         }
+        report(.ok)  // as the live sources do once running
     }
 
     func stop() {

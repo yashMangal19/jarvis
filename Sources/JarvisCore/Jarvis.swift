@@ -150,6 +150,10 @@ public final class Jarvis: ObservableObject {
         (room as? any ReportsMicHealth)?.onHealth = { [weak self] health in
             Task { @MainActor in self?.roomMicHealth = health }
         }
+        // J-009: a room mic that stopped itself is tried again at once; a route change tries it again later.
+        (room as? any StopsItself)?.onStopped = { [weak self] in
+            Task { @MainActor in self?.follow() }
+        }
         for driver in [self.mic, systemAudio, roomMic] {
             driver.onChunk = { [weak self] chunk, listening in
                 Task { @MainActor in await self?.store(chunk, heardWhileListening: listening) }
@@ -223,6 +227,7 @@ public final class Jarvis: ObservableObject {
         case .reconnecting: return "Reconnecting mic…"
         case .unavailable: return "Mic not recording: reconnect it or choose another input"
         }
+        guard session.modes.meetingMode else { return session.statusLine }
         switch roomMicHealth {
         case .ok: return session.statusLine
         case .reconnecting: return session.statusLine + " · reconnecting room mic…"

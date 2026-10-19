@@ -36,3 +36,8 @@ public protocol ReportsMicHealth: AnyObject {
     /// Set once, before the first start. Called on the stream's own queue when the health changes.
     var onHealth: ((MicHealth) -> Void)? { get set }
 }
+
+/// A stream that can stop itself after a route change (`RoomMicSource`), so its owner re-evaluates it.
+public protocol StopsItself: AnyObject {
+    var onStopped: (() -> Void)? { get set }
+}

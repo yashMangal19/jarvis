@@ -186,6 +186,10 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Amended (J-008):** Meeting mode's room mic re-pins with the same retries (`RestartRetry`). It still stops for
   good when the built-in mic becomes the default input or is gone. The status line then gets
   " · reconnecting room mic…" or " · room mic not recording" added. The mic's own trouble is shown first.
+- **Amended (J-009):** a room mic that stops itself tells Jarvis (`StopsItself.onStopped`), which tries it again
+  at once and again at every route change. A missing built-in mic shows " · room mic not recording". A redundant
+  one (the built-in mic became the default input, so the mic stream records the room) shows nothing. Outside
+  Meeting mode there is no room note.
 - **Affects:** `Audio/RestartRetry.swift`, `MicSource.swift` (`AudioTap`, `MicHealth`), `RoomMicSource.swift`,
   `Jarvis.statusLine`/`micHealth`/`roomMicHealth`, `MenuContent`.
 - **Checked against:** DEC-31 (kept; a separate case), DEC-24 (each restart still ends the chunk), DEC-25 (none).
