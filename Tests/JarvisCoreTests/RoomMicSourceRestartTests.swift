@@ -28,6 +28,8 @@ import Testing
         tap.changeConfiguration()
 
         #expect(await tap.waitUntil { $0.starts == 7 })
+        // `.ok` is reported just after the start that worked returns, so it is waited for too.
+        #expect(await tap.waitUntil { _ in health.values.last == .ok && health.values.count > 1 })
         #expect(tap.isRunning)
         #expect(tap.lastDevice == 2)
         #expect(health.values == [.reconnecting, .unavailable, .ok])
