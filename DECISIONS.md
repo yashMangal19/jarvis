@@ -256,7 +256,7 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Checked against:** DEC-16 (a route change still re-checks the room mic), DEC-24 (each restart still ends the
   chunk), DEC-28 and DEC-31 (permission lines unchanged), DEC-45 (health changes are logged by name only).
 
-### DEC-50 · A near miss of a control is asked about, never sent to Claude (2026-10-19)
+### DEC-50 · A near miss of a control is asked about, never sent to Claude (2026-10-19) · *Superseded in part by DEC-54*
 - **Why:** D12 review (J-018) of QA-27. A control matched only as the exact whole utterance, so any mishearing
   ("meeting mode of") silently became a Claude tool command with a read-back.
 - **Decided by:** Jarvis-Orc (the behaviour), J-021 (the matching).
@@ -292,6 +292,29 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   parameter.
 - **Checked against:** DEC-10 (bounded child waits unchanged), DEC-43 and DEC-48 (gap semantics unchanged; its clock
   is now the scheduler's).
+
+### DEC-54 · One CommandInterpreter decides what was meant; nothing reaches Claude by default (2026-10-19)
+- **Why:** QA-22 failed on RC1. "Jarvis, pause" was heard as "boss." and, being a short word that J-021 never
+  guessed, went to Claude; "pause, Jarvis, resume." also went to Claude. Three owners decided meaning and each
+  failure fell through to a tool command.
+- **Decided by:** Jarvis-Orc (J-027), on the J-027 design note, with these calls:
+  - (i) a tool command needs two words or more;
+  - (ii) barge-in only for controls, yes/no and stop/cancel;
+  - (iii) hardware echo cancellation is deferred to after 0.1.0.
+- **What:** `CommandInterpreter` (it replaces `VoiceIntentParser`) is the one owner of what an utterance means.
+  - Controls match by words or by sound. The sound key is a consonant skeleton with voiced and unvoiced letters
+    merged, so "boss" is "pause". Short words too: a sound-alike is asked about ("Did you mean pause?"),
+    reversing DEC-50's "short words are never guessed".
+  - The utterance splits at "Jarvis", sentence punctuation and "and"/"then". Controls said one after another run
+    in that order ("pause, Jarvis, resume"). A "forget the last hour" among them comes last, with its own
+    read-back.
+  - Controls mixed with other words, or near misses, are asked about in one question.
+  - "stop" and "cancel" are a control: they cancel a waiting read-back, and stop Jarvis talking (DEC-55).
+  - A tool command needs two words or more, with no segment that is, or sounds like, a control. One unknown word
+    gets "Sorry, I didn't catch that."
+  - During a read-back, yes/no answer it; a control or near-control cancels it; anything else is a correction.
+- **Checked against:** DEC-15 (a control during a read-back still cancels it), DEC-47 (records name the outcome:
+  `controls(…)`, `didYouMean(…)`, `unclear`), DEC-50 (superseded in part).
 
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)

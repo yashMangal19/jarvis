@@ -85,6 +85,45 @@ private final class RouterLog {
         #expect(log.spoken == ["Did you mean meeting mode off?", "Meeting mode off.", "Did you mean demo mode on?", "Cancelled."])
     }
 
+    // J-027, QA-22's two utterances as heard. Neither reaches the command runner.
+    @Test func qa22BossIsAskedAboutAndPauseResumeRunsInOrder() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+
+        await f.router.handle("Jarvis, boss.")
+        #expect(log.spoken == ["Did you mean pause?"])
+        await f.router.heardReply("yes")
+        #expect(f.session.state == .paused(.voice))
+
+        await f.router.handle("pause, Jarvis, resume.")
+        #expect(f.session.state == .listening)
+        #expect(log.spoken == ["Did you mean pause?", "Paused.", "Paused.", "Listening."])
+        #expect(log.runnerRequests == 0 && runner.drafts.isEmpty)
+    }
+
+    @Test func oneUnknownWordIsNotActedOnAndNeverReachesTheRunner() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+
+        await f.router.handle("Jarvis, hello")
+
+        #expect(log.spoken == ["Sorry, I didn't catch that."])
+        #expect(log.runnerRequests == 0)
+        #expect(f.session.state == .listening)
+    }
+
+    @Test func stopCancelsAWaitingReadBack() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+
+        await f.router.handle("Jarvis, create a file")
+        await f.router.heardReply("Jarvis, stop")
+
+        #expect(f.commands.phase == .idle || f.commands.phase == .cancelled(.declined))
+        #expect(runner.executed.isEmpty)
+        #expect(log.spoken.last == "Cancelled.")
+    }
+
     @Test func meetingModeOnSwitchesTheModeAndSaysSo() async {
         defer { try? FileManager.default.removeItem(at: root) }
         let f = make()

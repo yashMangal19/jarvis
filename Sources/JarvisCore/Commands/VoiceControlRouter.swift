@@ -18,6 +18,8 @@ public final class VoiceControlRouter {
     /// The command being handled; a two-phase one stays here until `CommandSession` ends it.
     private var current: CommandRecord?
     private var currentStarted = Date()
+    /// A "forget the last hour" said in a sequence runs last, through its own read-back, once the rest is done.
+    private var forgetAfterCurrent = false
     private var phaseWatch: AnyCancellable?
 
     public init(session: ListeningSession, search: MemorySearch, forget: ForgetLastHour, commands: CommandSession,
@@ -65,7 +67,7 @@ public final class VoiceControlRouter {
     }
 
     private func route(_ utterance: String, trigger: String) async {
-        guard let intent = VoiceIntentParser.parse(utterance) else {
+        guard let intent = CommandInterpreter.interpret(utterance) else {
             Log.command.info("\(trigger, privacy: .public): nothing after the wake word")
             return
         }
@@ -80,13 +82,14 @@ public final class VoiceControlRouter {
     private func reply(_ text: String, trigger: String) async {
         commands.tick(now: clock.now)
         guard case .awaitingConfirmation = commands.phase else { return await route(text, trigger: trigger) }
-        if let intent = VoiceIntentParser.parse(text), intent.isBuiltInControl {
+        // A yes or no answers the read-back; a control, or something near one, cancels it (J-027).
+        if !CommandSession.isYesOrNo(text), let intent = CommandInterpreter.interpret(text), intent.interruptsReadBack {
             current?.replies.append(text)
             current?.said.append("Cancelled.")
-            finishCurrent(.cancelled, reason: "interrupted by a control")
+            finishCurrent(.cancelled, reason: intent == .cancel ? "cancelled" : "interrupted by a control")
             commands.reset()
             speak("Cancelled.")
-            await route(text, trigger: trigger)
+            if intent != .cancel { await route(text, trigger: trigger) }
         } else {
             current?.replies.append(text)
             await commands.heard(text)
@@ -98,18 +101,45 @@ public final class VoiceControlRouter {
         case .pause, .resume, .meetingMode, .demoMode:
             let (action, said) = perform(intent)
             done(action, saying: said)
-        case .didYouMean(let candidates):
-            // Never sent to a command runner: Jarvis asks, and acts only on a yes (J-021, DEC-50).
-            let control = candidates.first(where: changesSomething) ?? candidates[0]
-            current?.intent = "didYouMean(\(control.logName))"
+        case .controls(let steps):
+            // Said one after another: run in that order; a forget comes last, through its own read-back (J-027).
+            var actions: [String] = []
+            for step in steps where step != .forgetLastHour {
+                let (action, said) = perform(step)
+                actions.append(action)
+                current?.said.append(said)
+                speak(said)
+            }
+            current?.action = actions.joined(separator: ", ")
+            if steps.contains(.forgetLastHour) {
+                await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
+            } else {
+                finishCurrent(.done)
+            }
+        case .didYouMean(let steps):
+            // Never sent to a command runner: Jarvis asks, and acts only on a yes (J-021, J-027, DEC-50, DEC-54).
+            let chosen = steps.map { candidates in candidates.first(where: changesSomething) ?? candidates[0] }
+            current?.intent = "didYouMean(\(chosen.map(\.logName).joined(separator: ", ")))"
             current?.action = "ask"
-            if control == .forgetLastHour {
+            if chosen == [.forgetLastHour] {
                 // Its own read-back already asks before anything is deleted.
                 await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
             } else {
-                await commands.submit(control.spoken, runner: ControlRunner(
-                    question: "Did you mean \(control.spoken)?", run: { [weak self] in self?.perform(control).said ?? "" }))
+                let direct = chosen.filter { $0 != .forgetLastHour }
+                forgetAfterCurrent = chosen.contains(.forgetLastHour)
+                let question = "Did you mean \(chosen.map(\.spoken).joined(separator: ", then "))?"
+                await commands.submit(question, runner: ControlRunner(question: question, run: { [weak self] in
+                    guard let self else { return "" }
+                    return direct.map { self.perform($0).said }.joined(separator: " ")
+                }))
             }
+        case .cancel:
+            // Nothing is waiting (a read-back's cancel is handled in `reply`): it only stops Jarvis talking.
+            done("stopped", saying: nil)
+        case .unclear:
+            current?.said.append("Sorry, I didn't catch that.")
+            finishCurrent(.cancelled, reason: "unclear")
+            speak("Sorry, I didn't catch that.")
         case .forgetLastHour:
             current?.action = "read back"
             await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
@@ -155,9 +185,17 @@ public final class VoiceControlRouter {
         case .demoMode(let on):
             session.modes.demoMode = on
             return (on ? "demo mode on" : "demo mode off", on ? "Demo mode on." : "Demo mode off.")
-        case .forgetLastHour, .memoryQuestion, .toolCommand, .didYouMean:
+        case .forgetLastHour, .cancel, .memoryQuestion, .toolCommand, .controls, .didYouMean, .unclear:
             preconditionFailure("not a direct control: \(control.logName)")
         }
+    }
+
+    /// The "forget the last hour" of a confirmed sequence, as its own command with its own read-back.
+    private func forgetFollowingASequence() async {
+        current = CommandRecord(time: clock.now, trigger: "sequence", mic: session.input?.name,
+                                heard: "forget the last hour", intent: VoiceIntent.forgetLastHour.logName, action: "read back")
+        currentStarted = Date()
+        await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
     }
 
     /// Of several equally close controls, the one that would change something: with Meeting mode on,
@@ -172,12 +210,12 @@ public final class VoiceControlRouter {
         }
     }
 
-    /// Speaks `text` and ends the current command as done.
-    private func done(_ action: String, saying text: String) {
+    /// Speaks `text`, if any, and ends the current command as done.
+    private func done(_ action: String, saying text: String?) {
         current?.action = action
-        current?.said.append(text)
+        if let text { current?.said.append(text) }
         finishCurrent(.done)
-        speak(text)
+        if let text { speak(text) }
     }
 
     /// A two-phase command's record follows its phases and is written when it ends.
@@ -191,8 +229,12 @@ public final class VoiceControlRouter {
         case .executing:
             current?.action = "run"
         case .finished(let result):
-            current?.said.append(result)
+            if !result.isEmpty { current?.said.append(result) }
             finishCurrent(.done)
+            if forgetAfterCurrent {
+                forgetAfterCurrent = false
+                Task { [weak self] in await self?.forgetFollowingASequence() }
+            }
         case .cancelled(let reason):
             switch reason {
             case .declined:
@@ -236,7 +278,11 @@ private extension VoiceIntent {
         case .forgetLastHour: return "forgetLastHour"
         case .memoryQuestion: return "memoryQuestion"
         case .toolCommand: return "toolCommand"
-        case .didYouMean(let candidates): return "didYouMean(\(candidates.map(\.logName).joined(separator: "|")))"
+        case .cancel: return "cancel"
+        case .unclear: return "unclear"
+        case .controls(let steps): return "controls(\(steps.map(\.logName).joined(separator: ", ")))"
+        case .didYouMean(let steps):
+            return "didYouMean(\(steps.map { $0.map(\.logName).joined(separator: "|") }.joined(separator: ", ")))"
         }
     }
 
@@ -248,14 +294,16 @@ private extension VoiceIntent {
         case .meetingMode(let on): return on ? "meeting mode on" : "meeting mode off"
         case .demoMode(let on): return on ? "demo mode on" : "demo mode off"
         case .forgetLastHour: return "forget the last hour"
-        case .memoryQuestion, .toolCommand, .didYouMean: return logName
+        case .cancel: return "stop"
+        case .memoryQuestion, .toolCommand, .controls, .didYouMean, .unclear: return logName
         }
     }
 
-    var isBuiltInControl: Bool {
+    /// Said during a read-back, it cancels the read-back instead of being a correction (DEC-15, J-027).
+    var interruptsReadBack: Bool {
         switch self {
-        case .pause, .resume, .meetingMode, .demoMode, .forgetLastHour: return true
-        case .memoryQuestion, .toolCommand, .didYouMean: return false
+        case .pause, .resume, .meetingMode, .demoMode, .forgetLastHour, .cancel, .controls, .didYouMean: return true
+        case .memoryQuestion, .toolCommand, .unclear: return false
         }
     }
 }

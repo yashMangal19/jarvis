@@ -50,6 +50,12 @@ public final class CommandSession: ObservableObject {
         self.maxCorrections = maxCorrections
     }
 
+    /// Whether `reply` is a yes or a no as this loop hears them; anything else is a correction.
+    static func isYesOrNo(_ reply: String) -> Bool {
+        let r = normaliseHeard(reply)
+        return yes.contains(r) || no.contains(r)
+    }
+
     public func submit(_ command: String) async {
         guard let runner = runner() else {
             generation += 1
