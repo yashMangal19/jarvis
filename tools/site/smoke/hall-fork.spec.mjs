@@ -51,3 +51,23 @@ test("no clipboard API → the strip text is selected and the button never says 
   expect(await page.evaluate(() => getSelection().toString())).toBe("git clone github.com/yashMangal19/jarvis");
   await expect(button).toHaveText("copy");
 });
+
+test("a 39-character login without hyphens fits at 390 with no horizontal scroll", async ({ page }) => {
+  test.skip(page.viewportSize().width !== 390, "phone only");
+  const max = "m".repeat(39); // GitHub's longest login, in the widest letter, with no hyphen to break at
+  await page.route("https://api.github.com/**", (route) =>
+    route.fulfill({ status: 200, json: [{ owner: { login: max } }], headers: CORS }));
+  await page.goto("/");
+  await expect(marks(page).first()).toHaveText(`mark 1 · @${max}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("screen readers hear copied: the button's name is its text and it is a polite live region", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  const button = page.locator('#p8 button[data-copy="brew install yashMangal19/tap/jarvis"]');
+  await expect(button).toHaveAttribute("aria-live", "polite");
+  await expect(button).toHaveAccessibleDescription("brew install yashMangal19/tap/jarvis");
+  await button.click();
+  await expect(button).toHaveAccessibleName("copied");
+});
