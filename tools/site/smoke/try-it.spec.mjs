@@ -30,10 +30,11 @@ test.describe("p. 5 demo", () => {
 // The page fetches status.json from GitHub; serve the fresh fixture so this smoke never hits the network.
 test.beforeEach(async ({ page }) => {
   await serve(page, "fresh");
-  // Paused after load, so only runFor moves time and each step lands on its exact millisecond.
-  await page.clock.install({ time: T0 });
+  // Paused before the page loads (as the p. 1 test above does), so only runFor moves time and each step lands on its
+  // exact millisecond. Pausing after goto raced the real clock: a slow load passed the pause time and it threw.
+  await page.clock.install({ time: T0 - 1000 });
+  await page.clock.pauseAt(T0);
   await page.goto("/");
-  await page.clock.pauseAt(T0 + 5e3);
 });
 
 const p5 = (page) => page.locator("#p5");
@@ -165,8 +166,8 @@ test("the result line after yes is one line", async ({ page }) => {
 test("during a run the flow arrows and the card caption show on desktop", async ({ page }, info) => {
   test.skip(info.project.name === "phone", "M5 draws no flow arrows or step captions");
   await say(page, "priya");
-  await expect(p5(page).locator(".arrow")).toHaveCount(2);
-  for (const arrow of await p5(page).locator(".arrow").all()) await expect(arrow).toBeVisible();
+  // Two arrows are visible: mic → wave, and the one inside the shown card. The other card's is hidden with it.
+  await expect(p5(page).locator(".arrow:visible")).toHaveCount(2);
   await expect(p5(page).getByText("3. reads it back. you say yes.")).toBeVisible();
 });
 
@@ -203,15 +204,42 @@ test("in the opening state the promise line sits within 80px of the read-back ca
   expect(gap).toBeLessThan(80);
 });
 
-// N-13: the wave → card arrow ends at the card, as D5 draws it. The tip is the top-right of the up-turned arrow's box.
-test("the arrow to the card ends within 12px of the card", async ({ page }, info) => {
-  test.skip(info.project.name === "phone", "M5 draws no flow arrows");
-  const miss = await p5(page).evaluate((sec) => {
-    const a = sec.querySelector(".to-card").getBoundingClientRect();
-    const c = sec.querySelector("[data-slot=read-back]").getBoundingClientRect();
-    const dx = Math.max(c.left - a.right, 0, a.right - c.right), dy = Math.max(c.top - a.top, 0, a.top - c.bottom);
-    return Math.hypot(dx, dy);
+// N-13 / F-3: the wave → card arrow's real tip (its transform-origin, which the turn leaves fixed) lands within 12px of
+// the card's bottom-left corner, as D5 draws it, for the read-back and the shorter answer card, at three desktop widths.
+for (const [id, card, run] of [["priya", "read-back", say], ["pricing", "answer", say]]) {
+  for (const width of [1024, 1440, 1920]) {
+    test(`the arrow to the ${card} card ends within 12px of it at ${width}`, async ({ page }, info) => {
+      test.skip(info.project.name === "phone", "M5 draws no flow arrows");
+      await page.setViewportSize({ width, height: 900 });
+      await run(page, id);
+      const miss = await p5(page).evaluate((sec, slot) => {
+        const c = sec.querySelector(`[data-slot=${slot}]`);
+        const arrow = c.querySelector(".to-card");
+        // The arrow is the card's child, so the card's 1deg tilt moves tip and corner together. Measure both untilted
+        // (a tilted card's bounding box has a corner that is not the card's corner). The arrow's own turn is about its
+        // tip (the transform-origin), so the tip is the unturned box's origin point.
+        const saved = [c.style.transform, arrow.style.rotate];
+        c.style.transform = "none"; arrow.style.rotate = "none";
+        const r = arrow.getBoundingClientRect(), [ox, oy] = getComputedStyle(arrow).transformOrigin.split(" ").map(parseFloat);
+        const b = c.getBoundingClientRect();
+        [c.style.transform, arrow.style.rotate] = saved;
+        return Math.hypot(r.left + ox - b.left, r.top + oy - b.bottom);
+      }, card === "answer" ? "answer" : "read-back");
+      expect(miss).toBeLessThan(12);
+    });
+  }
+}
+
+// F-1: after yes the stamp never meets the result line, at any phone width. They are rows, not overlapping boxes.
+for (const width of [320, 360, 375, 390]) {
+  test(`after yes the stamp does not touch the result line at ${width}`, async ({ page }, info) => {
+    test.skip(info.project.name === "desktop", "the stamp is pinned to the card only on phones");
+    await page.setViewportSize({ width, height: 844 });
+    await say(page, "reminder");
+    await p5(page).getByRole("button", { name: "yes" }).click();
+    const [stamp, line] = await p5(page).evaluate((sec) =>
+      ["[data-slot=stamp]", "[data-slot=result-line]"].map((q) => { const r = sec.querySelector(q).getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }));
+    expect(stamp.bottom).toBeLessThanOrEqual(line.top);
   });
-  expect(miss).toBeLessThan(12);
-});
+}
 });

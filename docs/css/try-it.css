@@ -31,10 +31,13 @@
 }
 
 @media (max-width: 600px) {
-  /* M5 draws the stamp just under the card's corner. Absolute, so its reserve is not a band of its own: the stamp
-     overlaps the card's bottom padding (clear of the buttons) and the reserved line sits beside it. */
-  .try .result { position: relative; margin-top: 12px; justify-items: start; }
-  .try .stamp { position: absolute; top: -26px; right: -6px; pointer-events: none; }
+  /* M5: the stamp on the read-back card's lower-right corner. It is a row of its own, pulled up onto the card's bottom
+     padding (the card is 64px deeper to hold it, clear of the buttons), and the result line is the row below it. Two
+     rows cannot overlap at any width, and the reserve is mostly paper the card already owns, not a separate band. */
+  .try .read-back { padding-bottom: 64px; }
+  .try .result { margin-top: 0; gap: 18px; justify-items: end; }
+  .try .stamp { margin: -56px 8px 0 0; pointer-events: none; }
+  .try .promise { margin-top: 8px; }
   /* M5: under the slip, at its right end. Absolute in a gap every slip has, so moving it moves no slip. */
   .slips ul { gap: 28px; }
   .slips li:has(> .slip[aria-pressed="true"])::after { top: calc(100% + 2px); left: auto; right: 0; translate: none; line-height: 1; }

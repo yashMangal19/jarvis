@@ -73,7 +73,7 @@
     <p class="title-block">JARVIS · SUIT ASSY<br>SHEET 1 OF 8 &nbsp; REV. b1<br>DRAWN: y.m. &nbsp; 17·10·26</p>
     <div class="plates">
       <img src="assets/art/a-plates-bare.svg" width="760" height="760" alt="Jarvis drawn as five plates around a core: ears, transcriber, hands, notes and memory, with the notes plate popped out and circled in red.">
-      <img class="pop" src="assets/art/plate-pop.svg" width="760" height="760" alt="">
+      <span class="pop"></span>
       <span class="ring" data-slot="ring" style="--rx: 26.9%; --ry: 75.7%"></span>
       <span class="label hand" style="--x: 47%; --y: 2%">ears</span>
       <span class="label hand" style="--x: 76%; --y: 30%">transcriber</span>
@@ -162,13 +162,13 @@
     <span class="tape t1"></span><span class="tape t3"></span>
     <div class="plates">
       <img src="assets/art/a-plates-bare.svg" width="760" height="760" alt="">
-      <img class="pop" src="assets/art/plate-pop.svg" width="760" height="760" alt="">
+      <span class="pop"></span>
       <span class="ring" data-slot="ring"></span>
-      <button type="button" class="plate hand" data-slot="plate" value="ears" aria-expanded="false" aria-controls="plate-card" style="--x: 72%; --y: 0%">ears</button>
-      <button type="button" class="plate hand" data-slot="plate" value="transcriber" aria-expanded="false" aria-controls="plate-card" style="--x: 74%; --y: 58%">transcriber</button>
-      <button type="button" class="plate hand" data-slot="plate" value="notes" aria-expanded="false" aria-controls="plate-card" style="--x: 68%; --y: 91%">notes</button>
-      <button type="button" class="plate hand" data-slot="plate" value="memory" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 4%">memory</button>
-      <button type="button" class="plate hand" data-slot="plate" value="hands" aria-expanded="false" aria-controls="plate-card" style="--x: 4%; --y: 91%">hands</button>
+      <button type="button" class="plate hand" data-slot="plate" value="ears" aria-expanded="false" aria-controls="plate-card" style="--x: 47%; --y: 0%; --ox: 67.6%; --oy: -3%">ears</button>
+      <button type="button" class="plate hand" data-slot="plate" value="transcriber" aria-expanded="false" aria-controls="plate-card" style="--x: 74%; --y: 28%; --ox: 75%; --oy: 15%; --oty: -100%">transcriber</button>
+      <button type="button" class="plate hand" data-slot="plate" value="notes" aria-expanded="false" aria-controls="plate-card" style="--x: 68%; --y: 80%; --ox: 66.8%; --oy: 91.2%">notes</button>
+      <button type="button" class="plate hand" data-slot="plate" value="memory" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 26%; --ox: 1.3%; --oy: 15.1%; --oty: -100%">memory</button>
+      <button type="button" class="plate hand" data-slot="plate" value="hands" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 62%; --ox: 6.4%; --oy: 91.2%">hands</button>
     </div>
     <figcaption class="hint hand"><span class="on-mouse">click</span><span class="on-touch">tap</span> a plate to pop it out</figcaption>
   </figure>
@@ -218,17 +218,18 @@
     <div class="card-slot">
       <div class="read-back" data-slot="read-back" hidden>
         <span class="tape t1"></span>
+        <img class="arrow to-card" src="assets/art/arrow-r.svg" width="160" height="60" alt="">
         <h3>read-back</h3>
         <p data-slot="read-back-text"></p>
         <p class="answers"><button type="button" class="yes hand red" data-slot="yes">yes</button><button type="button" class="no hand" data-slot="no">no</button></p>
       </div>
       <div class="read-back answer" data-slot="answer" hidden>
         <span class="tape t1"></span>
+        <img class="arrow to-card" src="assets/art/arrow-r.svg" width="160" height="60" alt="">
         <h3>answer</h3>
         <p data-slot="answer-text"></p>
         <p class="source hand muted" data-slot="answer-source"></p>
       </div>
-      <img class="arrow to-card" src="assets/art/arrow-r.svg" width="160" height="60" alt="">
       <p class="card-caption hand muted" aria-hidden="true">3. reads it back. you say yes.</p>
     </div>
     <p class="stamp" data-slot="stamp" hidden></p>

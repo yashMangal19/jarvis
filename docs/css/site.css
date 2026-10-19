@@ -128,10 +128,14 @@ ol { padding: 0; list-style: none; }
 }
 .plates { position: relative; width: 86%; margin: 24px auto 0; }
 .plates img { filter: url(#chalk); }
-/* A pulled-out plate: plate-pop.svg is drawn for the bottom-left plate in the art's own frame, and --turn
-   (a multiple of 72deg about the core, 360/760 of the art) carries it to any other plate. Its strokes are
-   already chalk, so it skips the filter. The ring is ring.svg as a mask, so its colour is a token. */
-.plates .pop { position: absolute; inset: 0; filter: none; transform: rotate(var(--turn, 0deg)); transform-origin: 47.37% 47.37%; }
+/* A pulled-out plate: plate-pop.svg (chalk strokes) is drawn for the bottom-left plate in the art's own frame, and
+   --turn (a multiple of 72deg about the core, 360/760 of the art) carries it to any other plate. Under it, a
+   blueprint-coloured mask hides the plate that sits in that seat in the bare art. The ring is ring.svg as a mask,
+   so its colour is a token too. */
+.plates .pop { position: absolute; inset: 0; pointer-events: none; transform: rotate(var(--turn, 0deg)); transform-origin: 47.37% 47.37%; }
+.plates .pop::before, .plates .pop::after { content: ""; position: absolute; inset: 0; background-size: 100% 100%; }
+.plates .pop::before { background: var(--blueprint); mask: url("../assets/art/plate-cover.svg") 0 0 / 100% 100% no-repeat; }
+.plates .pop::after { background-image: url("../assets/art/plate-pop.svg"); }
 .plates .ring {
   position: absolute; left: var(--rx); top: var(--ry); width: 40.92%; aspect-ratio: 311 / 220; pointer-events: none;
   transform: translate(-50%, -50%) rotate(var(--ring-turn, 0deg)); background: var(--ring-color, var(--red));
@@ -387,15 +391,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* D5's hand-drawn arrows mic → wave → card; the second turns up toward the card. */
 .try .arrow { height: auto; }
 .to-wave { grid-area: to-wave; width: 100%; align-self: start; margin-top: 44px; }
-/* The card arrow lives in the card's cell and is placed from the card's left edge: transform-origin is its tip
-   (150,28 of 160×60, so 113px across and 21px down at 120px wide), and it turns up about that tip. The read-back is
-   the taller card and fills the cell, so end + -24px puts the tip on its bottom-left corner, as D5 draws it. */
-.to-card {
-  grid-area: 1 / 1; justify-self: start; align-self: end; width: 120px; margin: 0 0 -24px -113px;
+/* The card arrow is inside each card, so it is placed from that card's own bottom-left corner, whatever the card's
+   height. Its tip is (150,28) of the 160×60 art: 94% / 47%, which at 120px wide is 113px across and 21px down. That
+   point is the transform-origin, so turning the arrow up leaves the tip on the corner, as D5 draws it. */
+.read-back .to-card {
+  position: absolute; left: -113px; top: calc(100% - 21px); width: 120px;
   transform-origin: 94% 47%; rotate: -32deg;
 }
-/* The shorter answer card: the tip goes on its left edge 180px down (it is ~194px tall at its smallest). */
-.card-slot:has(> [data-slot="answer"]:not([hidden])) > .to-card { align-self: start; margin: 159px 0 0 -113px; }
 .card-caption { margin-top: 20px; font-size: 20px; }
 .step figcaption { font-size: 20px; font-weight: 400; }
 .transcript { min-height: 3.2em; font-size: 16px; }
