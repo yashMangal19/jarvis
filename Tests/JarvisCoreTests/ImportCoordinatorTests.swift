@@ -47,11 +47,15 @@ final class ImportFailingTranscriber: Transcriber {
         for i in 0..<Int(frames) {
             buffer.floatChannelData![0][i] = 0.14 * Float(sin(2 * Double.pi * 440 * Double(i) / rate))
         }
+        // Written and dated outside the inbox, then moved in whole, so no scan sees it half-written or undated.
+        let staging = root.appending(path: "staging-\(UUID().uuidString)-\(name)")
         do {
-            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            let file = try AVAudioFile(forWriting: staging, settings: format.settings)
             try file.write(from: buffer)
         }
-        try FileManager.default.setAttributes([.creationDate: recordedAt], ofItemAtPath: url.path)
+        try FileManager.default.setAttributes([.creationDate: recordedAt], ofItemAtPath: staging.path)
+        // rename(2): atomic, and it replaces a file already at `url`.
+        guard rename(staging.path, url.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
         return url
     }
 
@@ -264,7 +268,8 @@ final class ImportFailingTranscriber: Transcriber {
         try importer.start()
 
         try await Task.sleep(nanoseconds: 250_000_000)
-        try FileManager.default.removeItem(at: url)
+        // The copy completes over the empty file in one step, as a finished copy does: deleting it first
+        // left a moment with no file, and a scan landing there saw nothing to retry.
         _ = try importWAV(seconds: 5)
         await waitUntil { inboxRecordings().isEmpty }
         await importer.stop()
@@ -282,7 +287,9 @@ final class ImportFailingTranscriber: Transcriber {
         let importer = makeImporter(coordinator, retryDelay: 0.1, maxRetries: 2)
         try importer.start()
 
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+        await waitUntil { transcriber.calls >= 3 }
+        // A fourth try would come 0.15 s after the third; 1 s of quiet shows there is none.
+        try await Task.sleep(nanoseconds: 1_000_000_000)
         await importer.stop()
 
         #expect(transcriber.calls == 3)
@@ -310,7 +317,8 @@ final class ImportFailingTranscriber: Transcriber {
     @Test func folderWatcherReportsABurstOfWritesOnce() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: paths.inbox, withIntermediateDirectories: true)
-        let watcher = DispatchFolderWatcher(url: paths.inbox, debounce: 0.3)
+        // Writes 50 ms apart against a 1 s debounce: load would have to stretch a gap twentyfold to split the burst.
+        let watcher = DispatchFolderWatcher(url: paths.inbox, debounce: 1)
         let counter = ImportCallCounter()
         watcher.onChange = { counter.increment() }
         try watcher.start()
@@ -320,7 +328,9 @@ final class ImportFailingTranscriber: Transcriber {
             try Data("x".utf8).write(to: paths.inbox.appending(path: "f\(i).wav"))
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        try await Task.sleep(nanoseconds: 1_000_000_000)
+        await waitUntil { counter.value >= 1 }
+        // A second call would come within one debounce of the first.
+        try await Task.sleep(nanoseconds: 1_500_000_000)
 
         #expect(counter.value == 1)
     }
@@ -355,3 +365,4 @@ final class FakeFolderWatcher: FolderWatcher {
     func stop() {}
     func fire() { onChange?() }
 }
+

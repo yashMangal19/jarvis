@@ -2,7 +2,7 @@ import AVFoundation
 import Combine
 import Foundation
 import Testing
-import JarvisCore
+@testable import JarvisCore
 
 @Suite struct VoiceMemosImporterTests {
     let root = FileManager.default.temporaryDirectory.appending(path: "jarvis-memos-\(UUID().uuidString)")
@@ -70,6 +70,9 @@ import JarvisCore
     func startEmpty(_ importer: VoiceMemosImporter) async throws {
         try FileManager.default.createDirectory(at: recordings, withIntermediateDirectories: true)
         try await importer.start()
+        // The first scan is queued, not awaited. A memo written before it ends would be scanned twice back
+        // to back (that scan, then the folder change's), so a test's first write waits for it.
+        await memoWaitUntil { importer.scanIsIdle }
     }
 
     @Test func importsACopyAndLeavesTheOriginalUntouched() async throws {

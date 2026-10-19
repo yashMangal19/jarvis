@@ -73,6 +73,9 @@ public final class VoiceMemosImporter: ObservableObject {
         scheduler.start()
     }
 
+    /// No scan is running or queued (tests wait on it after `start()`).
+    var scanIsIdle: Bool { scheduler.isIdle }
+
     /// Stops watching and retrying, cancels the scan in flight and returns once it has ended.
     public func stop() async {
         let watcher = lock.withLock { self.watcher }

@@ -263,6 +263,16 @@ public final class Jarvis: ObservableObject {
         }
     }
 
+    /// For tests: whether the wake listener is on, and how many mic frames it has read.
+    var wakeWordListening: Bool { wakeWord.isListening }
+    var wakeWordFramesTaken: Int { wakeWord.framesTaken }
+
+    /// Returns once every capture driver has run what was asked of it so far, so a chunk heard after this
+    /// is tagged with the current listening state. For tests: `cut` hops to each driver's queue.
+    func settleCapture() async {
+        for driver in [mic, systemAudio, roomMic] { await driver.settle() }
+    }
+
     /// Stops the timer, every source, the importers and the whisper servers. The app calls it at quit.
     /// A server still starting is cancelled and awaited first, so none is launched after this returns;
     /// the servers stop off the main actor, together (each waits up to ~3 s, DEC-10).

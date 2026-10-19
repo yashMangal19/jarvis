@@ -37,6 +37,10 @@ public final class WakeWordListener {
     private var capturing = false
     private var manual = false
     private var framesSinceCheck = 0
+    /// Every frame read so far, listening or not. For tests: frames said while muted are gone once counted.
+    private(set) var framesTaken = 0
+    /// Looking for the wake word now (`start`ed and not `stop`ped).
+    var isListening: Bool { listening }
     /// Audio before this stream time was already acted on; a later window never hears it again.
     private var heardUpTo: TimeInterval = 0
     private var reader: Task<Void, Never>?
@@ -106,6 +110,7 @@ public final class WakeWordListener {
 
     private func take(_ frame: [Float]) {
         capture.append(frame)
+        framesTaken += 1
         framesSinceCheck += 1
         guard framesSinceCheck >= Self.checkEvery else { return }
         framesSinceCheck = 0

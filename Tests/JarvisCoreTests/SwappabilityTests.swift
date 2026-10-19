@@ -222,6 +222,7 @@ import Testing
 
         jarvis.session.pause(.user)
         await swapWaitUntil { !self.sources.systemAudio.isRunning }
+        await jarvis.settleCapture()  // the mic keeps running for the wake word; its cut is queued
         #expect(sources.mic.isRunning)
         clock.now += 10
         sayChunk("Paused secret one.")
@@ -229,6 +230,7 @@ import Testing
         hear("Paused secret two.", seconds: 20)
         clock.now += 20
         jarvis.session.resume()
+        await jarvis.settleCapture()
         clock.now += 10
         sayChunk("Back to listening.")
         await swapWaitUntil { self.transcriptText().contains("Back to listening.") }
@@ -401,16 +403,18 @@ import Testing
         transcriber.saying = "Jarvis, what did we decide"
 
         jarvis.speechStarted()
-        await Task.yield()
+        await swapWaitUntil { !jarvis.wakeWordListening }
+        let before = jarvis.wakeWordFramesTaken
         sources.say(speech: 8, silence: 8)
-        try await Task.sleep(nanoseconds: 300_000_000)
+        // Every frame said while muted is read, and dropped, before speech ends.
+        await swapWaitUntil { jarvis.wakeWordFramesTaken >= before + 16 }
         #expect(chimes == 0)
 
         jarvis.speechEnded()
-        await swapWaitUntil {
-            if self.chimes == 0 { self.sources.say(speech: 8, silence: 8) }
-            return self.chimes > 0
-        }
+        await swapWaitUntil { jarvis.wakeWordListening }
+        // Once: the fake wake transcriber hears "Jarvis" in any speech, so saying it again chimes again.
+        sources.say(speech: 8, silence: 8)
+        await swapWaitUntil { self.chimes > 0 }
         #expect(chimes == 1)
         await jarvis.shutdown()
     }
@@ -623,10 +627,11 @@ extension SwappabilityTests {
         await swapWaitUntil { self.sources.mic.isRunning }
         wake.saying = "Jarvis, what did we decide about Friday"
         transcriber.saying = "Jarvis, what did we decide about Friday"
-        await swapWaitUntil {
-            if jarvis.lastMemoryAnswer?.spoken != true { self.sources.say(speech: 8, silence: 8) }
-            return jarvis.lastMemoryAnswer?.spoken == true
-        }
+        // Once, with the listener on: the fake wake transcriber hears "Jarvis" in any speech, so saying it
+        // again would ask a second time.
+        await swapWaitUntil { jarvis.wakeWordListening }
+        sources.say(speech: 8, silence: 8)
+        await swapWaitUntil { jarvis.lastMemoryAnswer?.spoken == true }
         #expect(jarvis.lastMemoryAnswer?.spoken == true)
         #expect(heard == [jarvis.lastMemoryAnswer?.answer])
         await jarvis.shutdown()

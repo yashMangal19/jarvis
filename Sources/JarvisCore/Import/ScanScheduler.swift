@@ -21,6 +21,9 @@ final class ScanScheduler {
         self.scan = scan
     }
 
+    /// No scan is running or queued to run. For tests: `start()` and `folderChanged()` queue one at once.
+    var isIdle: Bool { lock.withLock { scanTask == nil } }
+
     /// Allows scans (again, after `stop()`) and runs one now.
     func start() {
         lock.withLock { stopped = false }
