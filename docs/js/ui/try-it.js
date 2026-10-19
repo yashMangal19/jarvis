@@ -53,6 +53,26 @@ function run(id) {
   setTimeout(() => { if (mine === token) showCard(SLIPS[id]); }, at);
 }
 
+// The wave → card arrow runs from the wave's right edge to the card's bottom-left corner (D5). Its tip is fixed to the
+// corner by CSS; here the tail is aimed at the wave, which depends on both boxes, so --w (length) and --turn are set
+// from layout. offset* ignores transforms (a hidden step is nudged 6px, the card is tilted 1deg), so the answer is the
+// settled one. Hidden single-column layouts hide the arrow and this costs nothing.
+const TAIL = { x: 5.65 / 160, y: 34.25 / 60 }, TIP = { x: 150 / 160, y: 28 / 60 }; // arrow-r.svg, as fractions of its box
+const at = (el) => { let x = 0, y = 0; for (let e = el; e; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return { x, y }; };
+function aim() {
+  const wave = slot("wave").querySelector("img");
+  const from = { x: at(wave).x + wave.offsetWidth + 14, y: at(wave).y + wave.offsetHeight / 2 };
+  for (const card of [slot("read-back"), slot("answer")]) {
+    const tip = { x: at(card).x, y: at(card).y + card.offsetHeight };
+    const m = new DOMMatrix(getComputedStyle(card).transform), tilt = Math.atan2(m.b, m.a); // the card's own turn
+    const length = Math.hypot(tip.x - from.x, tip.y - from.y);
+    const art = Math.hypot((TIP.x - TAIL.x) * 160, (TIP.y - TAIL.y) * 60), artTurn = Math.atan2((TIP.y - TAIL.y) * 60, (TIP.x - TAIL.x) * 160);
+    const arrow = card.querySelector(".to-card");
+    arrow.style.setProperty("--w", `${Math.max(length, 40) / art * 160}px`);
+    arrow.style.setProperty("--turn", `${(Math.atan2(tip.y - from.y, tip.x - from.x) - artTurn - tilt) * 180 / Math.PI}deg`);
+  }
+}
+
 function showCard(s) {
   if (s.kind === "question") {
     slot("answer-text").textContent = s.answer;
@@ -63,6 +83,7 @@ function showCard(s) {
     slot("stamp").textContent = s.stamp; // still hidden: its box is reserved at its real size until yes
     slot("read-back").hidden = false;
   }
+  aim();
 }
 
 function settle(yes) {
@@ -91,3 +112,5 @@ showCard(SLIPS.priya);
 // The card slot is a polite live region too: its read-back or answer content is replaced on each run.
 // Marked after the opening card is in, so loading the page announces nothing.
 page.querySelector(".card-slot").setAttribute("aria-live", "polite");
+addEventListener("resize", aim);
+document.fonts?.ready.then(aim); // the hand and typed faces change line lengths, so card heights

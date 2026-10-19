@@ -408,12 +408,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* D5's hand-drawn arrows mic → wave → card; the second turns up toward the card. */
 .try .arrow { height: auto; }
 .to-wave { grid-area: to-wave; width: 100%; align-self: start; margin-top: 44px; }
-/* The card arrow is inside each card, so it is placed from that card's own bottom-left corner, whatever the card's
-   height. Its tip is (150,28) of the 160×60 art: 94% / 47%, which at 120px wide is 113px across and 21px down. That
-   point is the transform-origin, so turning the arrow up leaves the tip on the corner, as D5 draws it. */
+/* The card arrow is inside each card, so its tip sits on that card's own bottom-left corner, whatever the card's height.
+   The tip is (150,28) of the 160×60 art: 93.75% / 46.67%, so left and top are fractions of --w. That point is the
+   transform-origin, so turning the arrow leaves the tip on the corner. try-it.js sets --w and --turn so the other end,
+   the tail, starts at the wave's right edge (defaults: a short arrow for when scripts are off). */
 .read-back .to-card {
-  position: absolute; left: -113px; top: calc(100% - 21px); width: 120px;
-  transform-origin: 94% 47%; rotate: -32deg;
+  position: absolute; width: var(--w, 120px); left: calc(var(--w, 120px) * -.9375); top: calc(100% - var(--w, 120px) * .175);
+  transform-origin: 93.75% 46.67%; rotate: var(--turn, -32deg);
 }
 .card-caption { margin-top: 20px; font-size: 20px; }
 .step figcaption { font-size: 20px; font-weight: 400; }
@@ -535,7 +536,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 @media (max-width: 960px) {
   .try { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "slips" "flow" "card" "stamp" "promise"; }
   .flow { margin-top: 48px; }
-  .to-card { display: none; }
+  .to-card, .card-caption { display: none; }
   .card-slot { margin-top: 48px; }
   .pipeline { --icon: clamp(72px, 14vw, 120px); flex-direction: column; gap: 0; }
   .pipeline li { display: grid; grid-template-columns: var(--icon) minmax(0, 1fr); column-gap: 32px; align-items: center; }

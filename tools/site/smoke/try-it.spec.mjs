@@ -172,7 +172,8 @@ test("during a run the flow arrows and the card caption show on desktop", async 
 });
 
 // F-2: the answer card shares the read-back's reserved cell but is not stretched to fill it.
-test("the pricing answer card is its own height, shorter than the shared card cell", async ({ page }) => {
+test("the pricing answer card is its own height, shorter than the shared card cell", async ({ page }, info) => {
+  test.skip(info.project.name === "phone", "single column: the answer drops the read-back's reserve, so the cell is the card");
   await say(page, "pricing");
   const [card, cell] = await p5(page).locator("[data-slot=answer]").evaluate((el) => [
     el.offsetHeight, parseFloat(getComputedStyle(el.parentElement).gridTemplateRows)]); // offsetHeight: untilted
@@ -196,13 +197,31 @@ test("picking a slip moves no slip", async ({ page }) => {
   expect(await tops()).toEqual(opening);
 });
 
-// N-11: the opening state has no blank band between the read-back card and the promise line.
-test("in the opening state the promise line sits within 80px of the read-back card", async ({ page }, info) => {
-  test.skip(info.project.name === "desktop", "D5 puts the caption and the stamp's cell between card and promise");
-  const gap = await p5(page).evaluate((sec) =>
-    sec.querySelector(".promise").getBoundingClientRect().top - sec.querySelector("[data-slot=read-back]").getBoundingClientRect().bottom);
-  expect(gap).toBeLessThan(80);
-});
+// N-11 / R-5: one rule for the reserved stamp and result space: no state shows a band of blank paper over 60px, at the
+// phone width and the tablet width. Blank under the read-back's buttons (inside the card), and blank between a card and
+// the promise line. The pricing answer can never end in yes or no, so it reserves nothing.
+for (const width of [390, 768]) {
+  for (const [id, card] of [["priya", "read-back"], ["pricing", "answer"]]) {
+    test(`no blank band over 60px under the ${card} card at ${width}`, async ({ page }, info) => {
+      test.skip(info.project.name === "desktop", "two columns on desktop; D5 draws the caption and the stamp cell there");
+      await page.setViewportSize({ width, height: 900 });
+      if (id !== "priya") await say(page, id);
+      await page.waitForTimeout(450); // CSS transitions run on real time, not the paused clock
+      const [inside, below] = await p5(page).evaluate((sec, slot) => {
+        const c = sec.querySelector(`[data-slot=${slot}]`);
+        c.style.transform = "none"; // tilted bounding boxes stretch; layout edges are what a reader sees
+        const bottom = c.getBoundingClientRect().bottom;
+        const btn = c.querySelector("[data-slot=yes]");
+        const last = btn ? btn.getBoundingClientRect().bottom : [...c.children].at(-1).getBoundingClientRect().bottom;
+        const promise = sec.querySelector(".promise").getBoundingClientRect().top;
+        c.style.transform = "";
+        return [bottom - last, promise - bottom];
+      }, card);
+      expect(inside).toBeLessThanOrEqual(card === "read-back" ? 60 : 40);
+      expect(below).toBeLessThanOrEqual(60);
+    });
+  }
+}
 
 // N-13 / F-3: the wave → card arrow's real tip (its transform-origin, which the turn leaves fixed) lands within 12px of
 // the card's bottom-left corner, as D5 draws it, for the read-back and the shorter answer card, at three desktop widths.
@@ -212,6 +231,7 @@ for (const [id, card, run] of [["priya", "read-back", say], ["pricing", "answer"
       test.skip(info.project.name === "phone", "M5 draws no flow arrows");
       await page.setViewportSize({ width, height: 900 });
       await run(page, id);
+      await page.waitForTimeout(450); // CSS transitions run on real time, not the paused clock
       const miss = await p5(page).evaluate((sec, slot) => {
         const c = sec.querySelector(`[data-slot=${slot}]`);
         const arrow = c.querySelector(".to-card");
@@ -219,27 +239,54 @@ for (const [id, card, run] of [["priya", "read-back", say], ["pricing", "answer"
         // (a tilted card's bounding box has a corner that is not the card's corner). The arrow's own turn is about its
         // tip (the transform-origin), so the tip is the unturned box's origin point.
         const saved = [c.style.transform, arrow.style.rotate];
+        const arrowTurn = getComputedStyle(arrow).rotate;
         c.style.transform = "none"; arrow.style.rotate = "none";
         const r = arrow.getBoundingClientRect(), [ox, oy] = getComputedStyle(arrow).transformOrigin.split(" ").map(parseFloat);
         const b = c.getBoundingClientRect();
         [c.style.transform, arrow.style.rotate] = saved;
-        return Math.hypot(r.left + ox - b.left, r.top + oy - b.bottom);
+        // The tail is where the art starts (5.65, 34.25 of 160×60): turn that offset from the tip by the arrow's own rotation.
+        const turn = parseFloat(arrowTurn) * Math.PI / 180;
+        const vx = (5.65 / 160 - 150 / 160) * r.width, vy = (34.25 / 60 - 28 / 60) * r.height;
+        const tail = { x: r.left + ox + vx * Math.cos(turn) - vy * Math.sin(turn), y: r.top + oy + vx * Math.sin(turn) + vy * Math.cos(turn) };
+        const w = sec.querySelector("[data-slot=wave] img").getBoundingClientRect();
+        return [Math.hypot(r.left + ox - b.left, r.top + oy - b.bottom), Math.hypot(tail.x - (w.right + 14), tail.y - (w.top + w.height / 2)), tail.x - w.right];
       }, card === "answer" ? "answer" : "read-back");
-      expect(miss).toBeLessThan(12);
+      expect(miss[0]).toBeLessThan(12); // R-3/R-4: the tail starts at the wave's right end, never in empty paper or through the wave
+      expect(miss[1]).toBeLessThan(16);
+      expect(miss[2]).toBeGreaterThan(0);
     });
   }
 }
 
 // F-1: after yes the stamp never meets the result line, at any phone width. They are rows, not overlapping boxes.
-for (const width of [320, 360, 375, 390]) {
-  test(`after yes the stamp does not touch the result line at ${width}`, async ({ page }, info) => {
-    test.skip(info.project.name === "desktop", "the stamp is pinned to the card only on phones");
+for (const width of [320, 360, 375, 390, 768]) {
+  test(`after yes the stamp clears the buttons by 8px and the result line at ${width}`, async ({ page }, info) => {
+    test.skip(info.project.name === "desktop", "the stamp is pinned to the card only in the single-column layout");
     await page.setViewportSize({ width, height: 844 });
     await say(page, "reminder");
     await p5(page).getByRole("button", { name: "yes" }).click();
-    const [stamp, line] = await p5(page).evaluate((sec) =>
-      ["[data-slot=stamp]", "[data-slot=result-line]"].map((q) => { const r = sec.querySelector(q).getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }));
+    await page.waitForTimeout(450);
+    const [stamp, line, no] = await p5(page).evaluate((sec) =>
+      ["[data-slot=stamp]", "[data-slot=result-line]", "[data-slot=no]"].map((q) => { const r = sec.querySelector(q).getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }));
     expect(stamp.bottom).toBeLessThanOrEqual(line.top);
+    expect(stamp.top).toBeGreaterThanOrEqual(no.bottom + 8); // R-6
+  });
+}
+
+// R-7: the typed transcript never leaves its last word alone on a line, at phone and 1024 widths.
+for (const width of [390, 1024]) {
+  test(`the transcript does not strand its last word at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const id of ["reminder", "pricing", "priya"]) {
+      await say(page, id);
+      const stranded = await p5(page).locator("[data-slot=transcript]").evaluate((el) => {
+        const text = el.firstChild, words = [...text.data.matchAll(/\S+/g)];
+        const topOf = (m) => { const r = document.createRange(); r.setStart(text, m.index); r.setEnd(text, m.index + m[0].length); return Math.round(r.getBoundingClientRect().top); };
+        const last = topOf(words.at(-1)), first = topOf(words[0]);
+        return last !== first && topOf(words.at(-2)) !== last;
+      });
+      expect(stranded, id).toBe(false);
+    }
   });
 }
 });

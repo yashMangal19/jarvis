@@ -30,14 +30,27 @@
   .try :is(.step, .transcript, .read-back, .stamp) { transition: opacity .3s ease-out, translate .3s ease-out; }
 }
 
+/* The transcript never ends on a lone word (R-7), at any width. */
+.try .transcript { text-wrap: balance; }
+
+/* One column (phone and tablet): the one rule for the stamp and result space, so no state shows a band over ~60px.
+   The stamp (22px type here) is a row pulled up onto the read-back card's bottom padding (M5), its layout box 16px
+   under the buttons so the 6deg tilt still leaves 8px; the result line is the row below it. Two rows cannot overlap at
+   any width. The space is split about evenly, 58px of the card's own paper under the buttons and 58px under the card,
+   so neither reads as a band. The pricing answer can never end in
+   yes or no, so while it shows the read-back's box and the result are dropped and the answer sits at its own size. */
+@media (max-width: 960px) {
+  .try [data-slot="read-back"] { padding-bottom: 58px; }
+  .try .result { margin-top: 0; gap: 14px; justify-items: end; }
+  .try .stamp { margin: -41px 8px 0 0; font-size: 22px; pointer-events: none; }
+  .try .result-line { font-size: 20px; line-height: 1.2; }
+  .try .promise { margin-top: 4px; }
+  .try:has([data-slot="answer"]:not([hidden])) .result { display: none; }
+  .card-slot:has(> [data-slot="answer"]:not([hidden])) > [data-slot="read-back"] { display: none !important; }
+}
+
 @media (max-width: 600px) {
-  /* M5: the stamp on the read-back card's lower-right corner. It is a row of its own, pulled up onto the card's bottom
-     padding (the card is 64px deeper to hold it, clear of the buttons), and the result line is the row below it. Two
-     rows cannot overlap at any width, and the reserve is mostly paper the card already owns, not a separate band. */
-  .try .read-back { padding-bottom: 64px; }
-  .try .result { margin-top: 0; gap: 18px; justify-items: end; }
-  .try .stamp { margin: -56px 8px 0 0; pointer-events: none; }
-  .try .promise { margin-top: 8px; }
+  .try .transcript { font-size: 13px; } /* M5 sets it smaller, on one line */
   /* M5: under the slip, at its right end. Absolute in a gap every slip has, so moving it moves no slip. */
   .slips ul { gap: 28px; }
   .slips li:has(> .slip[aria-pressed="true"])::after { top: calc(100% + 2px); left: auto; right: 0; translate: none; line-height: 1; }
