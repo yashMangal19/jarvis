@@ -218,6 +218,25 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   baseline; 2–4 days plus paired recordings) is a post-0.1.0 backlog item.
 - **Checked against:** DEC-18 (labels still come from the source), DEC-32 (privacy unchanged: no audio kept).
 
+### DEC-47 · Voice commands get a readable record in the data home; the unified log gets names only (2026-10-19)
+- **Why:** QA-27 couldn't be diagnosed. The user wants the command record readable, which `<private>` in the
+  unified log is not (J-016 amendment).
+- **Decided by:** the user, through Jarvis-Orc (J-016).
+- **What:** `logs/commands.jsonl` gets one line per command when it ends. Each line has: time, trigger (wake word,
+  hold or reply window), mic, what was heard, intent, action, what Jarvis said (read-back and result), the replies,
+  and the outcome (done, cancelled or failed, with the reason). It is kept like transcripts: data home only, 7-day
+  expiry in maintenance, removed by "Forget the last hour", and deleted by `uninstall.sh --purge` with the rest of
+  the data home. The unified log's `command` category holds names only (trigger, intent, action, outcome and
+  duration) and never content, so DEC-45 holds.
+  The record of a "Forget the last hour" command is written after the forget, so that record itself stays.
+- **QA-27 finding:** the wake word listens on the active mic only (`WakeWordListener` reads `MicSource` frames),
+  so the room mic can't start a second command, and no cross-source debounce is needed. The Others/Me pair was
+  the transcript duplicate (DEC-46). A control matches only as the whole utterance, so a near miss ("meeting mode
+  of") becomes a tool command with a read-back. The record now shows which happened.
+- **Affects:** `Storage/CommandLog.swift`, `JarvisPaths.logs/commandLog`, `VoiceControlRouter`, `ForgetLastHour`,
+  `LaunchMaintenance`, `Log.command`, README.
+- **Checked against:** DEC-32 and DEC-45 (still on this Mac only; no speech in the unified log), DEC-41 (data home).
+
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)
 - **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,

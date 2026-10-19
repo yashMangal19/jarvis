@@ -13,6 +13,8 @@ enum Log {
     static let store = Logger(subsystem: subsystem, category: "store")
     static let imports = Logger(subsystem: subsystem, category: "import")
     static let notes = Logger(subsystem: subsystem, category: "notes")
+    /// Names only: trigger, intent, action, outcome, duration. What was said goes to `CommandLog` (DEC-47).
+    static let command = Logger(subsystem: subsystem, category: "command")
 }
 
 extension Error {

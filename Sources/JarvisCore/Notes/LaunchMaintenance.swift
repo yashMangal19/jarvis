@@ -1,14 +1,16 @@
 import Foundation
 
-/// The housekeeping run at launch and on each hourly tick: the 7-day transcript purge, then any
-/// due roll-ups.
+/// The housekeeping run at launch and on each hourly tick: the 7-day transcript and command-log purge,
+/// then any due roll-ups.
 public struct LaunchMaintenance {
     private let transcripts: TranscriptStore
     private let rollups: RollupScheduler
+    private let commandLog: CommandLog?
 
-    public init(transcripts: TranscriptStore, rollups: RollupScheduler) {
+    public init(transcripts: TranscriptStore, rollups: RollupScheduler, commandLog: CommandLog? = nil) {
         self.transcripts = transcripts
         self.rollups = rollups
+        self.commandLog = commandLog
     }
 
     /// A failure in either step leaves that step for the next run and does not stop the other:
@@ -18,6 +20,7 @@ public struct LaunchMaintenance {
     public func run(now: Date) async -> (purge: (any Error)?, rollups: [(id: String, error: any Error)]) {
         var purgeError: (any Error)?
         do { _ = try transcripts.purge(olderThan: 7, now: now) } catch { purgeError = error }
+        do { try commandLog?.purge(olderThan: 7, now: now) } catch { purgeError = purgeError ?? error }
         return (purgeError, await rollups.runIfDue(now: now))
     }
 }

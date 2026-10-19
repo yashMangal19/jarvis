@@ -58,6 +58,8 @@ public final class Jarvis: ObservableObject {
     private let maintenance: LaunchMaintenance
     private let search: MemorySearch
     private let forget: ForgetLastHour
+    /// DEC-47: what was said to Jarvis, kept like transcripts; the router writes it.
+    private let commandLog: CommandLog
     private let wakeWord: WakeWordListener
     private let inbox: InboxImporter
     private let voiceMemos: VoiceMemosImporter
@@ -69,7 +71,7 @@ public final class Jarvis: ObservableObject {
                                                  onAnswer: { [unowned self] in
                                                      lastMemoryAnswer = ShownMemoryAnswer(answer: $0, spoken: true)
                                                      onMemoryAnswer($0)
-                                                 }, clock: clock)
+                                                 }, clock: clock, commandLog: commandLog)
     private var started = false
     /// Set first thing by `shutdown`: a `start` still under way stops where it is (F-4).
     private var shuttingDown = false
@@ -127,10 +129,14 @@ public final class Jarvis: ObservableObject {
         self.index = index
         self.pipeline = pipeline
         self.hourlyNotes = hourlyNotes
+        let commandLog = CommandLog(paths: paths)
+        self.commandLog = commandLog
         maintenance = LaunchMaintenance(transcripts: transcripts,
-                                        rollups: RollupScheduler(notes: notes, writer: writer, prompts: prompts))
+                                        rollups: RollupScheduler(notes: notes, writer: writer, prompts: prompts),
+                                        commandLog: commandLog)
         search = MemorySearch(index: index, notes: notes, writer: writer, prompts: prompts)
-        forget = ForgetLastHour(transcripts: transcripts, notes: notes, index: index, forgotten: forgotten)
+        forget = ForgetLastHour(transcripts: transcripts, notes: notes, index: index, forgotten: forgotten,
+                                commandLog: commandLog)
         wakeWord = WakeWordListener(
             mic: frames, wakeWordTranscriber: { speech.wake },
             capture: CommandCapture(buffer: RollingAudioBuffer(seconds: 8), transcriber: { speech.main },
@@ -161,7 +167,10 @@ public final class Jarvis: ObservableObject {
                 Task { @MainActor in await self?.store(chunk, heardWhileListening: listening) }
             }
         }
-        wakeWord.onDetected = { [unowned self] in onChime() }
+        wakeWord.onDetected = { [unowned self] in
+            Log.command.info("Wake word heard")
+            onChime()
+        }
         wakeWord.onCommand = { [unowned self] text in
             let held = heldCommandPending
             heldCommandPending = false

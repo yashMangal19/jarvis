@@ -161,7 +161,10 @@ Tell people when you're recording them. Consent and local laws apply to you.
 - Audio is never stored and never uploaded. It's processed in memory. The one exception: if the
   whisper server is down, the fallback writes a temporary file and deletes it once transcribed.
 - Raw transcripts are deleted after 7 days. Notes stay.
-- "Forget last hour" deletes that hour's transcript, notes and search entries. It deletes exactly
+- Each voice command is recorded in `logs/commands.jsonl`: what you said, what Jarvis said back, and
+  how it ended. It's kept like a transcript: only on this Mac, deleted after 7 days. Errors go to the
+  macOS log without anything you said.
+- "Forget last hour" deletes that hour's transcript, voice-command records, notes and search entries. It deletes exactly
   the hour it showed you, and can't be undone. It can't recall text already sent to Anthropic.
 
 ## Your data
@@ -172,6 +175,7 @@ Plain files you own, in `~/Library/Application Support/Jarvis`. **Open notes** i
 ~/Library/Application Support/Jarvis/
 ├── inbox/          phone recordings to import
 ├── transcripts/    deleted after 7 days
+├── logs/           commands.jsonl: your voice commands, deleted after 7 days
 ├── notes/          hourly/, daily/, weekly/
 ├── index/          for search
 ├── prompts/        edit to change how your notes read

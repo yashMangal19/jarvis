@@ -7,7 +7,7 @@ public struct ForgetReport {
     public let noteIDs: [String]
 }
 
-/// Removes the last hour from memory everywhere it lives: transcript lines, the hourly notes
+/// Removes the last hour from memory everywhere it lives: transcript lines, voice-command records, the hourly notes
 /// (Demo notes included) whose period overlaps it, and their search vectors. Daily and weekly
 /// roll-ups are left alone.
 public final class ForgetLastHour {
@@ -15,13 +15,15 @@ public final class ForgetLastHour {
     private let notes: NoteStore
     private let index: NoteIndex
     private let forgotten: ForgottenWindows?
+    private let commandLog: CommandLog?
     private let calendar: Calendar
 
     /// `index` must be the app's one `NoteIndex` instance: it owns `vectors.json`. `forgotten` must
     /// be the instance the capture pipeline and note scheduler share, so speech in flight is dropped.
     public init(transcripts: TranscriptStore, notes: NoteStore, index: NoteIndex,
-                forgotten: ForgottenWindows? = nil, calendar: Calendar = .current) {
+                forgotten: ForgottenWindows? = nil, commandLog: CommandLog? = nil, calendar: Calendar = .current) {
         self.transcripts = transcripts
+        self.commandLog = commandLog
         self.notes = notes
         self.index = index
         self.forgotten = forgotten
@@ -52,6 +54,7 @@ public final class ForgetLastHour {
         try forgotten?.record(lines, now: now)
         let linesDeleted = try transcripts.lines(in: lines).count
         try transcripts.deleteLines(in: lines)
+        try commandLog?.deleteRecords(in: lines)
         let ids = noteIDs(intersecting: window(now: now))
         for id in ids {
             try index.remove(noteID: id)

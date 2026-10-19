@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// Routes what was heard after the wake word: built-in controls act on the session directly, memory
@@ -13,9 +14,15 @@ public final class VoiceControlRouter {
     private let speak: (String) -> Void
     private let onAnswer: (MemoryAnswer) -> Void
     private let clock: any TimeSource
+    private let commandLog: CommandLog?
+    /// The command being handled; a two-phase one stays here until `CommandSession` ends it.
+    private var current: CommandRecord?
+    private var currentStarted = Date()
+    private var phaseWatch: AnyCancellable?
 
     public init(session: ListeningSession, search: MemorySearch, forget: ForgetLastHour, commands: CommandSession,
-                speak: @escaping (String) -> Void, onAnswer: @escaping (MemoryAnswer) -> Void, clock: any TimeSource) {
+                speak: @escaping (String) -> Void, onAnswer: @escaping (MemoryAnswer) -> Void, clock: any TimeSource,
+                commandLog: CommandLog? = nil) {
         self.session = session
         self.search = search
         self.forget = forget
@@ -23,19 +30,24 @@ public final class VoiceControlRouter {
         self.speak = speak
         self.onAnswer = onAnswer
         self.clock = clock
+        self.commandLog = commandLog
+        // `CommandSession` publishes on the main actor, synchronously as its phase changes.
+        phaseWatch = commands.$phase.sink { [weak self] phase in
+            MainActor.assumeIsolated { self?.followCommand(phase) }
+        }
     }
 
     /// What was heard after the wake word. Does nothing while Stopped.
     public func handle(_ utterance: String) async {
         if isStopped { return }
-        await route(utterance)
+        await route(utterance, trigger: "wake word")
     }
 
     /// What was said during a hold (⌥Space, story 8a). Routes in every state, Stopped and quiet hours
     /// included: a hold is a deliberate command, not listening (DEC-22). With a read-back pending it is
     /// the reply, because while Stopped the mic runs only for a hold.
     public func handleHeld(_ utterance: String) async {
-        await reply(utterance)
+        await reply(utterance, trigger: "hold")
     }
 
     /// A reply to a pending read-back goes to the confirmation loop, unless it is a built-in control:
@@ -44,7 +56,7 @@ public final class VoiceControlRouter {
     /// Does nothing while Stopped.
     public func heardReply(_ text: String) async {
         if isStopped { return }
-        await reply(text)
+        await reply(text, trigger: "reply window")
     }
 
     private var isStopped: Bool {
@@ -52,19 +64,31 @@ public final class VoiceControlRouter {
         return false
     }
 
-    private func route(_ utterance: String) async {
-        guard let intent = VoiceIntentParser.parse(utterance) else { return }
+    private func route(_ utterance: String, trigger: String) async {
+        guard let intent = VoiceIntentParser.parse(utterance) else {
+            Log.command.info("\(trigger, privacy: .public): nothing after the wake word")
+            return
+        }
+        // A command still waiting for its reply is replaced by this one.
+        finishCurrent(.cancelled, reason: "replaced by a new command")
+        current = CommandRecord(time: clock.now, trigger: trigger, mic: session.input?.name, heard: utterance,
+                                intent: intent.logName, action: "")
+        currentStarted = Date()
         await act(on: intent)
     }
 
-    private func reply(_ text: String) async {
+    private func reply(_ text: String, trigger: String) async {
         commands.tick(now: clock.now)
-        guard case .awaitingConfirmation = commands.phase else { return await route(text) }
+        guard case .awaitingConfirmation = commands.phase else { return await route(text, trigger: trigger) }
         if let intent = VoiceIntentParser.parse(text), intent.isBuiltInControl {
+            current?.replies.append(text)
+            current?.said.append("Cancelled.")
+            finishCurrent(.cancelled, reason: "interrupted by a control")
             commands.reset()
             speak("Cancelled.")
-            await act(on: intent)
+            await route(text, trigger: trigger)
         } else {
+            current?.replies.append(text)
             await commands.heard(text)
         }
     }
@@ -73,42 +97,113 @@ public final class VoiceControlRouter {
         switch intent {
         case .pause:
             session.pause(.voice)
-            speak("Paused.")
+            done("paused", saying: "Paused.")
         case .resume:
             // A route-lost pause is ended by voice too: capture carries on from the MacBook mic, and the
             // headset is picked up again when it reconnects.
             let headsetWasLost = session.state == .paused(.routeLost)
             session.resume()
-            speak(headsetWasLost ? "Listening through the MacBook mic." : "Listening.")
+            done("resumed", saying: headsetWasLost ? "Listening through the MacBook mic." : "Listening.")
         case .meetingMode(let on):
             session.modes.meetingMode = on
-            speak(on ? "Meeting mode on." : "Meeting mode off.")
+            done(on ? "meeting mode on" : "meeting mode off", saying: on ? "Meeting mode on." : "Meeting mode off.")
         case .demoMode(let on):
             session.modes.demoMode = on
-            speak(on ? "Demo mode on." : "Demo mode off.")
+            done(on ? "demo mode on" : "demo mode off", saying: on ? "Demo mode on." : "Demo mode off.")
         case .forgetLastHour:
+            current?.action = "read back"
             await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
         case .memoryQuestion(let question):
             // A Stop said while the answer is written wins, and a cancelled search ends quietly. A question
             // held while already Stopped is still answered.
             let stoppedBefore = isStopped
+            current?.action = "search notes"
             do {
                 let answer = try await search.answer(question)
-                if isStopped, !stoppedBefore { return }
-                speak(answer.text)
+                if isStopped, !stoppedBefore { return finishCurrent(.cancelled, reason: "stopped") }
+                done("answered", saying: answer.text)
                 onAnswer(answer)
             } catch is CancellationError {
+                finishCurrent(.cancelled, reason: "cancelled")
             } catch {
-                if isStopped, !stoppedBefore { return }
+                if isStopped, !stoppedBefore { return finishCurrent(.cancelled, reason: "stopped") }
+                current?.said.append("I couldn't search my notes.")
+                finishCurrent(.failed, reason: "search failed: \(error.localizedDescription)")
                 speak("I couldn't search my notes.")
             }
         case .toolCommand(let command):
+            current?.action = "read back"
             await commands.submit(command)
+        }
+    }
+
+    /// Speaks `text` and ends the current command as done.
+    private func done(_ action: String, saying text: String) {
+        current?.action = action
+        current?.said.append(text)
+        finishCurrent(.done)
+        speak(text)
+    }
+
+    /// A two-phase command's record follows its phases and is written when it ends.
+    private func followCommand(_ phase: CommandPhase) {
+        guard current != nil else { return }
+        switch phase {
+        case .idle, .drafting:
+            break
+        case .awaitingConfirmation(let draft, _):
+            if current?.said.last != draft { current?.said.append(draft) }
+        case .executing:
+            current?.action = "run"
+        case .finished(let result):
+            current?.said.append(result)
+            finishCurrent(.done)
+        case .cancelled(let reason):
+            switch reason {
+            case .declined:
+                current?.said.append("Cancelled.")
+                finishCurrent(.cancelled, reason: "declined")
+            case .timeout: finishCurrent(.cancelled, reason: "no reply")
+            case .tooManyCorrections: finishCurrent(.cancelled, reason: "too many corrections")
+            case .failed(let message):
+                current?.said.append(message)
+                finishCurrent(.failed, reason: message)
+            }
+        }
+    }
+
+    /// Writes the current command, if any, to the command log, and its names to the unified log.
+    private func finishCurrent(_ outcome: CommandRecord.Outcome, reason: String? = nil) {
+        guard var record = current else { return }
+        current = nil
+        record.outcome = outcome
+        record.reason = reason
+        let seconds = Date().timeIntervalSince(currentStarted)
+        Log.command.info("""
+            \(record.trigger, privacy: .public) → \(record.intent, privacy: .public) → \
+            \(record.action, privacy: .public) → \(outcome.rawValue, privacy: .public) \
+            in \(seconds, format: .fixed(precision: 1), privacy: .public) s
+            """)
+        do { try commandLog?.append(record) } catch {
+            Log.command.error("Command record not written: \(error.logKind, privacy: .public)")
         }
     }
 }
 
 private extension VoiceIntent {
+    /// The case without what was said, for the logs.
+    var logName: String {
+        switch self {
+        case .pause: return "pause"
+        case .resume: return "resume"
+        case .meetingMode(let on): return on ? "meetingMode(on)" : "meetingMode(off)"
+        case .demoMode(let on): return on ? "demoMode(on)" : "demoMode(off)"
+        case .forgetLastHour: return "forgetLastHour"
+        case .memoryQuestion: return "memoryQuestion"
+        case .toolCommand: return "toolCommand"
+        }
+    }
+
     var isBuiltInControl: Bool {
         switch self {
         case .pause, .resume, .meetingMode, .demoMode, .forgetLastHour: return true

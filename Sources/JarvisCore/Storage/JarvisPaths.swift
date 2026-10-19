@@ -29,16 +29,19 @@ public struct JarvisPaths {
     public var models: URL { root.appending(path: "models") }
     public var imports: URL { root.appending(path: "imports") }
     public var settingsFile: URL { root.appending(path: "settings.json") }
+    public var logs: URL { root.appending(path: "logs") }
+    /// One line per voice command, kept like transcripts (J-016, DEC-47).
+    public var commandLog: URL { logs.appending(path: "commands.jsonl") }
 
     /// Every folder of the layout, in one place.
     public var allFolders: [URL] {
         [inbox, transcripts, notesHourly, notesDaily, notesWeekly,
-         index, prompts, models, imports]
+         index, prompts, models, imports, logs]
     }
 
     /// The top-level names Jarvis owns under `root`; nothing else is ever moved or copied.
     static let ownedNames = ["inbox", "transcripts", "notes", "index", "prompts", "models", "imports",
-                             "settings.json"]
+                             "logs", "settings.json"]
 
     public enum LayoutError: Error, LocalizedError {
         case insideGitRepository(URL)

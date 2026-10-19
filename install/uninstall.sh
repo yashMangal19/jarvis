@@ -49,7 +49,7 @@ fi
 # can't be undone: without a terminal to type "delete" in, only an explicit --yes allows it (DEC-36).
 purge_now=0
 if [ "$purge" = 1 ] && [ -d "$jarvis_home" ]; then
-  say "--purge deletes $jarvis_home: every note, transcript, search index, model and setting. This can't be undone."
+  say "--purge deletes $jarvis_home: every note, transcript, voice-command record, search index, model and setting. This can't be undone."
   if [ "$yes" = 1 ]; then
     purge_now=1
   elif [ -t 0 ]; then
