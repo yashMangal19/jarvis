@@ -20,7 +20,8 @@ function close() {
   return button;
 }
 
-function open(plateId) {
+// focus: false fills the card without pulling the page to it (the load default below).
+function open(plateId, { focus = true } = {}) {
   const plate = PLATES.find((p) => p.id === plateId);
   if (openId) close();
   openId = plateId;
@@ -30,15 +31,26 @@ function open(plateId) {
 
   const legend = document.createElement("legend");
   legend.textContent = plate.name;
+  const tagline = document.createElement("p");
+  tagline.className = "tagline hand";
+  tagline.textContent = plate.tagline;
+  // A real radio inside each label keeps the keyboard and screen-reader behaviour; CSS draws the box over it.
   const rows = plate.options.map((o) => {
+    const noteId = `note-${plate.id}-${o.id}`;
     const input = document.createElement("input");
     Object.assign(input, { type: "radio", name: `engine-${plate.id}`, value: o.id, checked: ticks[plate.id] === o.id });
+    input.setAttribute("aria-describedby", noteId);
     const label = document.createElement("label");
     label.append(input, o.label);
-    return label;
+    const note = document.createElement("span");
+    Object.assign(note, { id: noteId, className: "note", textContent: o.note });
+    const option = document.createElement("div");
+    option.className = "option";
+    option.append(label, note);
+    return option;
   });
-  fieldset.replaceChildren(legend, ...rows);
-  fieldset.querySelector("input:checked").focus();
+  fieldset.replaceChildren(legend, tagline, ...rows);
+  if (focus) fieldset.querySelector("input:checked").focus();
 }
 
 for (const b of p4.querySelectorAll('[data-slot="plate"], [data-slot="other-plate"]')) {
@@ -54,3 +66,6 @@ fieldset.addEventListener("change", (e) => {
 p4.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && openId) close().focus();
 });
+
+// The card is never empty: it opens on hands, the plate the design shows first.
+open("hands", { focus: false });

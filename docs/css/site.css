@@ -291,16 +291,18 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   position: absolute; left: var(--x); top: var(--y); min-height: 44px; padding: 4px 8px;
   color: var(--chalk); font-size: clamp(18px, 1.9vw, 28px); line-height: 1;
 }
-.suit .hint { position: absolute; right: 12%; bottom: 20px; font-size: 22px; font-weight: 400; color: var(--chalk); }
+/* The bottom tape (.t3) rises 20px into the sheet at the right: the hint sits above it, and on a phone beside it. */
+.suit .hint { position: absolute; right: 12%; bottom: 28px; font-size: 22px; font-weight: 400; color: var(--chalk); }
 .card-col { grid-area: cards; margin-top: 56px; }
 .index-card {
-  position: relative; min-height: 520px; padding: 28px 32px 32px; background-color: #F6F3EA;
-  background-image: linear-gradient(transparent 58px, rgb(200 48 42 / .55) 58px 60px, transparent 60px),
+  --rule: 58px; /* the red rule under the plate name and tagline */
+  position: relative; padding: 28px 32px 32px; background-color: #F6F3EA;
+  background-image: linear-gradient(transparent var(--rule), rgb(200 48 42 / .55) var(--rule) calc(var(--rule) + 2px), transparent calc(var(--rule) + 2px)),
     repeating-linear-gradient(transparent 0 45px, rgb(31 63 115 / .14) 45px 46px);
   transform: rotate(1deg); box-shadow: 0 14px 26px rgb(0 0 0 / .14);
 }
 .index-card .t1 { top: -16px; left: 38%; --r: -3deg; }
-.index-card fieldset { min-height: 380px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.index-card fieldset { min-height: 470px; margin: 0; padding: 0; border: 0; min-width: 0; } /* fits ears, the longest card */
 .offline { min-height: 1.2em; font-size: clamp(24px, 2.3vw, 32px); line-height: 1.2; }
 .others { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-top: 40px; }
 .others .hand { font-size: 24px; }
@@ -462,8 +464,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .suit .sheet { padding: 24px 12px 56px; transform: none; }
   .suit .plates { width: 100%; }
   .plate { font-size: 17px; }
-  .suit .hint { right: 16px; bottom: 12px; font-size: 18px; }
-  .index-card { padding: 24px 20px; transform: none; }
+  .suit .hint { left: 16px; right: auto; bottom: 24px; font-size: 18px; }
+  .index-card { --rule: 76px; padding: 24px 20px; transform: none; } /* a phone tagline takes two lines */
   .slip { font-size: 20px; padding: 10px 16px; }
   .slips li:nth-child(n) .slip { margin-left: 0; }
   .flow { grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "mic wave" "mic transcript"; }

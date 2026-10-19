@@ -26,7 +26,7 @@ test("changing ears, transcriber or memory never changes the line", () => {
 
 test("plates list exactly the spec's rows, in order, each ending with your own", () => {
   const labels = Object.fromEntries(PLATES.map((p) => [p.id, p.options.map((o) => o.label)]));
-  const own = "your own — bring your own model or tool";
+  const own = "your own";
   assert.deepEqual(labels, {
     ears: ["any mic or airpods", "built-in mic (meeting mode)", "call audio", "voice memos", own],
     transcriber: ["whisper.cpp", "apple speechanalyzer", own],
@@ -48,4 +48,22 @@ test("unknown plate or option ids fall back to the plate's default", () => {
   assert.equal(offlineLine(tick({ notes: "nope", hands: "own", wings: "x" })), "notes still need the internet");
   assert.equal(offlineLine({}), "notes and commands still need the internet");
   assert.equal(offlineLine(undefined), "notes and commands still need the internet");
+});
+
+test("each card heads with a lowercase tagline; hands uses the design's line", () => {
+  for (const p of PLATES) assert.match(p.tagline, /^[a-z][a-z ,.]+\.$/, p.id);
+  assert.equal(plate("hands").tagline, "does things for you. always asks first.");
+});
+
+test("every option has a lowercase sub-line that is true about the internet", () => {
+  const note = (p, o) => plate(p).options.find((x) => x.id === o).note;
+  assert.equal(note("notes", "claude"), "smartest. needs the internet.");
+  assert.equal(note("notes", "ollama"), "runs on your mac. offline.");
+  assert.equal(note("hands", "own"), "bring your own model or tool.");
+  for (const p of PLATES) {
+    for (const o of p.options) {
+      assert.match(o.note, /^[a-z][a-z .,()]+\.$/, `${p.id}/${o.id}`);
+      assert.equal(o.note.includes("needs the internet"), o.needsInternet, `${p.id}/${o.id}`);
+    }
+  }
 });
