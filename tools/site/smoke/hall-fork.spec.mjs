@@ -14,6 +14,12 @@ test.beforeEach(async ({ page }) => {
     route.fulfill({ status: 200, body: none, headers: { ...CORS, "content-type": "application/json" } }));
 });
 
+// Later routes win over beforeEach's, so this swaps the status feed to "v0.1.0 has shipped".
+const shipped = (page) => page.route("https://raw.githubusercontent.com/**", (route) =>
+  route.fulfill({ status: 200, body: fixture("status/shipped-early.json"), headers: CORS }));
+const BREW = "brew install yashMangal19/tap/jarvis";
+const brewStrip = (page) => page.locator("#p8 .strip").filter({ hasText: BREW });
+
 const marks = (page) => page.locator('#p7 ol[data-slot="marks"] > li.mark');
 
 test("two forks → mark 1 and 2 by owner, then mark 3 · @you?", async ({ page }) => {
@@ -35,6 +41,7 @@ test("forks API 403 → only mark 1 · @you?", async ({ page }) => {
 
 test("the brew strip's copy button puts the line on the clipboard and says copied", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await shipped(page);
   await page.goto("/");
   const button = page.locator('#p8 button[data-copy="brew install yashMangal19/tap/jarvis"]');
   await button.click();
@@ -65,9 +72,41 @@ test("a 39-character login without hyphens fits at 390 with no horizontal scroll
 test("screen readers hear copied: the button's name is its text and it is a polite live region", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
-  const button = page.locator('#p8 button[data-copy="brew install yashMangal19/tap/jarvis"]');
+  const button = page.locator('#p8 button[data-copy="git clone github.com/yashMangal19/jarvis"]');
   await expect(button).toHaveAttribute("aria-live", "polite");
-  await expect(button).toHaveAccessibleDescription("brew install yashMangal19/tap/jarvis");
+  await expect(button).toHaveAccessibleDescription("git clone github.com/yashMangal19/jarvis");
   await button.click();
   await expect(button).toHaveAccessibleName("copied");
+});
+
+test("before ship the brew strip is hidden; git clone and the guide stay", async ({ page }) => {
+  const answered = page.waitForResponse((r) => r.url().startsWith("https://raw.githubusercontent.com/"));
+  await page.goto("/");
+  await answered;
+  await expect(brewStrip(page)).toBeHidden();
+  await expect(page.getByText(BREW)).toBeHidden();
+  await expect(page.getByText("git clone github.com/yashMangal19/jarvis")).toBeVisible();
+  await expect(page.locator('#p8 a[href="guide.html"]')).toBeVisible();
+});
+
+test("once shipped the brew strip appears without moving anything above it, and copy works", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await page.route("https://raw.githubusercontent.com/**", async (route) => {
+    await held;
+    await route.fulfill({ status: 200, body: fixture("status/shipped-early.json"), headers: CORS });
+  });
+  await page.goto("/");
+  // Measured within p. 8: the feed also reflows earlier pages (the hero's shipped state), which is not this strip's doing.
+  const titleInPage = () => page.evaluate(() =>
+    document.getElementById("p8-title").getBoundingClientRect().top - document.getElementById("p8").getBoundingClientRect().top);
+  await expect(brewStrip(page)).toBeHidden(); // no flash before the feed answers
+  const before = await titleInPage();
+  release();
+  await expect(brewStrip(page)).toBeVisible();
+  expect(await titleInPage()).toBe(before);
+  await brewStrip(page).getByRole("button").click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(BREW);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize().width);
 });

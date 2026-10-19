@@ -15,7 +15,6 @@ test("p. 4–8 and the footer show their fixed copy", async ({ page }) => {
   for (const text of [
     "nothing leaves without your yes.",
     "cloud? only if you plug one in.",
-    "brew install yashMangal19/tap/jarvis",
     "git clone github.com/yashMangal19/jarvis",
     "not affiliated with marvel or disney.",
     "mark 1 · @you?",
@@ -23,6 +22,8 @@ test("p. 4–8 and the footer show their fixed copy", async ({ page }) => {
     await expect(page.getByText(text, { exact: false }).first()).toBeVisible();
   }
   await expect(page.locator('a[href="guide.html"]:visible').first()).toBeVisible();
+  // The brew line waits for the release to ship; the fresh feed has not shipped.
+  await expect(page.getByText("brew install yashMangal19/tap/jarvis")).toBeHidden();
 });
 
 test("every plate is a button reached by Tab, and every control on p. 4–8 has a name", async ({ page }) => {
