@@ -60,19 +60,24 @@ final class ImportFailingTranscriber: Transcriber {
     }
 
     func makeCoordinator(transcriber: any Transcriber = ImportFakeTranscriber(), settleDelay: TimeInterval = 2,
-                         scheduler: any Scheduler = SystemScheduler(),
+                         scheduler: any Scheduler = SystemScheduler(), progress: ImportProgress = ImportProgress(file: nil),
                          onImported: @escaping (DateInterval) async -> Void = { _ in }) -> (ImportCoordinator, TranscriptStore) {
-        makeCoordinator(installed: { transcriber }, settleDelay: settleDelay, scheduler: scheduler, onImported: onImported)
+        makeCoordinator(installed: { transcriber }, settleDelay: settleDelay, scheduler: scheduler, progress: progress,
+                        onImported: onImported)
     }
 
     /// `installed` is read per chunk, as the facade's swappable transcriber is (DEC-5).
     func makeCoordinator(installed: @escaping () -> (any Transcriber)?, settleDelay: TimeInterval = 2,
-                         scheduler: any Scheduler = SystemScheduler(),
+                         scheduler: any Scheduler = SystemScheduler(), progress: ImportProgress = ImportProgress(file: nil),
                          onImported: @escaping (DateInterval) async -> Void = { _ in }) -> (ImportCoordinator, TranscriptStore) {
         let store = TranscriptStore(paths: paths)
         let pipeline = CapturePipeline(transcriber: installed, store: store)
-        return (ImportCoordinator(pipeline: pipeline, settleDelay: settleDelay, scheduler: scheduler, onImported: onImported), store)
+        return (ImportCoordinator(pipeline: pipeline, settleDelay: settleDelay, scheduler: scheduler, progress: progress,
+                                  onImported: onImported), store)
     }
+
+    /// The progress file Jarvis keeps; a new instance over it is what a relaunch reads.
+    var progressFile: URL { paths.importProgress }
 
     func allLines(_ store: TranscriptStore) throws -> [TranscriptLine] {
         try store.lines(in: DateInterval(start: recordedAt.addingTimeInterval(-3600), duration: 7200))
@@ -210,6 +215,64 @@ final class ImportFailingTranscriber: Transcriber {
 
         #expect(try allLines(store).map(\.time) == [recordedAt])
         #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    // J-023: where an import got to is kept on disk, so a relaunch carries on after the chunks already stored,
+    // and a recording whose delete failed is not imported again. Neither stores a line twice.
+    @Test func aRelaunchCarriesOnAfterTheChunksAlreadyStored() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = try importWAV(seconds: 65)  // three chunks
+        let (before, _) = makeCoordinator(transcriber: ImportFailingTranscriber(succeeding: 1),
+                                          progress: ImportProgress(file: progressFile))
+        await #expect(throws: ImportFailingTranscriber.Failure.self) { try await before.importFile(url) }
+
+        // Jarvis quits and relaunches: nothing in memory survives.
+        let transcriber = ImportFakeTranscriber()
+        let (after, store) = makeCoordinator(transcriber: transcriber, progress: ImportProgress(file: progressFile))
+        try await after.importFile(url)
+
+        #expect(transcriber.calls == 2)
+        #expect(try allLines(store).map(\.time) == [0, 30, 60].map { recordedAt.addingTimeInterval($0) })
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(ImportProgress(file: progressFile).isEmpty)  // done with: nothing left behind
+    }
+
+    @Test func aRecordingWhoseDeleteFailedIsNotImportedAgainAfterARelaunch() async throws {
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.inbox.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let url = try importWAV(seconds: 5)
+        try FileManager.default.createDirectory(at: paths.index, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: paths.inbox.path)
+        let (before, _) = makeCoordinator(settleDelay: 0.05, progress: ImportProgress(file: progressFile))
+        await #expect(throws: ImportError.self) { try await before.importFile(url) }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.inbox.path)
+        let transcriber = ImportFakeTranscriber()
+        let (after, store) = makeCoordinator(transcriber: transcriber, settleDelay: 0.05,
+                                             progress: ImportProgress(file: progressFile))
+        await after.scanAndImport(folder: paths.inbox)
+
+        #expect(transcriber.calls == 0)
+        #expect(try allLines(store).map(\.time) == [recordedAt])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func progressIsForOneVersionOfAFile() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = try importWAV(seconds: 65)
+        let (before, _) = makeCoordinator(transcriber: ImportFailingTranscriber(succeeding: 1),
+                                          progress: ImportProgress(file: progressFile))
+        await #expect(throws: ImportFailingTranscriber.Failure.self) { try await before.importFile(url) }
+
+        _ = try importWAV(seconds: 65)  // a different recording under the same name
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        let transcriber = ImportFakeTranscriber()
+        let (after, _) = makeCoordinator(transcriber: transcriber, progress: ImportProgress(file: progressFile))
+        try await after.importFile(url)
+
+        #expect(transcriber.calls == 3)  // from its first chunk
     }
 
     // A file that cannot be decoded is moved to inbox/failed after its first try, so it is not retried forever.

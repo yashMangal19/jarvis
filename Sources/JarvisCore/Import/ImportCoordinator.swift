@@ -24,20 +24,18 @@ public final class ImportCoordinator {
     private let onImported: (DateInterval) async -> Void
     private let settleDelay: TimeInterval
     private let scheduler: any Scheduler
-    private let lock = NSLock()
-    /// Files whose lines are stored but whose delete failed; never imported again, deleted on a later scan.
-    private var undeleted: Set<FileStamp> = []
-    /// Files kept after a failure, with how many of their chunks are already stored.
-    private var resumeAt: [FileStamp: Int] = [:]
+    /// How far each file's import got, kept on disk: chunks stored, and whether only its delete is left (J-023).
+    private let progress: ImportProgress
 
     /// `onImported` receives the stored period of the recording; the facade hands it to
     /// `HourlyNoteScheduler.renote`, which notes again the finished hours it touched.
     /// `settleDelay` is how long a file's size must stay unchanged before `scanAndImport` takes it.
     public init(pipeline: CapturePipeline, settleDelay: TimeInterval = 2, scheduler: any Scheduler = SystemScheduler(),
-                onImported: @escaping (DateInterval) async -> Void) {
+                progress: ImportProgress = ImportProgress(file: nil), onImported: @escaping (DateInterval) async -> Void) {
         self.pipeline = pipeline
         self.settleDelay = settleDelay
         self.scheduler = scheduler
+        self.progress = progress
         self.onImported = onImported
     }
 
@@ -47,11 +45,11 @@ public final class ImportCoordinator {
     /// (a silent recording) counts as success. So:
     /// - a chunk failing, or no transcriber installed (`NoTranscriber`), keeps the file for the next scan;
     ///   the stored part (start to the end of the last stored chunk) is still reported, and the next try
-    ///   of the same file carries on after the chunks already stored, so no line is stored twice.
-    ///   Ceiling: that place is kept in memory, so a retry after a relaunch starts from the beginning;
+    ///   of the same file carries on after the chunks already stored, so no line is stored twice. That place
+    ///   is on disk (`ImportProgress`), updated after every chunk, so a relaunch carries on too (DEC-52);
     /// - a file that cannot be decoded is moved to `failed/` beside it, so it is not retried forever,
     ///   and `ImportError.undecodable` says where it went;
-    /// - a failed delete throws `ImportError.notDeleted`, and the file is never imported again.
+    /// - a failed delete throws `ImportError.notDeleted`, and the file is never imported again, relaunch or not.
     @discardableResult
     public func importFile(_ url: URL) async throws -> ImportReport {
         let stamp = FileStamp(url)
@@ -60,7 +58,7 @@ public final class ImportCoordinator {
         do { chunks = try AudioFileDecoder.chunks(from: url, recordedAt: recordedAt) } catch {
             throw ImportError.undecodable(movedTo: moveToFailed(url), error)
         }
-        let alreadyStored = lock.withLock { resumeAt[stamp] ?? 0 }
+        let alreadyStored = progress.stored(stamp)
         var lines = 0
         var storedEnd = recordedAt
         for (index, chunk) in chunks.enumerated().dropFirst(alreadyStored) {
@@ -72,12 +70,13 @@ public final class ImportCoordinator {
                     storedEnd = chunk.start.addingTimeInterval(chunk.duration)
                 case .dropped, .empty: break
                 }
+                try progress.setStored(index + 1, for: stamp)
             } catch {
-                lock.withLock { resumeAt[stamp] = index }
                 if lines > 0 { await onImported(DateInterval(start: recordedAt, end: storedEnd)) }
                 throw error
             }
         }
+        try progress.setComplete(stamp)
         let period = DateInterval(start: recordedAt, duration: chunks.reduce(0) { $0 + $1.duration })
         await onImported(period)
         try delete(url, stamp)
@@ -93,7 +92,7 @@ public final class ImportCoordinator {
         for url in await ScanScheduler.settledFiles(after: settleDelay, scheduler: scheduler, { sizes(in: folder) }) {
             if Task.isCancelled { break }
             let stamp = FileStamp(url)
-            if lock.withLock({ undeleted.contains(stamp) }) {
+            if progress.isComplete(stamp) {
                 do { try delete(url, stamp) } catch {
                     Log.imports.error("Imported recording still not deleted: \(error.logKind, privacy: .public) \(url.path, privacy: .private)")
                 }
@@ -109,13 +108,11 @@ public final class ImportCoordinator {
     private func delete(_ url: URL, _ stamp: FileStamp) throws {
         do {
             try FileManager.default.removeItem(at: url)
-            lock.withLock {
-                undeleted.remove(stamp)
-                resumeAt[stamp] = nil
-            }
         } catch {
-            _ = lock.withLock { undeleted.insert(stamp) }
             throw ImportError.notDeleted(url, error)
+        }
+        do { try progress.clear(stamp) } catch {
+            Log.imports.error("Import progress not cleared: \(error.logKind, privacy: .public)")
         }
     }
 

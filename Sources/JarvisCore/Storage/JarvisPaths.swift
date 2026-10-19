@@ -29,6 +29,8 @@ public struct JarvisPaths {
     public var models: URL { root.appending(path: "models") }
     public var imports: URL { root.appending(path: "imports") }
     public var settingsFile: URL { root.appending(path: "settings.json") }
+    /// How far each recording's import got, so a relaunch carries on (J-023, DEC-52).
+    public var importProgress: URL { index.appending(path: "import-progress.json") }
     public var logs: URL { root.appending(path: "logs") }
     /// One line per voice command, kept like transcripts (J-016, DEC-47).
     public var commandLog: URL { logs.appending(path: "commands.jsonl") }

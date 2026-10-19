@@ -345,9 +345,23 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   URL's cached values. Older ledgers read as before.
 - **Supersedes in part:** DEC-43. Its gap now only decides how long a still-changing memo keeps being retried
   (promptness); it no longer protects the data.
-- **Not covered here:** a recording partly transcribed when Jarvis quits still restarts from the beginning
-  (`ImportCoordinator.resumeAt` is in memory). That is the README known limit, unchanged.
+- **Not covered here:** a recording partly transcribed when Jarvis quits restarted from the beginning. Closed by
+  DEC-52.
 - **Checked against:** DEC-19, DEC-23 (audio still deleted only after a full transcription), DEC-43.
+
+### DEC-52 · Where each import got to is kept on disk, by file version (2026-10-19)
+- **Why:** J-018/J-019 follow-up (J-023). Two in-memory records were lost on a relaunch, so lines were stored twice:
+  how many chunks of a file were stored, and "all stored, only the delete failed".
+- **Decided by:** Jarvis-Orc (J-023).
+- **What:** `ImportProgress` (`index/import-progress.json`) holds, per file version (path, size, modification date),
+  the chunks stored and whether all are. It is updated after every stored chunk, and cleared when the file is
+  deleted. A relaunch carries on after the stored chunks, and a file whose delete failed is never imported again.
+  A different recording under the same name starts afresh. Entries for vanished files are dropped on load.
+  Residual: a crash between a chunk's line and the progress write can repeat that one chunk.
+- **Supersedes:** the in-memory `resumeAt` and `undeleted` sets in `ImportCoordinator`, and README's "retried from
+  the start" known limit.
+- **Checked against:** DEC-23 (audio still deleted only after a full transcription), DEC-48 (the ledger stays the
+  Voice Memos verdict; progress is per file, for both importers), DEC-41 (in the data home, removed by `--purge`).
 
 ### DEC-44 · Real-device and on-device-model tests are opt-in; run once by hand before a tag (2026-10-19)
 - **Decided by:** Jarvis-Orc (J-011, from J-010).

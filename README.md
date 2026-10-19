@@ -198,8 +198,8 @@ Jarvis refuses to start with its data folder inside a git repository.
   - listing MCP servers adds a little time to each command.
 - The mic can still catch Jarvis reading a plan back, so a read-back sentence may show up in a
   transcript. It is removed from call audio.
-- If an imported recording is only partly transcribed when Jarvis quits, it's retried from the start
-  next time and can add duplicate lines.
+- If Jarvis quits while importing a recording, it carries on where it stopped. Only a quit at the very
+  moment a 30-second piece is being saved can repeat that one piece.
 - The app is signed locally (ad hoc), with no developer certificate. After a reinstall, macOS may ask
   for the microphone again, and Screen Recording or Full Disk Access may switch off silently. Turn them
   back on from Jarvis's menu (see [First launch](#first-launch)). A stable signing identity is deferred.

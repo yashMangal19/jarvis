@@ -147,7 +147,8 @@ public final class Jarvis: ObservableObject {
                                     gate: SilenceGate(), clock: clock))
 
         // DEC-26: the scheduler decides which hours an import notes again.
-        let coordinator = ImportCoordinator(pipeline: pipeline) { period in
+        let coordinator = ImportCoordinator(pipeline: pipeline,
+                                            progress: ImportProgress(file: paths.importProgress)) { period in
             do { try await hourlyNotes.renote(touching: period, now: clock.now) } catch {
                 Log.notes.error("Re-noting an import failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
             }
