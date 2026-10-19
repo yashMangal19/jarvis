@@ -114,7 +114,7 @@ ol { padding: 0; list-style: none; }
 /* In the two-column hero's narrow left column (961-1100px) the call-to-action, the gauge and the clock give way together,
    so the countdown stays beside the dial and the button stays on one line. Nothing else changes: at 1101px and up they
    are at full size (short windows included), and the single column below 960px has the room for full size. */
-@media (min-width: 961px) and (max-width: 1100px) {
+@media (960px < width <= 1100px) {
   .hero { --gauge-min: 160px; --clock-min: 36px; }
   .cta { font-size: clamp(22px, 2.2vw, 26px); }
 }
@@ -249,10 +249,10 @@ ol { padding: 0; list-style: none; }
 .stat .big { font-size: clamp(64px, 7.8vw, 112px); line-height: 1; height: 1.05em; white-space: nowrap; }
 .stat .hand:not(.big) { font-size: 26px; font-weight: 400; }
 /* D3's ticked box beside "tests green": out of flow, so it never widens the stat. The stat reserves what the stats gap
-   does not already give it (the tick's 24px offset + 40px width + 8px clear), so the next stat never lies under it. */
+   does not already give it (the tick's offset + 40px width + 8px clear), so the next stat never lies under it. */
 .stat:has(.tick) {
-  /* The tick sits 1.5em (39px at the 26px label) after the words where the gap has room for it; in a narrower gap it moves in
-     (8px at the least) and the stat takes the rest as padding. 40px is the tick, 8px the clearance. */
+  /* The tick moves in as far as the gap needs: 24px after the words at the widest gap (72px), 8px at the least, capped at
+     1.5em (39px) should the gap ever grow. The stat takes whatever is still short as padding. 40px is the tick, 8px the clearance. */
   --tick-x: clamp(8px, calc(var(--stats-gap) - 48px), 39px);
   padding-right: max(0px, calc(var(--tick-x) + 48px - var(--stats-gap)));
 }
@@ -557,11 +557,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 /* Above the single column the clone line is sized to the strips column: its text is --strip-chars typed characters of .6em
    each, then the tape's padding, the gap and the copy button must fit beside it. --strip-chars is the longest strip's length
-   (a test fails if a longer one is added); the others are the sizes of the pieces they name. */
-.strips { --strip-chars: 41; --strip-pad: 48px; --strip-gap: 24px; --copy-w: 76px; }
-@media (min-width: 961px) {
+   (a test fails if a longer one is added); the others are the sizes of the pieces they name (--strip-clear is slack so the line never touches copy). */
+.strips { --strip-chars: 41; --strip-pad: 48px; --strip-gap: 24px; --copy-w: 76px; --strip-clear: 8px; }
+@media (width > 960px) {
   .strips { container-type: inline-size; }
-  .strip code { font-size: min(clamp(13px, 1.5vw, 21px), calc((100cqi - var(--strip-pad) - var(--strip-gap) - var(--copy-w) - 8px) / (var(--strip-chars) * .6))); }
+  .strip code { font-size: min(clamp(13px, 1.5vw, 21px), calc((100cqi - var(--strip-pad) - var(--strip-gap) - var(--copy-w) - var(--strip-clear)) / (var(--strip-chars) * .6))); }
 }
 .copy { min-width: var(--copy-w); min-height: 44px; font-size: 24px; text-align: left; }
 .guide { font-size: 26px; text-decoration: none; }

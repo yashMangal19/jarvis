@@ -175,7 +175,6 @@ async function arrowWeights(page, ids) {
         el.scrollIntoView({ block: "center" });
         const b = el.getBoundingClientRect(); rect = { x: b.left, y: b.top, width: b.width, height: b.height };
         name = `${el.closest("section")?.id}:${el.className}`;
-        if (el.closest(".mac")) return null; // never: the pipeline has no such element, only li::before
       } else {
         const li = document.querySelectorAll(".pipeline li")[n - count + 1];
         if (!li || !li.checkVisibility(vis)) return null;
