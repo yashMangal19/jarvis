@@ -13,9 +13,19 @@ public struct SpeechAnalyzerTranscriber: Transcriber {
 
     public let displayName = "Apple SpeechAnalyzer"
     private let locale: Locale
+    /// Phrases recognition is biased toward: by default the wake word and the controls (J-027, DEC-54).
+    private let vocabulary: [String]
 
-    public init(locale: Locale) {
+    public init(locale: Locale, vocabulary: [String] = CommandInterpreter.vocabulary) {
         self.locale = locale
+        self.vocabulary = vocabulary
+    }
+
+    /// The analyzer's context: `vocabulary` as its general contextual strings.
+    static func analysisContext(for vocabulary: [String]) -> AnalysisContext {
+        let context = AnalysisContext()
+        context.contextualStrings[.general] = vocabulary
+        return context
     }
 
     public static func supportedLocales() async -> [Locale] {
@@ -48,6 +58,7 @@ public struct SpeechAnalyzerTranscriber: Transcriber {
             return text
         }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
+        try await analyzer.setContext(Self.analysisContext(for: vocabulary))
         let (input, feed) = AsyncStream.makeStream(of: AnalyzerInput.self)
         feed.yield(AnalyzerInput(buffer: buffer))
         feed.finish()

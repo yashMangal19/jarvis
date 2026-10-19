@@ -313,6 +313,9 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   - A tool command needs two words or more, with no segment that is, or sounds like, a control. One unknown word
     gets "Sorry, I didn't catch that."
   - During a read-back, yes/no answer it; a control or near-control cancels it; anything else is a correction.
+  - Recognition is biased toward the wake word, the controls and yes/no at the source (`CommandInterpreter.vocabulary`).
+    SpeechAnalyzer gets them as contextual strings, and whisper as its initial prompt (server `prompt`, CLI
+    `--prompt`). Every engine takes them by default, from its initializer.
 - **Checked against:** DEC-15 (a control during a read-back still cancels it), DEC-47 (records name the outcome:
   `controls(…)`, `didYouMean(…)`, `unclear`), DEC-50 (superseded in part).
 

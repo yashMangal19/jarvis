@@ -37,11 +37,16 @@ public final class WhisperTranscriber: Transcriber {
     public let backend: Backend
     public let language: String
     private let session: URLSession
+    /// Phrases recognition is biased toward, sent as whisper's initial prompt: by default the wake word and the
+    /// controls (J-027, DEC-54).
+    private let prompt: String
 
-    public init(backend: Backend, language: String = "auto", session: URLSession = .shared) {
+    public init(backend: Backend, language: String = "auto", session: URLSession = .shared,
+                vocabulary: [String] = CommandInterpreter.vocabulary) {
         self.backend = backend
         self.language = language
         self.session = session
+        prompt = vocabulary.joined(separator: ", ")
     }
 
     /// `whisper (ggml-small.bin)`, for settings and logs.
@@ -78,6 +83,7 @@ public final class WhisperTranscriber: Transcriber {
         body.append(Data("\r\n".utf8))
         field("language", language)
         field("response_format", "text")
+        if !prompt.isEmpty { field("prompt", prompt) }
         body.append(Data("--\(boundary)--\r\n".utf8))
 
         var request = URLRequest(url: url)
@@ -94,7 +100,7 @@ public final class WhisperTranscriber: Transcriber {
     // Flags confirmed with `whisper-cli --help` (whisper.cpp 1.9.5): -nt no timestamps, -np results only.
     private func runCLI(binary: URL, model: URL, wav: URL) async throws -> String {
         let output = try await ChildProcess.run(binary, arguments: ["-m", model.path, "-f", wav.path, "-l", language,
-                                                                    "-nt", "-np"])
+                                                                    "-nt", "-np"] + (prompt.isEmpty ? [] : ["--prompt", prompt]))
         guard output.status == 0 else {
             throw WhisperError.cliFailed(status: output.status, stderr: String(decoding: output.stderr, as: UTF8.self))
         }

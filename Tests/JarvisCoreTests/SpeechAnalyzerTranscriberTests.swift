@@ -2,7 +2,7 @@
 #if canImport(Speech) && compiler(>=6.2)
 import Foundation
 import Testing
-import JarvisCore
+@testable import JarvisCore
 import AVFoundation
 import Speech
 
@@ -47,6 +47,14 @@ import Speech
 
         let text = try await SpeechAnalyzerTranscriber(locale: Locale(identifier: "en-US")).transcribe(chunk)
         #expect(text.split(separator: " ").count >= 5)
+    }
+
+    /// J-027: the analyzer is given the wake word and the controls as contextual strings.
+    @available(macOS 26, *)
+    @Test func theAnalysisContextCarriesTheControlVocabulary() {
+        let context = SpeechAnalyzerTranscriber.analysisContext(for: CommandInterpreter.vocabulary)
+        #expect(context.contextualStrings[.general] == CommandInterpreter.vocabulary)
+        #expect(CommandInterpreter.vocabulary.contains("Jarvis") && CommandInterpreter.vocabulary.contains("pause"))
     }
 }
 #endif

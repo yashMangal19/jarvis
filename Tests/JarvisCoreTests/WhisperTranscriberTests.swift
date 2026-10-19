@@ -78,7 +78,8 @@ import Testing
         #expect(text == "hello world")
         let args = try String(contentsOf: fake.argsFile, encoding: .utf8).split(separator: "\n").map(String.init)
         #expect(Array(args.prefix(2)) == ["-m", model.path])
-        #expect(Array(args.suffix(4)) == ["-l", "auto", "-nt", "-np"])
+        #expect(Array(args.suffix(6)) == ["-l", "auto", "-nt", "-np", "--prompt",
+                                          CommandInterpreter.vocabulary.joined(separator: ", ")])
         let wav = try wavPath(in: fake.argsFile)
         #expect(URL(filePath: wav).lastPathComponent.hasPrefix("jarvis-"))
         #expect(!FileManager.default.fileExists(atPath: wav))
@@ -137,6 +138,8 @@ import Testing
         let body = String(decoding: StubInference.lastBody, as: UTF8.self)
         #expect(body.contains("name=\"language\"\r\n\r\nauto\r\n"))
         #expect(body.contains("name=\"response_format\"\r\n\r\ntext\r\n"))
+        // J-027: recognition is biased toward the wake word and the controls.
+        #expect(body.contains("name=\"prompt\"\r\n\r\n\(CommandInterpreter.vocabulary.joined(separator: ", "))\r\n"))
         #expect(body.contains("name=\"file\"; filename=\"jarvis-"))
         #expect(body.contains("RIFF"))
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)
