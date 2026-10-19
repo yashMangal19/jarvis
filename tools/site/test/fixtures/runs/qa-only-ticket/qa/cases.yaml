@@ -1,0 +1,5 @@
+schema_version: 1.3.0
+cases:
+- case_id: QA-1
+  tc_id: null
+  moment: ticket

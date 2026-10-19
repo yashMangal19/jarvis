@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -68,6 +69,11 @@ test("bad JSON and a drifted run.json throw instead of guessing", () => {
   assert.throws(() => status("drifted"), /run\.json: tickets\[\]/);
 });
 
+test("cases.yaml with no top-level cases: list, or no spec cases, throws instead of reporting 0", () => {
+  assert.throws(() => status("qa-no-cases"), /cases\.yaml: no spec cases/);
+  assert.throws(() => status("qa-only-ticket"), /cases\.yaml: no spec cases/);
+});
+
 // ── git collector and CLI, against a local repo in a temp dir (no network) ──
 
 function makeOrigin() {
@@ -111,6 +117,32 @@ test("git collector: newest commits across both branches, shared one once; tag a
   } finally { rmSync(o.dir, { recursive: true, force: true }); }
 });
 
+test("git collector: feature branch deleted on origin after the merge still reports the tag", () => {
+  const o = makeOrigin();
+  try {
+    collectGit({ cacheDir: o.cacheDir, remote: o.origin });
+    o.git("checkout", "--quiet", "main");
+    o.git("merge", "--quiet", "--no-edit", "feature/jarvis-ambient-memory");
+    o.commit("T-3: ship it", "2026-10-19T20:30:00+05:30");
+    o.git("tag", "-a", "v0.1.0", "-m", "v0.1.0");
+    o.git("branch", "-D", "feature/jarvis-ambient-memory");
+    const after = collectGit({ cacheDir: o.cacheDir, remote: o.origin });
+    assert.equal(after.commits[0].message, "T-3: ship it");
+    assert.deepEqual(after.release, { tag: "v0.1.0", shipped: true, shipped_at: "2026-10-19T20:30:00+05:30" });
+  } finally { rmSync(o.dir, { recursive: true, force: true }); }
+});
+
+test("git collector: a cache dir that is not a bare repo is removed and cloned again", () => {
+  const o = makeOrigin();
+  try {
+    mkdirSync(o.cacheDir, { recursive: true });
+    writeFileSync(join(o.cacheDir, "junk.txt"), "half-written cache");
+    const facts = collectGit({ cacheDir: o.cacheDir, remote: o.origin });
+    assert.equal(facts.commits.length, 3);
+    assert.equal(existsSync(join(o.cacheDir, "junk.txt")), false);
+  } finally { rmSync(o.dir, { recursive: true, force: true }); }
+});
+
 const CLI = fileURLToPath(new URL("../status/compute.mjs", import.meta.url));
 const cli = (o, runName, out) => {
   try {
@@ -121,10 +153,18 @@ const cli = (o, runName, out) => {
   } catch (e) { return { code: e.status, stdout: e.stdout, stderr: e.stderr }; }
 };
 
+// Every file under the given paths: relative path, mtime and content hash.
+const snapshot = (...roots) => roots.flatMap((root) =>
+  readdirSync(root, { recursive: true }).sort().map((rel) => join(root, rel))
+    .filter((p) => statSync(p).isFile())
+    .map((p) => [p, statSync(p).mtimeMs, createHash("sha256").update(readFileSync(p)).digest("hex")]));
+
 test("CLI writes only --out and prints nothing; on a bad run it writes nothing and exits 1", () => {
   const o = makeOrigin();
   try {
     const out = join(o.dir, "status.json");
+    const inputs = [run("qa-partial"), run("bad-json"), run("notes")];
+    const before = snapshot(...inputs);
     const ok = cli(o, "qa-partial", out);
     assert.deepEqual([ok.code, ok.stdout], [0, ""]);
     const s = parseStatus(readFileSync(out, "utf8"));
@@ -136,6 +176,7 @@ test("CLI writes only --out and prints nothing; on a bad run it writes nothing a
     assert.equal(bad.code, 1);
     assert.match(bad.stderr, /status job: .*run\.json/);
     assert.equal(existsSync(badOut), false);
+    assert.deepEqual(snapshot(...inputs), before);
   } finally { rmSync(o.dir, { recursive: true, force: true }); }
 });
 

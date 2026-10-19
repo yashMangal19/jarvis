@@ -8,7 +8,7 @@ const unquote = (v) => {
 };
 
 // Ids of the spec-moment cases in qa/cases.yaml: entries of the top-level `cases:` list that carry no
-// per-case `moment: ticket` (those were written per ticket, after the spec).
+// per-case `moment: ticket` (those were written per ticket, after the spec). None at all is drift: throws.
 export function specCaseIds(text) {
   const ids = new Set();
   let inCases = false;
@@ -20,6 +20,7 @@ export function specCaseIds(text) {
     if (m) ids.add(id = unquote(m[1]));
     else if (id && /^  moment:\s*ticket\s*$/.test(line)) ids.delete(id);
   }
+  if (!ids.size) throw new Error("cases.yaml: no spec cases under a top-level cases: list");
   return ids;
 }
 
