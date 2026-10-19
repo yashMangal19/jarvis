@@ -6,7 +6,7 @@ import { FORKS_URL, marksFromForks } from "../logic/marks.js";
 
 const row = document.querySelector('#p7 ol[data-slot="marks"]');
 const card = row.querySelector("li.mark");
-const KEY = "jarvis.marks";
+const KEY = "jarvis.marks.v2"; // v2: marks carry name and handle; a v1 entry (label only) is ignored
 const TTL_MS = 10 * 60 * 1000;
 
 // Storage can throw (blocked or full); then every load simply fetches.

@@ -39,7 +39,9 @@ test("every mark card: the icon is drawn about 65px wide, the handle on its own 
   await expect(marks(page)).toHaveCount(3);
   for (const [name, handle] of [["mark 1", "@fork-owner-1"], ["mark 3", "@you?"]]) {
     const card = marks(page).filter({ hasText: handle });
-    expect((await card.locator("img").boundingBox()).width * INK).toBeGreaterThanOrEqual(60);
+    const drawn = (await card.locator("img").boundingBox()).width * INK;
+    expect(drawn).toBeGreaterThanOrEqual(60);
+    expect(drawn).toBeLessThanOrEqual(70);
     await expect(card.getByText(handle, { exact: true })).toBeVisible();
     const n = await card.getByText(name, { exact: true }).boundingBox();
     const h = await card.getByText(handle, { exact: true }).boundingBox();
@@ -59,6 +61,24 @@ test("the mark cards are separate index cards: a gap between each and the next",
     const gap = sameRow ? bx - (ax + aw) : by - (ay + ah);
     expect(gap, `gap before card ${i + 1}`).toBeGreaterThanOrEqual(8);
   }
+});
+
+test("the cards tilt alternately, as in D7", async ({ page }) => {
+  test.skip(page.viewportSize().width !== 1440, "the phone grid sets them straight");
+  await page.route("https://api.github.com/**", (route) => route.fulfill(json(fixture("forks/two.json"))));
+  await page.goto("/");
+  await expect(marks(page)).toHaveCount(3);
+  // sign of the rotation: matrix(a, b, ...) has b = sin(angle)
+  const signs = await marks(page).evaluateAll((lis) => lis.map((li) => Math.sign(new DOMMatrix(getComputedStyle(li).transform).b)));
+  expect(signs).toEqual([-1, 1, -1]);
+});
+
+test("a card cached in an older shape (label only) never renders blank", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("jarvis.marks",
+    JSON.stringify({ at: Date.now(), marks: [{ label: "mark 1 · @old-shape" }] })));
+  await page.route("https://api.github.com/**", (route) => route.fulfill(json(fixture("forks/two.json"))));
+  await page.goto("/");
+  await expect(marks(page)).toHaveText(["mark 1 @fork-owner-1", "mark 2 @fork-owner-2", "mark 3 @you?"]);
 });
 
 test("a stacked card's tape never covers the handle of the card above it", async ({ page }) => {
