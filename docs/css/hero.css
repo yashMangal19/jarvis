@@ -11,8 +11,8 @@
 
 /* After the deadline the first paint is late-unknown (no status yet); the status then brings a longer
    line, a reason and the busy art. Reserve the tallest of those (late + reason + art, measured at
-   1440, 1024 and 820 px) so nothing below moves. At 600 px and under, the column flex-basis already
-   gives .countdown a 200 px floor that fits every state. */
+   1440, 1024 and 820 px) so nothing below moves. The countdown state needs no reserve: it paints
+   without waiting for the status. */
 #p1:not([data-state="countdown"]) .countdown { min-height: 240px; }
 
 #p1 .stamp {
