@@ -509,6 +509,8 @@ public final class Jarvis: ObservableObject {
         if wake != wakeWordOn {
             wakeWordOn = wake
             wake ? wakeWord.start() : wakeWord.stop()
+            let state = String(describing: session.state), speaking = isSpeaking ? ", Jarvis speaking" : ""
+            Log.command.info("Wake word \(wake ? "on" : "off", privacy: .public) (\(state, privacy: .public)\(speaking, privacy: .public))")
         }
         let stem = stemTriggerChosen && !session.isStopped
         if stem != stemTriggerActive { stemTriggerActive = stem }

@@ -130,7 +130,12 @@ public final class WakeWordListener {
                 AudioChunk(samples: window, sampleRate: capture.buffer.sampleRate,
                            start: capture.date(of: from), source: .mic))) ?? ""
             transcribing = false
-            guard listening, !capturing, Self.afterWakeWord(text) != nil else { return }
+            let seconds = Double(window.count) / capture.buffer.sampleRate
+            let found = Self.afterWakeWord(text) != nil
+            let verdict = !found ? "no wake word" : listening && !capturing ? "wake word" : "wake word, ignored (muted or capturing)"
+            // Debug level: not kept unless streamed with --level debug. Never the text (DEC-45).
+            Log.command.debug("Wake window \(seconds, format: .fixed(precision: 1), privacy: .public) s: \(verdict, privacy: .public)")
+            guard listening, !capturing, found else { return }
             await commandAfterWakeWord(utteranceStart(in: window, from: from))
         }
     }
