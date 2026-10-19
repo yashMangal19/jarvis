@@ -21,6 +21,7 @@ public final class SystemAudioSource: NSObject, AudioSourceStream, SCStreamOutpu
     private var onChunk: ((AudioChunk) -> Void)?
     /// The running stream. Buffers from any other (a stopped one) are dropped, so none spans a restart.
     private var stream: SCStream?
+    public var onStopped: ((SourceStop) -> Void)?
 
     public init(clock: any TimeSource = SystemClock()) {
         self.clock = clock
@@ -74,11 +75,13 @@ public final class SystemAudioSource: NSObject, AudioSourceStream, SCStreamOutpu
         chunks.append(samples, at: heardAt).forEach(onChunk)
     }
 
-    /// Capture ended without `stop` (permission revoked, display gone): hand over the partial chunk.
+    /// Capture ended without `stop` (permission revoked, display gone): hand over the partial chunk and say so,
+    /// so `CaptureDriver` restarts it (J-020). Before J-020 it stopped here silently.
     public func stream(_ stream: SCStream, didStopWithError error: any Error) {
         queue.async { [weak self] in
             guard let self, stream === self.stream else { return }
             self.tearDown()
+            self.onStopped?(.failed)
         }
     }
 

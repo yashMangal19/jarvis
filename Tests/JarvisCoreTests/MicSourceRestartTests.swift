@@ -3,59 +3,61 @@ import Foundation
 import Testing
 @testable import JarvisCore
 
-/// The restart after a configuration change, against a fake tap: no microphone is opened.
+/// The restart after a configuration change, against a fake tap: no microphone is opened. A restart that finds
+/// no input stops the source and says so; `CaptureDriver` owns retrying (J-020, see CaptureSupervisorTests).
 @Suite struct MicSourceRestartTests {
-    @Test func aRestartThatFindsNoInputIsRetriedUntilTheInputIsBack() async throws {
-        let tap = FakeTap()
-        let mic = MicSource(authorized: { true }, retryDelays: [0.01, 0.02], makeTap: tap.attach)
+    @Test func aRestartThatFindsNoInputStopsTheSourceAndSaysSo() async throws {
+        let tap = FakeTap(), stops = StopLog()
+        let mic = MicSource(authorized: { true }, makeTap: tap.attach)
+        mic.onStopped = stops.append
         try mic.start { _ in }
-        defer { mic.stop() }
 
-        // AirPods reconnecting: the first attempts find no usable input (J-007).
-        tap.failNextStarts(3)
+        tap.failNextStarts(1)
         tap.changeConfiguration()
 
-        #expect(await tap.waitUntil { $0.starts == 5 })
-        #expect(tap.isRunning)
-    }
-
-    @Test func stoppingCancelsAPendingRetry() async throws {
-        let tap = FakeTap()
-        let mic = MicSource(authorized: { true }, retryDelays: [0.01], makeTap: tap.attach)
-        try mic.start { _ in }
-        tap.failNextStarts(.max)
-        tap.changeConfiguration()
-        #expect(await tap.waitUntil { $0.starts >= 3 })
-
-        mic.stop()
-        let afterStop = tap.starts
-        try await Task.sleep(nanoseconds: 100_000_000)
-
-        #expect(tap.starts == afterStop)
+        #expect(await tap.waitUntil { _ in stops.values == [.failed] })
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(tap.starts == 2)  // no retry of its own
         #expect(!tap.isRunning)
+        try mic.start { _ in }  // and it starts again when asked
+        #expect(tap.isRunning)
+        mic.stop()
     }
 
-    @Test func healthIsReconnectingThenUnavailableAndOkOnceTheInputIsBack() async throws {
-        let tap = FakeTap()
-        let health = HealthLog()
-        let mic = MicSource(authorized: { true }, retryDelays: [0.01, 0.01, 0.01], makeTap: tap.attach)
-        mic.onHealth = health.append
+    @Test func aRestartThatWorksSaysNothing() async throws {
+        let tap = FakeTap(), stops = StopLog()
+        let mic = MicSource(authorized: { true }, makeTap: tap.attach)
+        mic.onStopped = stops.append
         try mic.start { _ in }
         defer { mic.stop() }
 
-        tap.failNextStarts(5)
         tap.changeConfiguration()
 
-        #expect(await tap.waitUntil { _ in health.values.last == .ok && health.values.count > 1 })
-        #expect(health.values == [.reconnecting, .unavailable, .ok])
+        #expect(await tap.waitUntil { $0.starts == 2 })
+        #expect(tap.isRunning)
+        #expect(stops.values.isEmpty)
+    }
+
+    @Test func aStoppedSourceIgnoresConfigurationChanges() async throws {
+        let tap = FakeTap(), stops = StopLog()
+        let mic = MicSource(authorized: { true }, makeTap: tap.attach)
+        mic.onStopped = stops.append
+        try mic.start { _ in }
+        mic.stop()
+
+        tap.changeConfiguration()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(tap.starts == 1)
+        #expect(stops.values.isEmpty)
     }
 }
 
-final class HealthLog: @unchecked Sendable {
+final class StopLog: @unchecked Sendable {
     private let lock = NSLock()
-    private var log: [MicHealth] = []
-    var values: [MicHealth] { lock.withLock { log } }
-    func append(_ health: MicHealth) { lock.withLock { log.append(health) } }
+    private var log: [SourceStop] = []
+    var values: [SourceStop] { lock.withLock { log } }
+    func append(_ stop: SourceStop) { lock.withLock { log.append(stop) } }
 }
 
 /// Counts starts; fails the next few as a device with no usable input would.

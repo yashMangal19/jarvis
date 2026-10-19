@@ -31,11 +31,11 @@ public final class Jarvis: ObservableObject {
     @Published public private(set) var voiceMemosNeedFullDiskAccess = false
     /// macOS has refused the microphone, so nothing is heard whatever the icon says (DEC-31).
     @Published public private(set) var microphoneAccessOff = false
-    /// The mic stream's own word on whether it is recording, so the menu never says "Listening via …"
-    /// while the engine is down (J-007).
-    @Published public private(set) var micHealth: MicHealth = .ok
-    /// The same for Meeting mode's room mic (J-008).
-    @Published public private(set) var roomMicHealth: MicHealth = .ok
+    /// Whether each capture source that should run is recording, from its one owner, `CaptureSupervisor`, so
+    /// the menu never says "Listening via …" while a source is down (J-020, DEC-49).
+    @Published public private(set) var micHealth: SourceHealth = .ok
+    @Published public private(set) var roomMicHealth: SourceHealth = .ok
+    @Published public private(set) var systemAudioHealth: SourceHealth = .ok
     /// Screen Recording was asked for and not granted: call audio is off (DEC-28).
     @Published public private(set) var callAudioNeedsScreenRecording = false
     /// 0…1 while the whisper `small` model downloads in the background; `nil` otherwise.
@@ -48,9 +48,10 @@ public final class Jarvis: ObservableObject {
     private let screenLock: any ScreenLockObserving
     private let routes: any RouteEventSource
     private let speech: SpeechSlot
-    private let mic: SourceDriver
-    private let systemAudio: SourceDriver
-    private let roomMic: SourceDriver
+    private let capture: CaptureSupervisor
+    private var mic: CaptureDriver { capture.mic }
+    private var systemAudio: CaptureDriver { capture.systemAudio }
+    private var roomMic: CaptureDriver { capture.roomMic }
     private let notes: NoteStore
     private let index: NoteIndex
     private let pipeline: CapturePipeline
@@ -92,7 +93,8 @@ public final class Jarvis: ObservableObject {
     public init(paths: JarvisPaths, engines: Engines, settings: SettingsStore, clock: any TimeSource,
                 sources: any SourceFactory, screenLock: any ScreenLockObserving, sleepGuard: any SleepGuard,
                 routes: any RouteEventSource, voiceMemos locator: @escaping () -> VoiceMemosAccess,
-                permissions: PermissionStatus, tickInterval: TimeInterval = 30) {
+                permissions: PermissionStatus, tickInterval: TimeInterval = 30,
+                captureRetryDelays: [TimeInterval]? = nil) {
         self.paths = paths
         self.settings = settings
         self.permissions = permissions
@@ -105,10 +107,7 @@ public final class Jarvis: ObservableObject {
         session = ListeningSession(clock: clock, sleepGuard: sleepGuard,
                                    quietHoursEnd: { settings.load().quietHours?.end(of: $0, calendar: .current) })
         let (mic, frames) = sources.makeMic()
-        self.mic = SourceDriver(mic, label: "jarvis.drive.mic")
-        systemAudio = SourceDriver(sources.makeSystemAudio(), label: "jarvis.drive.system-audio")
-        let room = sources.makeRoomMic()
-        roomMic = SourceDriver(room, label: "jarvis.drive.room-mic")
+        capture = CaptureSupervisor(sources: sources, mic: mic, retryDelays: captureRetryDelays ?? RestartRetry.delays)
         // DEC-5 amended: speech is read per use, so a transcriber installed after launch is used at once.
         let speech = SpeechSlot(main: engines.transcriber, wake: engines.wakeWordTranscriber)
         self.speech = speech
@@ -152,17 +151,10 @@ public final class Jarvis: ObservableObject {
         voiceMemos = VoiceMemosImporter(locator: locator, coordinator: coordinator, ledger: ImportLedger(paths: paths),
                                         paths: paths)
 
-        (mic as? any ReportsMicHealth)?.onHealth = { [weak self] health in
-            Task { @MainActor in self?.micHealth = health }
-        }
-        (room as? any ReportsMicHealth)?.onHealth = { [weak self] health in
-            Task { @MainActor in self?.roomMicHealth = health }
-        }
-        // J-009: a room mic that stopped itself is tried again at once; a route change tries it again later.
-        (room as? any StopsItself)?.onStopped = { [weak self] in
-            Task { @MainActor in self?.follow() }
-        }
-        for driver in [self.mic, systemAudio, roomMic] {
+        capture.mic.onHealth = { [weak self] health in Task { @MainActor in self?.micHealth = health } }
+        capture.roomMic.onHealth = { [weak self] health in Task { @MainActor in self?.roomMicHealth = health } }
+        capture.systemAudio.onHealth = { [weak self] health in Task { @MainActor in self?.systemAudioHealth = health } }
+        for driver in capture.all {
             driver.onChunk = { [weak self] chunk, listening in
                 Task { @MainActor in await self?.store(chunk, heardWhileListening: listening) }
             }
@@ -235,8 +227,9 @@ public final class Jarvis: ObservableObject {
 
     public var notesAvailable: Bool { engines.noteWriter != nil }
 
-    /// The menu's status line: the session's, unless it is listening and the mic is not recording (J-007),
-    /// with a note when Meeting mode's room mic is not recording (J-008).
+    /// The menu's status line: the session's, unless it is listening and a source that should record is not
+    /// (J-020). The mic comes first: without it nothing of the user is heard. Call audio and, in Meeting mode,
+    /// the room mic add a note.
     public var statusLine: String {
         guard session.state == .listening else { return session.statusLine }
         switch micHealth {
@@ -244,12 +237,19 @@ public final class Jarvis: ObservableObject {
         case .reconnecting: return "Reconnecting mic…"
         case .unavailable: return "Mic not recording: reconnect it or choose another input"
         }
-        guard session.modes.meetingMode else { return session.statusLine }
-        switch roomMicHealth {
-        case .ok: return session.statusLine
-        case .reconnecting: return session.statusLine + " · reconnecting room mic…"
-        case .unavailable: return session.statusLine + " · room mic not recording"
+        var line = session.statusLine
+        switch systemAudioHealth {
+        case .ok: break
+        case .reconnecting: line += " · reconnecting call audio…"
+        case .unavailable: line += " · call audio not recording"
         }
+        guard session.modes.meetingMode else { return line }
+        switch roomMicHealth {
+        case .ok: break
+        case .reconnecting: line += " · reconnecting room mic…"
+        case .unavailable: line += " · room mic not recording"
+        }
+        return line
     }
     public var openNotesURL: URL { paths.notesHourly.deletingLastPathComponent() }
 
@@ -291,7 +291,7 @@ public final class Jarvis: ObservableObject {
     /// Returns once every capture driver has run what was asked of it so far, so a chunk heard after this
     /// is tagged with the current listening state. For tests: `cut` hops to each driver's queue.
     func settleCapture() async {
-        for driver in [mic, systemAudio, roomMic] { await driver.settle() }
+        await capture.settle()
     }
 
     /// Stops the timer, every source, the importers and the whisper servers. The app calls it at quit.
@@ -304,7 +304,7 @@ public final class Jarvis: ObservableObject {
         follow()
         await inbox.stop()
         await voiceMemos.stop()
-        for driver in [mic, systemAudio, roomMic] { await driver.settle() }
+        await capture.settle()
         serverStarts.forEach { $0.cancel() }
         for start in serverStarts { await start.value }
         let servers = servers
@@ -529,12 +529,13 @@ public final class Jarvis: ObservableObject {
     }
 
     /// The room stream is pinned to the built-in mic, so a route change may have made it redundant: it is
-    /// stopped and `follow` starts it again unless it now refuses (DEC-16). The mic needs no restart:
-    /// `MicSource` follows the default input itself.
+    /// stopped and `follow` starts it again unless it now refuses (DEC-16). Every other wanted source that
+    /// isn't running is tried again at once: the inputs it was waiting for may be back (J-020).
     private func routeChanged(_ event: RouteEvent) {
         session.handle(event)
         roomMic.stop()
         follow()
+        capture.inputsChanged()
     }
 
     /// Stores a chunk only if it was heard while listening (story 25b). The cut at each boundary makes
@@ -614,76 +615,5 @@ private final class SpeechSlot: @unchecked Sendable {
 
     func install(main: any Transcriber, wake: any Transcriber) {
         lock.withLock { _main = main; _wake = wake }
-    }
-}
-
-/// One capture stream, driven off the main actor: `SystemAudioSource.start` can block for up to 20 s on
-/// ScreenCaptureKit (F-3). A serial queue per stream keeps its starts, stops and cuts in the order asked.
-/// Each chunk is tagged with whether Jarvis was listening when the stream delivered it.
-private final class SourceDriver: @unchecked Sendable {
-    /// Set once, before the first `run`; the queue hop orders it before any delivery.
-    var onChunk: (AudioChunk, _ heardWhileListening: Bool) -> Void = { _, _ in }
-
-    private let source: any AudioSourceStream
-    private let queue: DispatchQueue
-    private let lock = NSLock()
-    private var wanted = false
-    private var applyQueued = false
-    private var listening = false
-
-    private let label: String
-
-    init(_ source: any AudioSourceStream, label: String) {
-        self.source = source
-        self.label = label
-        queue = DispatchQueue(label: label)
-    }
-
-    /// Starts or stops the stream to match `on`. Only the latest wish is applied, so a slow, failing
-    /// start never queues up behind itself; a failed start is tried again at the next call. `start` is a
-    /// no-op on a running stream and fails quietly without permission, or when the room mic would
-    /// duplicate the input.
-    func run(_ on: Bool) {
-        let queueApply = lock.withLock { () -> Bool in
-            wanted = on
-            defer { applyQueued = true }
-            return !applyQueued
-        }
-        guard queueApply else { return }
-        queue.async { [self] in
-            let on = lock.withLock { () -> Bool in
-                applyQueued = false
-                return wanted
-            }
-            if on {
-                do { try source.start { [weak self] chunk in self?.deliver(chunk) } } catch AudioError.redundantWithDefaultInput {
-                    // Expected: the mic stream records the room then.
-                } catch {
-                    Log.capture.error("\(label, privacy: .public) didn't start: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
-                }
-            } else {
-                source.stop()
-            }
-        }
-    }
-
-    func stop() { queue.async { [self] in source.stop() } }
-
-    /// Ends the chunk being recorded (through `onChunk`, still tagged with the old state), then
-    /// records whether Jarvis now listens.
-    func cut(listening now: Bool, byStopping: Bool = false) {
-        queue.async { [self] in
-            byStopping ? source.stop() : source.cut()
-            lock.withLock { listening = now }
-        }
-    }
-
-    /// Returns once everything asked so far has run.
-    func settle() async {
-        await withCheckedContinuation { done in queue.async { done.resume() } }
-    }
-
-    private func deliver(_ chunk: AudioChunk) {
-        onChunk(chunk, lock.withLock { listening })
     }
 }

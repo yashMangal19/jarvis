@@ -1,7 +1,11 @@
-/// A live source of `AudioChunk`s.
-public protocol AudioSourceStream {
+/// A live source of `AudioChunk`s. It does the device work and says when it stopped by itself; its owner,
+/// `CaptureDriver`, decides everything else: restarts, health, what the menu says (J-020, DEC-49).
+public protocol AudioSourceStream: AnyObject {
     func start(onChunk: @escaping (AudioChunk) -> Void) throws
     func stop()
+    /// Set by the owner before the first `start`. Called, on the source's own queue, when the source stopped
+    /// without `stop` being called: its device went away, or it would now duplicate another stream.
+    var onStopped: ((SourceStop) -> Void)? { get set }
     /// Ends the chunk being recorded now and delivers it through `onChunk`, so no chunk spans a
     /// listening boundary (DEC-24). Recording carries on into a new chunk.
     func cut()
@@ -21,23 +25,20 @@ public enum AudioError: Error, Equatable {
     case redundantWithDefaultInput
 }
 
-/// Whether a mic stream that should be running is recording (J-007).
-public enum MicHealth: Equatable, Sendable {
-    /// Recording, or stopped on purpose.
+/// Why a source stopped by itself.
+public enum SourceStop: Equatable, Sendable {
+    /// Another stream records this audio now (the room mic once the built-in mic is the input): not a fault.
+    case redundant
+    /// Its device or stream failed or went away; the owner restarts it while it is wanted.
+    case failed
+}
+
+/// Whether a source that should be running is recording, as its owner sees it (J-020).
+public enum SourceHealth: Equatable, Sendable {
+    /// Recording, or not wanted, or not a fault (no permission: that has its own menu line).
     case ok
-    /// The input went away (AirPods dropping) and restarts are being retried.
+    /// Not recording; restarts are being tried.
     case reconnecting
-    /// Retries have gone on for a while without an input; they carry on in the background.
+    /// Restarts have gone on a while without success; they carry on.
     case unavailable
-}
-
-/// A stream that can lose its input while running and says so (`MicSource`).
-public protocol ReportsMicHealth: AnyObject {
-    /// Set once, before the first start. Called on the stream's own queue when the health changes.
-    var onHealth: ((MicHealth) -> Void)? { get set }
-}
-
-/// A stream that can stop itself after a route change (`RoomMicSource`), so its owner re-evaluates it.
-public protocol StopsItself: AnyObject {
-    var onStopped: (() -> Void)? { get set }
 }

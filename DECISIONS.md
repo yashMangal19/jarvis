@@ -174,7 +174,7 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **What:** the menu shows "Microphone access is off" with a button that opens the right Settings page, like the
   Full Disk Access line.
 
-### DEC-42 · The mic retries a failed restart, and the status line says when it isn't recording (2026-10-19)
+### DEC-42 · The mic retries a failed restart, and the status line says when it isn't recording (2026-10-19) · *Superseded by DEC-49*
 - **Why:** QA-8 (J-007) found that after the AirPods dropped and came back, the single restart had found no input
   and given up, while the menu still read "Listening via AirPods Pro" and no transcript was written.
 - **Decided by:** Jarvis-Orc (J-007), within DEC-31's rule.
@@ -236,6 +236,25 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Affects:** `Storage/CommandLog.swift`, `JarvisPaths.logs/commandLog`, `VoiceControlRouter`, `ForgetLastHour`,
   `LaunchMaintenance`, `Log.command`, README.
 - **Checked against:** DEC-32 and DEC-45 (still on this Mac only; no speech in the unified log), DEC-41 (data home).
+
+### DEC-49 · One capture supervisor owns every source's lifecycle and health (2026-10-19)
+- **Why:** D12 review (J-018). J-007/8/9 fixed the mic and the room mic one at a time, each with its own retry and
+  its own report channel (`onHealth`, `onStopped`). System audio was missed: on a stream error it stopped silently,
+  and calls went uncaptured while the menu said listening.
+- **Decided by:** Jarvis-Orc (J-020).
+- **What:** `CaptureSupervisor` owns the mic, call audio and the room mic through one `CaptureDriver` each.
+  - The driver knows whether its source is wanted. It starts it, and restarts it when the source stops by itself
+    or fails to start: immediately on a route event, otherwise with `RestartRetry`'s backoff.
+  - The driver is the only source of `SourceHealth` (ok, reconnecting, unavailable).
+  - A source does device work only. Its single required report is `onStopped(.redundant | .failed)`, so a new
+    source can't leave health out.
+  - Redundant and a refused permission are not faults: they are neither retried nor shown (a permission has its
+    own menu line).
+  - The status line shows the mic's trouble first, then " · call audio not recording" and, in Meeting mode,
+    " · room mic not recording".
+- **Supersedes:** DEC-42 and its J-008/J-009 amendments.
+- **Checked against:** DEC-16 (a route change still re-checks the room mic), DEC-24 (each restart still ends the
+  chunk), DEC-28 and DEC-31 (permission lines unchanged), DEC-45 (health changes are logged by name only).
 
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)

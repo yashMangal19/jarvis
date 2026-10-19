@@ -2,13 +2,11 @@ import AVFoundation
 import AudioToolbox
 
 /// The active microphone as 30 s, 16 kHz mono chunks, plus a tee of 250 ms frames for the wake-word
-/// listener. Follows the default input: the engine restarts on `.AVAudioEngineConfigurationChange`.
+/// listener. Follows the default input: the engine restarts on `.AVAudioEngineConfigurationChange`; if that
+/// finds no usable input, the source stops and says so, and `CaptureDriver` restarts it (J-020).
 /// Never requests microphone permission; without it `start` throws `AudioError.permissionDenied`.
-public final class MicSource: AudioSourceStream, ReportsMicHealth {
-    public var onHealth: ((MicHealth) -> Void)? {
-        get { retry.onHealth }
-        set { retry.onHealth = newValue }
-    }
+public final class MicSource: AudioSourceStream {
+    public var onStopped: ((SourceStop) -> Void)?
 
     /// 250 ms frames of 16 kHz mono samples. Keeps only the newest few if nobody is reading.
     public let frames: AsyncStream<[Float]>
@@ -18,7 +16,6 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
     private let onQueue = DispatchSpecificKey<Void>()
     private let tap: any AudioTap
     private let authorized: () -> Bool
-    private let retry: RestartRetry
     private var chunks = ChunkAssembler(source: .mic)
     private var frameCutter = ChunkAssembler(chunkSeconds: 0.25, source: .mic)
     private var onChunk: ((AudioChunk) -> Void)?
@@ -29,13 +26,11 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
     }
 
     /// `makeTap` receives the queue every tap member is called on.
-    init(authorized: @escaping () -> Bool, retryDelays: [TimeInterval] = RestartRetry.delays,
-         makeTap: (DispatchQueue) -> any AudioTap) {
+    init(authorized: @escaping () -> Bool, makeTap: (DispatchQueue) -> any AudioTap) {
         (frames, framesOut) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
         queue = DispatchQueue(label: "jarvis.mic")
         tap = makeTap(queue)
         self.authorized = authorized
-        retry = RestartRetry(queue: queue, delays: retryDelays, name: "mic")
         queue.setSpecific(key: onQueue, value: ())
     }
 
@@ -51,8 +46,7 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
         guard authorized() else { throw AudioError.permissionDenied }
         try queue.sync {
             guard self.onChunk == nil else { return }
-            do { try startTap() } catch { retry.report(.unavailable); throw error }
-            retry.report(.ok)
+            try startTap()
             self.onChunk = onChunk  // set only once running, so a failed start can be retried
             tap.onConfigurationChange = { [weak self] in self?.restart() }
         }
@@ -71,11 +65,9 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
     // MARK: on `queue`
 
     private func tearDown() {
-        retry.cancel()
         tap.onConfigurationChange = nil
         stopTap()
         onChunk = nil
-        retry.report(.ok)
     }
 
     private func startTap() throws {
@@ -89,12 +81,13 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
         _ = frameCutter.flush()
     }
 
+    /// A device mid-switch has no usable input for a moment: then the source stops and says so.
     private func restart() {
         guard onChunk != nil else { return }
         stopTap()
-        retry.begin { [weak self] in
-            guard let self, onChunk != nil else { return true }
-            return (try? startTap()) != nil
+        do { try startTap() } catch {
+            tearDown()
+            onStopped?(.failed)
         }
     }
 
