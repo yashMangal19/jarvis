@@ -340,12 +340,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* p. 4 suit up: blueprint sheet + index card. The card reserves its height so filling it moves nothing. */
 .suit {
   display: grid; column-gap: clamp(32px, 4.2vw, 64px); align-items: start;
-  grid-template-columns: minmax(0, 790fr) minmax(0, 490fr);
+  /* The card column never goes under 440px: below that every sub-line wraps (it is 327px at 1024 on the 790:490 split). */
+  grid-template-columns: minmax(0, 790fr) minmax(440px, 490fr);
   grid-template-areas: "folio folio" "title title" "sheet cards";
 }
 .suit .folio { grid-area: folio; }
 .suit h2 { grid-area: title; }
-.suit .sheet { margin-top: 0; padding: 40px 24px 64px; transform: rotate(-.6deg); }
+.suit .sheet { margin-top: 0; padding: 40px 24px 80px; transform: rotate(-.6deg); } /* the open label and the hint share the bottom edge */
 .suit .sheet .t1 { left: 8%; }
 .suit .plates { width: 82%; }
 .plate {
@@ -354,7 +355,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 /* The bottom tape (.t3) rises 20px into the sheet at the right: the hint sits above it, and on a phone beside it. */
 .suit .hint { position: absolute; right: 12%; bottom: 28px; font-size: 22px; font-weight: 400; color: var(--chalk); }
-.card-col { grid-area: cards; margin-top: 56px; }
+/* The column is as tall as the sheet (or the tallest card), and the row of other plates sits at its bottom: the card
+   hugs its rows and the row never moves (suit-up.js sets the column's min-height from the tallest card). */
+.card-col { grid-area: cards; align-self: stretch; display: flex; flex-direction: column; margin-top: 56px; }
 .index-card {
   position: relative; padding: 28px 32px 32px; background-color: #F6F3EA;
   background-image: repeating-linear-gradient(transparent 0 45px, rgb(31 63 115 / .14) 45px 46px);
@@ -363,11 +366,21 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .index-card .t1 { top: -16px; left: 38%; --r: -3deg; }
 .index-card fieldset { margin: 0; padding: 0; border: 0; min-width: 0; } /* suit-up.js reserves the tallest card's height */
 /* Two lines reserved for the longest status line, so a shorter one never moves the card; balanced, so no word sits alone. */
-.offline { min-height: 2.4em; font-size: clamp(24px, 2.3vw, 32px); line-height: 1.2; text-wrap: balance; }
-.others { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-top: 40px; }
+.offline { margin-top: 32px; min-height: 2.4em; font-size: clamp(24px, 2.3vw, 32px); line-height: 1.2; text-wrap: balance; }
+.index-card { margin-bottom: 40px; }
+.others { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-top: auto; }
 .others .hand { font-size: 24px; }
-.other-plates { display: flex; flex-wrap: wrap; gap: 12px; }
-.other-plates button { display: block; width: 56px; height: 56px; }
+/* One row of five at any width: the icons shrink before they would wrap. */
+.other-plates { display: flex; gap: 12px; }
+.other-plates li { flex: 0 1 56px; min-width: 0; }
+.other-plates button { display: block; width: 100%; aspect-ratio: 1; }
+
+/* p. 4 stacks at 1100px, where the card column would otherwise be under ~440px. */
+@media (max-width: 1100px) {
+  .suit { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "sheet" "cards"; }
+  .suit .sheet { max-width: 832px; }
+  .card-col { margin-top: 48px; max-width: 560px; }
+}
 
 /* p. 5 try it: slips on the left. A step not shown yet keeps its real size (try-it.css), so revealing one moves nothing. */
 .try {
@@ -520,8 +533,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 
 @media (max-width: 960px) {
-  .suit { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "sheet" "cards"; }
-  .card-col { margin-top: 48px; max-width: 560px; }
   .try { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "slips" "flow" "card" "stamp" "promise"; }
   .flow { margin-top: 48px; }
   .to-card { display: none; }

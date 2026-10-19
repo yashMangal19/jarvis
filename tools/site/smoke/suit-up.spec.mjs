@@ -76,12 +76,13 @@ const geometry = (page) => page.evaluate(async () => {
     labels[b.value] = { left: t.left, right: t.right, top: t.top, bottom: t.bottom, color: getComputedStyle(b).color };
   }
   const ring = art.querySelector('[data-slot="ring"]').getBoundingClientRect();
-  return { labels, seats, pop: box(outline), ring: { left: ring.left, right: ring.right, top: ring.top, bottom: ring.bottom },
+  const h = document.querySelector("#p4 .hint").getBoundingClientRect();
+  return { labels, seats, hint: { left: h.left, right: h.right, top: h.top, bottom: h.bottom }, pop: box(outline), ring: { left: ring.left, right: ring.right, top: ring.top, bottom: ring.bottom },
     bg: getComputedStyle(art.closest(".sheet")).backgroundColor };
 });
 
-for (const width of [1440, 1024, 390]) {
-  test(`at ${width}, every open plate: each label is nearest its own plate, clear of the ring and the pulled-out plate, and reads at 3:1`, async ({ page }) => {
+for (const width of [1440, 1280, 1180, 1101, 1024, 390]) {
+  test(`at ${width}, every open plate: each label is nearest its own plate, clear of the ring, the pulled-out plate and the hint, and reads at 3:1`, async ({ page }) => {
     test.skip(page.viewportSize().width !== 1440, "desktop project sets the width");
     await page.setViewportSize({ width, height: 900 });
     for (const open of IDS) {
@@ -96,6 +97,7 @@ for (const width of [1440, 1024, 390]) {
         expect(nearest, `${where(id)}: nearest plate is ${nearest}`).toBe(id);
         expect(overlap(l, g.ring), `${where(id)} meets the ring ${JSON.stringify({ l, ring: g.ring })}`).toBe(false);
         expect(overlap(l, g.pop), `${where(id)} meets the pulled-out plate ${JSON.stringify({ l, pop: g.pop })}`).toBe(false);
+        expect(overlap(l, g.hint), `${where(id)} meets the hint ${JSON.stringify({ l, hint: g.hint })}`).toBe(false);
       }
       const fg = luminance(g.labels[open].color), bg = luminance(g.bg);
       expect((Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05), `${open} open: label contrast`).toBeGreaterThanOrEqual(3);
@@ -164,15 +166,67 @@ test("nothing below the card moves while you switch plates and tick engines", as
   expect(await y(), "fully offline").toBe(start);
 });
 
-test("the card reserves exactly what the ears card needs, so the hands card's blank is only the rows it lacks", async ({ page }) => {
-  const content = () => page.locator("#p4 fieldset").evaluate((f) =>
-    f.lastElementChild.getBoundingClientRect().bottom - f.getBoundingClientRect().top);
-  const height = () => page.locator("#p4 fieldset").evaluate((f) => f.getBoundingClientRect().height);
+// Words of a text node by line, with the card's 1deg tilt off (it staggers the words of one line).
+const lineStats = `(el) => {
+  const node = [...el.childNodes].filter((n) => n.nodeType === 3 && n.data.trim()).at(-1);
+  const tops = [];
+  for (const w of node.data.matchAll(/\\S+/g)) {
+    const r = document.createRange(); r.setStart(node, w.index); r.setEnd(node, w.index + w[0].length);
+    tops.push(Math.round(r.getBoundingClientRect().top));
+  }
+  return { lines: new Set(tops).size, last: tops.filter((t) => t === tops.at(-1)).length };
+}`;
+
+test("the card is wide enough to read, and no option or sub-line leaves one word alone, from 1440 down to 1024", async ({ page }) => {
+  test.skip(page.viewportSize().width !== 1440, "desktop project sets the width");
+  for (const width of [1440, 1280, 1180, 1101, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    const cardWidth = await page.locator("#p4 .index-card").evaluate((c) => c.offsetWidth);
+    expect(cardWidth, `card width at ${width}px`).toBeGreaterThanOrEqual(400);
+    for (const id of ["ears", "transcriber", "notes", "memory", "hands"]) {
+      await page.locator(`#p4 [data-slot="other-plate"][value="${id}"]`).click();
+      const rows = await page.locator("#p4 fieldset").evaluate((f, stats) => {
+        const card = f.closest(".index-card"), tilt = card.style.transform;
+        card.style.transform = "none";
+        const measure = eval(stats);
+        const out = [...f.querySelectorAll(".option label, .option .note")].map((el) => ({ text: el.textContent, ...measure(el) }));
+        card.style.transform = tilt;
+        return out;
+      }, lineStats);
+      for (const r of rows) if (r.lines > 1) expect(r.last, `${id} at ${width}px: "${r.text}"`).toBeGreaterThanOrEqual(2);
+    }
+  }
+});
+
+test("the 'other plates' icons stay on one row at every width", async ({ page }) => {
+  test.skip(page.viewportSize().width !== 1440, "desktop project sets the width");
+  for (const width of [1440, 1280, 1180, 1024, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const tops = await page.locator("#p4 .other-plates li").evaluateAll((all) => all.map((li) => Math.round(li.offsetTop)));
+    expect(new Set(tops).size, `${width}px: ${tops}`).toBe(1);
+  }
+});
+
+// D4's card is as tall as its rows, and the row of other plates stays put: the card hugs its content, and
+// the space the tallest card would need is reserved under it, as plain paper, not as empty ruled lines.
+test("the card hugs its rows, and the 'other plates' row holds its place for every plate", async ({ page }) => {
+  const card = page.locator("#p4 .index-card"), others = page.locator("#p4 .others");
+  const slack = () => card.evaluate((c) => {
+    const f = c.querySelector("fieldset"), last = f.lastElementChild, offline = c.querySelector(".offline");
+    return { blank: offline.offsetTop - (last.offsetTop + last.offsetHeight), below: c.offsetHeight - (offline.offsetTop + offline.offsetHeight) };
+  });
+  const y = async () => Math.round((await others.boundingBox()).y + await page.evaluate(() => scrollY));
   await page.locator('#p4 [data-slot="other-plate"][value="ears"]').click();
-  const ears = await height();
-  expect(ears).toBeLessThanOrEqual(await content() + 16);
+  const earsHeight = await card.evaluate((c) => c.offsetHeight), start = await y();
+  for (const id of ["hands", "ears", "transcriber", "memory", "notes"]) {
+    await page.locator(`#p4 [data-slot="other-plate"][value="${id}"]`).click();
+    const s = await slack();
+    expect(s.blank, `${id}: blank ruled space between the last row and the status line`).toBeLessThanOrEqual(60);
+    expect(s.below, `${id}: space under the status line`).toBeLessThanOrEqual(48);
+    expect(await y(), `${id}: the other-plates row`).toBe(start);
+  }
   await page.locator('#p4 [data-slot="other-plate"][value="hands"]').click();
-  expect(Math.abs(await height() - ears)).toBeLessThanOrEqual(1);
+  expect(await card.evaluate((c) => c.offsetHeight)).toBeLessThan(earsHeight - 100);
 });
 
 test("opening a plate pulls that plate's drawing out: the pop-out art turns to the chosen plate", async ({ page }) => {

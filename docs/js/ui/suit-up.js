@@ -61,18 +61,23 @@ function open(plateId, { focus = true } = {}) {
   if (focus) fieldset.querySelector("input:checked").focus();
 }
 
-// The card is as tall as the tallest plate's card at the current width, so switching plates or ticking
-// an engine never moves what is below it. Measured in a hidden copy, because rows wrap differently per width.
+// The card hugs its rows. The column around it (card + the row of other plates) is as tall as it would be with the
+// tallest plate's card, so the row of other plates never moves. The tallest is measured in a hidden copy, because
+// rows wrap differently at each width.
+const cardEl = fieldset.closest(".index-card"), column = cardEl.parentElement, others = column.querySelector(".others");
+// Fractional layout heights (offsetHeight rounds, and a 1px drift would move the row).
+const heightOf = (el) => parseFloat(getComputedStyle(el).height);
 function reserve() {
   const probe = Object.assign(fieldset.cloneNode(false), { inert: true });
   probe.removeAttribute("data-slot");
-  Object.assign(probe.style, { position: "absolute", visibility: "hidden", width: `${fieldset.clientWidth}px`, minHeight: "0" });
+  Object.assign(probe.style, { position: "absolute", visibility: "hidden", width: `${fieldset.clientWidth}px` });
   fieldset.after(probe);
-  const tallest = Math.max(...PLATES.map((p) => { probe.replaceChildren(...card(p, { live: false })); return probe.offsetHeight; }));
+  const tallest = Math.max(...PLATES.map((p) => { probe.replaceChildren(...card(p, { live: false })); return heightOf(probe); }));
   probe.remove();
-  fieldset.style.minHeight = `${tallest}px`;
+  const gap = parseFloat(getComputedStyle(cardEl).marginBottom);
+  column.style.minHeight = `${heightOf(cardEl) - heightOf(fieldset) + tallest + gap + heightOf(others)}px`;
 }
-new ResizeObserver(reserve).observe(fieldset.parentElement);
+new ResizeObserver(reserve).observe(cardEl);
 document.fonts?.ready.then(reserve);
 
 for (const b of p4.querySelectorAll('[data-slot="plate"], [data-slot="other-plate"]')) {
