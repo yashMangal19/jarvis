@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./test.mjs";
 import { readFileSync } from "node:fs";
 
 // The page fetches status.json from GitHub; serve the fresh fixture so this smoke never hits the network.

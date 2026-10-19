@@ -1,50 +1,56 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./test.mjs";
 import { readFileSync } from "node:fs";
 
-// Serve the fresh status fixture and abort the CDN, so this smoke never hits the network.
+// Serve the fresh status fixture so this smoke never hits the network (the shared test owns the CDN).
 test.beforeEach(async ({ page }) => {
   const body = readFileSync(new URL("../test/fixtures/status/fresh.json", import.meta.url), "utf8");
   await page.route("https://raw.githubusercontent.com/**", (route) =>
     route.fulfill({ status: 200, body, headers: { "access-control-allow-origin": "*" } }));
-  await page.route("https://cdnjs.cloudflare.com/**", (route) => route.abort());
 });
 
-// Same bytes cdnjs serves for gsap 3.15.0 (checked at pin time), so the page's SRI hashes must match them.
-async function serveGsap(page) {
-  await page.unroute("https://cdnjs.cloudflare.com/**");
-  await page.route("https://cdnjs.cloudflare.com/ajax/libs/gsap/3.15.0/*.js", (route) => {
-    const file = new URL(route.request().url()).pathname.split("/").pop();
-    route.fulfill({
-      status: 200, body: readFileSync(new URL(`../node_modules/gsap/dist/${file}`, import.meta.url)),
-      headers: { "content-type": "application/javascript", "access-control-allow-origin": "*" },
-    });
+const soon = (page) => page.locator('#p2 [data-slot="player"]').getByRole("img", { name: "promo lands soon" });
+
+test("by default a spec never reaches the CDN: the GSAP request fails locally", async ({ page }) => {
+  const failed = [];
+  page.on("requestfailed", (r) => failed.push(r.url()));
+  await page.goto("/");
+  await expect.poll(() => failed.some((u) => u.startsWith("https://cdnjs.cloudflare.com/"))).toBe(true);
+});
+
+test.describe("with GSAP served from the pinned local copy", () => {
+  test.use({ gsap: true });
+
+  test("scrolling p. 2 past turns every card of the flip-book", async ({ page }) => {
+    const turned = page.locator("#p2 .cards li.is-turned");
+    await page.goto("/");
+    await expect(turned).toHaveCount(0);
+    await page.locator("#p3").scrollIntoViewIfNeeded();
+    await page.mouse.wheel(0, 2000);
+    await expect(turned).toHaveCount(6);
   });
-}
 
-const turned = (page) => page.locator("#p2 .cards li.is-turned");
-
-test("scrolling p. 2 past turns every card of the flip-book", async ({ page }) => {
-  await serveGsap(page);
-  await page.goto("/");
-  await expect(turned(page)).toHaveCount(0);
-  await page.locator("#p3").scrollIntoViewIfNeeded();
-  await page.mouse.wheel(0, 2000);
-  await expect(turned(page)).toHaveCount(6);
-});
-
-test("p. 4's plates fly in, land on their spots and still pop out on click", async ({ page }) => {
-  await serveGsap(page);
-  await page.goto("/");
-  const ears = page.locator('#p4 [data-slot="plate"][value="ears"]');
-  await ears.evaluate((b) => new MutationObserver(() => {
-    if (b.style.opacity !== "") b.dataset.flew = "yes";
-  }).observe(b, { attributeFilter: ["style"] }));
-  await page.locator("#p4").scrollIntoViewIfNeeded();
-  await expect(ears).toHaveAttribute("data-flew", "yes");
-  await expect.poll(() => ears.evaluate((b) => [b.style.opacity, b.style.transform, b.style.getPropertyValue("--x")]))
-    .toEqual(["", "", "47%"]);
-  await ears.click();
-  await expect(ears).toHaveAttribute("aria-expanded", "true");
+  test("p. 4's plates fly in from nearby, land on their spots and still pop out on click", async ({ page }) => {
+    await page.goto("/");
+    const plates = page.locator('#p4 [data-slot="plate"]');
+    // Record the furthest any plate is ever displaced while it flies.
+    await plates.evaluateAll((all) => {
+      window.flyMax = 0;
+      for (const b of all) {
+        new MutationObserver(() => {
+          const m = new DOMMatrix(getComputedStyle(b).transform);
+          if (b.style.opacity !== "") window.flyMax = Math.max(window.flyMax, Math.abs(m.e), Math.abs(m.f));
+        }).observe(b, { attributeFilter: ["style"] });
+      }
+    });
+    await page.locator("#p4").scrollIntoViewIfNeeded();
+    await expect.poll(() => page.evaluate(() => window.flyMax)).toBeGreaterThan(0);
+    const ears = plates.and(page.locator('[value="ears"]'));
+    await expect.poll(() => ears.evaluate((b) => [b.style.opacity, b.style.transform, b.style.getPropertyValue("--x")]))
+      .toEqual(["", "", "47%"]);
+    expect(await page.evaluate(() => window.flyMax)).toBeLessThan(400);
+    await ears.click();
+    await expect(ears).toHaveAttribute("aria-expanded", "true");
+  });
 });
 
 test("under reduced motion the page never asks the CDN for anything", async ({ page }) => {
@@ -57,9 +63,7 @@ test("under reduced motion the page never asks the CDN for anything", async ({ p
   expect(asked).toEqual([]);
 });
 
-const soon = (page) => page.locator('#p2 [data-slot="player"]').getByText("promo lands soon");
-
-test("with no promo yet, the player says promo lands soon", async ({ page }) => {
+test("with no promo yet, the player shows the promo lands soon card", async ({ page }) => {
   await page.goto("/");
   await expect(soon(page)).toBeVisible();
 });

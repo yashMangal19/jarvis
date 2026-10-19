@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./test.mjs";
 import { readFileSync } from "node:fs";
 
 const T0 = Date.parse("2026-10-19T10:00:00Z");
