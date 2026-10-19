@@ -63,6 +63,35 @@ test("the mark cards are separate index cards: a gap between each and the next",
   }
 });
 
+test("the icon's drawing keeps at least 6px from the handle (phone, where nothing is tilted)", async ({ page }) => {
+  test.skip(page.viewportSize().width !== 390, "phone only");
+  await page.route("https://api.github.com/**", (route) => route.fulfill(json(fixture("forks/two.json"))));
+  await page.goto("/");
+  await expect(marks(page)).toHaveCount(3);
+  const INK_RIGHT = Math.max(...xs) / 160; // where the drawing ends, as a share of the img width
+  const gaps = await marks(page).evaluateAll((lis, inkRight) => lis.map((li) => {
+    const img = li.querySelector("img").getBoundingClientRect();
+    const text = li.querySelector(".handle").firstChild;
+    const r = document.createRange();
+    r.setStart(text, 0); r.setEnd(text, 1);
+    return r.getBoundingClientRect().left - (img.left + img.width * inkRight);
+  }), INK_RIGHT);
+  for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(6);
+});
+
+test("no capsule caption leaves a single word alone on its last line", async ({ page }) => {
+  await page.goto("/");
+  const lines = await page.$$eval("#p7 .capsule p", (ps) => ps.map((p) => {
+    const text = p.firstChild, r = document.createRange(), tops = [];
+    for (const m of text.data.matchAll(/\S+/g)) {
+      r.setStart(text, m.index); r.setEnd(text, m.index + m[0].length);
+      tops.push(Math.round(r.getBoundingClientRect().top));
+    }
+    return { text: text.data, lines: new Set(tops).size, onLast: tops.filter((t) => t === tops.at(-1)).length };
+  }));
+  for (const { text, lines: n, onLast } of lines) expect(n === 1 || onLast >= 2, `"${text}" ends alone`).toBe(true);
+});
+
 test("the cards tilt alternately, as in D7", async ({ page }) => {
   test.skip(page.viewportSize().width !== 1440, "the phone grid sets them straight");
   await page.route("https://api.github.com/**", (route) => route.fulfill(json(fixture("forks/two.json"))));

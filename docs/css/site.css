@@ -161,6 +161,8 @@ ol { padding: 0; list-style: none; }
   position: absolute; left: 7%; top: 14%; padding: 2px 8px; background: #1E2633; color: var(--chalk);
   font-size: 13px; letter-spacing: .15em; pointer-events: none;
 }
+/* Playing, the tag would sit on the picture; it steps aside (still the video's description) and returns on pause. */
+.player[data-playing] .player-label { opacity: 0; }
 /* One hand-drawn play button before the first play (player.js), in the poster's empty band below its
    github strip; the native controls take over once playback starts. */
 .player .play {
@@ -319,9 +321,12 @@ ol { padding: 0; list-style: none; }
   .stats { gap: 32px; }
   .stat .tick { display: none; } /* M3 */
   .stat .big { font-size: 72px; }
-  .commits { margin-top: 48px; padding: 24px 20px; }
-  .commits li { grid-template-columns: 72px minmax(0, 1fr); height: 84px; } /* fits "26h ago" on one line */
-  .msg { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  /* M3: four short rows (the fifth is for the wide card), a message may wrap to two lines: ≈340px tall. */
+  .commits { margin-top: 48px; padding: 20px 20px 16px; }
+  .commits li { grid-template-columns: 72px minmax(0, 1fr); height: 56px; } /* 72px fits "26h ago" on one line */
+  .commits li:nth-child(n+5) { display: none; }
+  .commits a { margin-top: 16px; }
+  .msg { white-space: normal; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 
 /* ---- p. 4–8 and the footer (static; behaviour lives in suit-up / try-it / hall / fork-it) ---- */
@@ -458,7 +463,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tag { position: absolute; right: 10%; top: 3%; font-size: clamp(18px, 1.6vw, 24px); transform: rotate(8deg); }
 .infinity { position: absolute; inset: 30% 0 auto; text-align: center; font-size: clamp(84px, 10.7vw, 156px); line-height: 1; } /* the glyph is ~2/3 of the em */
 .capsule h3 { font-size: clamp(28px, 2.5vw, 36px); margin-top: 24px; line-height: 1.1; }
-.capsule p { font-size: clamp(12px, 1vw, 14px); color: #5d5a52; }
+.capsule p { font-size: clamp(12px, 1vw, 14px); color: #5d5a52; text-wrap: pretty; }
 .marks { grid-area: marks; margin-top: 40px; }
 .marks h3 { font-size: 24px; font-weight: 400; }
 .marks ol { min-height: calc(6 * 104px + 5 * 12px); margin-top: 16px; }
@@ -559,7 +564,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .capsules { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 40px; }
   .capsule:nth-child(3) .case::after { content: ""; } /* second row's shelf */
   .marks ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .mark, .mark + .mark { width: auto; transform: none; padding-right: 4px; column-gap: 4px; } /* room for a 13-letter handle on one line */
+  .mark, .mark + .mark { width: auto; transform: none; padding-right: 4px; column-gap: 6px; } /* 6px clear of the drawing; still room for a 13-letter handle */
   .fork h2 { font-size: 84px; }
   .strip code { padding: 12px 14px; }
   .fork-row { display: grid; justify-items: stretch; }
