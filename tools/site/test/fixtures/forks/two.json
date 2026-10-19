@@ -1,0 +1,12 @@
+[
+  {
+    "owner": {
+      "login": "fork-owner-1"
+    }
+  },
+  {
+    "owner": {
+      "login": "fork-owner-2"
+    }
+  }
+]
