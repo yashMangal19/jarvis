@@ -8,6 +8,9 @@ export const FORKS_URL =
 // Up to 5 fork cards in API order, then the visitor's card: the mark their fork would really get.
 export function marksFromForks(forks) {
   const list = Array.isArray(forks) ? forks : [];
-  const cards = list.slice(0, 5).map((f, i) => ({ label: `mark ${i + 1} · @${f.owner.login}` }));
-  return [...cards, { label: `mark ${list.length + 1} · @you?` }];
+  const cards = list.slice(0, 5).map((f, i) => mark(i + 1, `@${f.owner.login}`));
+  return [...cards, mark(list.length + 1, "@you?")];
 }
+
+// The card shows name and handle on two lines; label is the same mark as one line.
+const mark = (n, handle) => ({ label: `mark ${n} · ${handle}`, name: `mark ${n}`, handle });
