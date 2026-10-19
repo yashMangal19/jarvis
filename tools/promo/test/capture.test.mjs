@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { cp, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -107,4 +107,13 @@ test('no beat\'s caption repeats a line already drawn in that beat', async () =>
   } finally {
     await close();
   }
+});
+
+test('a capture replaces the frames already in --out, and leaves other files there alone', async () => {
+  const { out } = await twoSeconds;
+  const again = path.join(out, '..', `${path.basename(out)}-again`);
+  await cp(out, again, { recursive: true });
+  await writeFile(path.join(again, 'notes.txt'), 'keep me');
+  await promisify(execFile)(process.execPath, [capture, '--out', again, '--from', '1', '--to', String(1 + 1 / 30)]);
+  assert.deepEqual((await readdir(again)).sort(), ['frame-00030.png', 'notes.txt']);
 });

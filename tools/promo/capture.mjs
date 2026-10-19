@@ -3,7 +3,7 @@
 import puppeteer from 'puppeteer-core';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -79,6 +79,10 @@ if (import.meta.main) {
     const first = Math.round(from * FPS);
     const last = Math.round((to ?? duration) * FPS);
     await mkdir(opt.out, { recursive: true });
+    // A stale capture's frames would end up in the encode, so only this run's frames stay in --out.
+    for (const f of await readdir(opt.out)) {
+      if (/^frame-\d{5}\.png$/.test(f)) await rm(path.join(opt.out, f));
+    }
     for (let i = first; i < last; i++) {
       await page.evaluate(t => window.render(t), i / FPS);
       await page.screenshot({ path: path.join(opt.out, `frame-${String(i).padStart(5, '0')}.png`) });

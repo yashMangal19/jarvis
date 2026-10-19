@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -43,4 +43,15 @@ test('the GIF exists, 720 px wide at 15 fps; a 2 s capture gives only beat 1 at 
 test('the poster is the last captured frame', async () => {
   const { frames, out } = await encoded;
   assert.deepEqual(await readFile(path.join(out, 'poster.png')), await readFile(path.join(frames, 'frame-00059.png')));
+});
+
+test('encode refuses frames that do not run unbroken from frame-00000, and names the first gap', async () => {
+  const frames = await mkdtemp(path.join(tmpdir(), 'promo-gap-'));
+  await exec('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=64x36:rate=30', '-frames:v', '6', '-start_number', '0',
+    path.join(frames, 'frame-%05d.png')]);
+  await rm(path.join(frames, 'frame-00003.png'));
+  const out = await mkdtemp(path.join(tmpdir(), 'promo-media-'));
+  await assert.rejects(exec(process.execPath, [path.join(here, 'encode.mjs'), '--frames', frames, '--out', out]),
+    err => /frame-00003\.png/.test(err.stderr));
+  assert.deepEqual(await readdir(out), []);
 });
