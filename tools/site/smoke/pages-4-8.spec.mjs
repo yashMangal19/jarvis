@@ -68,3 +68,15 @@ for (const width of [1280, 1024, 768, 390]) {
     expect(cut).toEqual([]);
   });
 }
+
+// p. 4–8 heading styles must not leak onto earlier pages (p. 2's title is 64px at desktop and in-between widths).
+for (const width of [1440, 800]) {
+  test(`p. 2's title keeps its own size at ${width}`, async ({ page }) => {
+    test.skip(page.viewportSize().width !== 1440, "desktop project sets the width");
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    const title = page.locator("#p2-title");
+    await expect(title).toHaveCSS("font-size", "64px");
+    await expect(title).toHaveCSS("margin-bottom", "28px");
+  });
+}

@@ -271,7 +271,8 @@ ol { padding: 0; list-style: none; }
 }
 
 /* ---- p. 4–8 and the footer (static; behaviour lives in suit-up / try-it / hall / fork-it) ---- */
-.page > h2 { font-size: clamp(48px, 5vw, 72px); line-height: 1.1; margin: 16px 0 32px; }
+/* :where keeps the shared title rule at element specificity: it reaches only p. 4–8 and per-page rules (.fork h2, .hall h2) still win. */
+:where(#p4, #p5, #p6, #p7, #p8) > h2 { font-size: clamp(48px, 5vw, 72px); line-height: 1.1; margin: 16px 0 32px; }
 .br-phone { display: none; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 :is(.suit, .try, .hall, .fork, .foot) :is(button, a):focus-visible { outline: 2px dashed var(--red); outline-offset: 4px; }
@@ -446,7 +447,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 
 @media (max-width: 600px) {
-  .page > h2 { font-size: 42px; }
+  :where(#p4, #p5, #p6, #p7, #p8) > h2 { font-size: 42px; }
   .br-phone { display: inline; }
   .suit .sheet { padding: 24px 12px 56px; transform: none; }
   .suit .plates { width: 100%; }
