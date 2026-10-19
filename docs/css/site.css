@@ -362,7 +362,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .step figcaption { font-size: 20px; font-weight: 400; }
 .transcript { min-height: 3.2em; font-size: 16px; }
 .card-slot { grid-area: card; display: grid; align-content: start; }
-.card-slot > .read-back { grid-area: 1 / 1; }
+/* Both cards share one cell, which reserves the taller; start: each card keeps its own height. */
+.card-slot > .read-back { grid-area: 1 / 1; align-self: start; }
 .read-back {
   position: relative; padding: 28px 36px 36px; background: #F6F3EA;
   transform: rotate(1deg); box-shadow: 0 14px 26px rgb(0 0 0 / .14); font-size: clamp(17px, 1.5vw, 21px);

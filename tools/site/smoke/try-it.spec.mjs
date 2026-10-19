@@ -170,6 +170,14 @@ test("during a run the flow arrows and the card caption show on desktop", async 
   await expect(p5(page).getByText("3. reads it back. you say yes.")).toBeVisible();
 });
 
+// F-2: the answer card shares the read-back's reserved cell but is not stretched to fill it.
+test("the pricing answer card is its own height, shorter than the shared card cell", async ({ page }) => {
+  await say(page, "pricing");
+  const [card, cell] = await p5(page).locator("[data-slot=answer]").evaluate((el) => [
+    el.offsetHeight, parseFloat(getComputedStyle(el.parentElement).gridTemplateRows)]); // offsetHeight: untilted
+  expect(card).toBeLessThan(cell - 40); // stretched it equals the cell; its own height is ~88px less at 1440 and 390
+});
+
 test("the picked slip is marked '← this one', outside its accessible name", async ({ page }) => {
   await slip(page, "reminder").click();
   const mark = (id) => slip(page, id).evaluate((b) => getComputedStyle(b.parentElement, "::after").content);
