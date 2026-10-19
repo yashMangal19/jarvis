@@ -314,6 +314,11 @@ The 88 spec cases were written at the spec gate.
 | Update the README stem squeeze line once the hardware result is in | T-27 N |
 | LICENSE: **done** (`fb0665a`, DEC-34) | — |
 
+**Before tagging, once, by hand:** run `JARVIS_HW_TESTS=1 swift test` on a Mac with Apple Intelligence, the
+mic and Screen Recording allowed, and AirPods connected. The default gate skips the real-device tests (mic, room
+mic, call audio, the on-device note model), because the hardware and the model's output vary (J-011). The gate
+itself must be 10 full runs green in a row (J-010).
+
 **Outward steps** (they must be done in this order, because the formula no longer patches `install.sh`):
 merge this branch to `main` and push. Create and push the tap (`gh repo create yashMangal19/homebrew-tap --public
 --source . --remote origin --push`). Tag `v0.1.0` and push the tag. Fill in the two sha256 placeholders in

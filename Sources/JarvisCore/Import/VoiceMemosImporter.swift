@@ -24,8 +24,10 @@ public final class VoiceMemosImporter: ObservableObject {
     private let lock = NSLock()
     private var watcher: (any FolderWatcher)?
     private var folder: URL?
-    /// Memos whose copy did not decode, as they were then; recorded only if a later scan finds them unchanged.
-    private var undecodable: [URL: FileStamp] = [:]
+    /// Memos whose copy did not decode, as they were then and when first seen so; recorded only if a scan
+    /// at least `retryDelay` later finds them unchanged.
+    private var undecodable: [URL: (stamp: FileStamp, since: Date)] = [:]
+    private let retryDelay: TimeInterval
     /// Set once at the end of `init`; it calls back into `self`, so it cannot be built before.
     private var scheduler: ScanScheduler!
 
@@ -42,6 +44,7 @@ public final class VoiceMemosImporter: ObservableObject {
         self.ledger = ledger
         self.imports = paths.imports
         self.settleDelay = settleDelay
+        self.retryDelay = retryDelay
         scheduler = ScanScheduler(retryDelay: retryDelay, maxRetries: maxRetries) { [weak self] in
             await self?.importNew() ?? 0
         }
@@ -116,10 +119,18 @@ public final class VoiceMemosImporter: ObservableObject {
             try? fileManager.removeItem(at: movedTo ?? copy)
             // An export or sync writes a memo in place, and an MP4/QuickTime file does not decode until its
             // index is written last, so one still being written looks broken. It is given up on only when
-            // a later scan (a folder change, or a retry `retryDelay` on) finds it unchanged and still broken.
-            // Ceiling: a writer stalled longer than that gap still loses the memo; a quiet-period check would close it.
-            let seenUnchanged = lock.withLock { undecodable.updateValue(stamp, forKey: original) == stamp }
-            guard seenUnchanged else { return }
+            // a scan at least `retryDelay` after the first finds it unchanged and still broken. Two scans back to
+            // back (the first scan and a folder change at startup) are a moment apart, not a sign (J-011).
+            // Ceiling: a writer stalled longer than `retryDelay` still loses the memo.
+            let givenUp = lock.withLock { () -> Bool in
+                let now = Date()
+                if let seen = undecodable[original], seen.stamp == stamp {
+                    return now.timeIntervalSince(seen.since) >= retryDelay
+                }
+                undecodable[original] = (stamp, now)
+                return false
+            }
+            guard givenUp else { return }
         } catch {
             if fileManager.fileExists(atPath: copy.path) {
                 try? fileManager.removeItem(at: copy) // nothing stored: the original is tried again

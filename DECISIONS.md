@@ -226,6 +226,22 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 
 ## Imports
 
+### DEC-43 · A still-syncing memo is given up only on a look at least `retryDelay` after the first (2026-10-19)
+- **Why:** J-010 found that at startup the first scan and a folder change can run back to back. A memo seen unchanged
+  and undecodable twice, a moment apart, was dropped for good, which is data loss.
+- **Decided by:** Jarvis-Orc (J-011).
+- **What:** the first sighting is recorded with its time. A later sighting of the same unchanged file gives up only
+  when at least `retryDelay` (5 s) has passed; a sooner one keeps it for the retry.
+- **Affects:** `Import/VoiceMemosImporter.swift`.
+- **Checked against:** DEC-19 (unchanged), DEC-23 (unchanged: audio is still deleted only after a successful
+  transcription). The import gate repair's "unchanged and still broken" rule is kept, with the time gap added.
+
+### DEC-44 · Real-device and on-device-model tests are opt-in; run once by hand before a tag (2026-10-19)
+- **Decided by:** Jarvis-Orc (J-011, from J-010).
+- **What:** `FoundationModelsNoteWriterTests` joins the mic, room-mic and call-audio smoke tests behind
+  `JARVIS_HW_TESTS=1`. The release checklist (feature doc §9) runs them once before tagging.
+- **Checked against:** DEC-20 (manual QA still covers the UI).
+
 ### DEC-18 · Imported recordings are labelled "Me" (blueprint D-7)
 - **Why:** a Voice Memo or inbox file comes from the user's own recorder. To reverse it, change one line in `AudioSource.label`.
 

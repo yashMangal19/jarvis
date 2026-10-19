@@ -1,4 +1,5 @@
 #if canImport(FoundationModels)
+import Foundation
 import Testing
 import JarvisCore
 
@@ -14,8 +15,11 @@ private let transcript = """
     Others: And we drop the dark-mode toggle from this release.
     """
 
-/// Smoke tests against the real on-device model; skipped where Apple Intelligence is unavailable.
-@Suite(.enabled(if: modelAvailable(), "Apple Intelligence model not available on this Mac"))
+/// Smoke tests against the real on-device model. Opt-in with `JARVIS_HW_TESTS=1`: the model's output varies,
+/// so the gate stays deterministic, and they run once by hand before a release tag. Skipped where Apple
+/// Intelligence is unavailable.
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["JARVIS_HW_TESTS"] == "1", "set JARVIS_HW_TESTS=1 to use the on-device model"),
+       .enabled(if: modelAvailable(), "Apple Intelligence model not available on this Mac"))
 struct FoundationModelsNoteWriterTests {
     private let prompt = "Write a short meeting note: decisions, then action items with owners."
 

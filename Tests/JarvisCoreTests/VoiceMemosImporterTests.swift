@@ -336,6 +336,36 @@ import Testing
         #expect(try FileManager.default.contentsOfDirectory(atPath: paths.imports.path).filter { $0.hasSuffix(".m4a") }.isEmpty)
     }
 
+    // J-011: two scans back to back (the first scan and a folder change at startup) see a memo still being
+    // synced unchanged twice, a moment apart. That is no sign it is broken: it is kept until a later look.
+    @Test func twoScansBackToBackNeverGiveUpOnAMemoStillBeingWritten() async throws {
+        let watcher = FakeFolderWatcher()
+        let transcriber = ImportFakeTranscriber()
+        let ledger = ImportLedger(paths: paths)
+        let (importer, _) = memoImporter(watcher: watcher, transcriber: transcriber, ledger: ledger)
+        let whole = try Data(contentsOf: try memoM4A(in: fixtures))
+        try await startEmpty(importer)
+        let memo = recordings.appending(path: "20261017 101500-AB12CD34.m4a")
+        try whole.prefix(whole.count / 2).write(to: memo)
+
+        watcher.fire()
+        await memoWaitUntil { FileManager.default.fileExists(atPath: paths.imports.appending(path: "failed").path) }
+        await memoWaitUntil { importer.scanIsIdle }
+        watcher.fire()
+        await memoWaitUntil { importer.scanIsIdle }
+        #expect(!ledger.isImported(memo))
+
+        let handle = try FileHandle(forWritingTo: memo)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: whole.dropFirst(whole.count / 2))
+        try handle.close()
+        watcher.fire()
+        await memoWaitUntil { ledger.isImported(memo) }
+        await importer.stop()
+
+        #expect(transcriber.calls == 1)
+    }
+
     // Gate repair: an export or sync writes a memo in place under its final name, and an MP4/QuickTime file
     // is undecodable until its index is written last. A scan that takes it mid-write must not record it as
     // undecodable for good: once complete, it is imported.
