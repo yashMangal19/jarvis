@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "generated_at": "2026-10-19T11:30:04.223Z",
+  "build": {
+    "waves_done": 10,
+    "waves_total": 10,
+    "tickets_done": 29,
+    "tickets_total": 29,
+    "tests": 323
+  },
+  "qa": {
+    "total": 88,
+    "pass": 17,
+    "fail": 0,
+    "blocked": 21
+  },
+  "commits": [
+    {
+      "sha": "8272344",
+      "message": "J-009: wire the room mic's self-stop into Jarvis and the status line",
+      "at": "2026-10-19T15:39:09+05:30"
+    },
+    {
+      "sha": "6f1df2b",
+      "message": "J-008: room mic retries a failed re-pin; status line notes it in Meeting mode",
+      "at": "2026-10-19T15:36:27+05:30"
+    },
+    {
+      "sha": "7588578",
+      "message": "J-007: retry a failed mic restart; status line says when the mic isn't recording",
+      "at": "2026-10-19T15:33:35+05:30"
+    },
+    {
+      "sha": "88fb8bc",
+      "message": "J-005: move the data home to ~/Library/Application Support/Jarvis",
+      "at": "2026-10-19T15:14:31+05:30"
+    },
+    {
+      "sha": "33c012a",
+      "message": "Feature document: Jarvis ambient memory — architecture, blueprint deviations, testing, QA coverage, cleanup",
+      "at": "2026-10-18T10:16:17+05:30"
+    }
+  ],
+  "release": {
+    "tag": "v0.1.0",
+    "shipped": false,
+    "shipped_at": null
+  },
+  "launch": {
+    "deadline": "2026-10-19T21:00:00+05:30",
+    "note_kind": null,
+    "note": null
+  }
+}
