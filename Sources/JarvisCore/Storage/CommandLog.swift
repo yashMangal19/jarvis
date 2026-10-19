@@ -14,7 +14,7 @@ public struct CommandRecord: Codable, Equatable {
     public let mic: String?
     public let heard: String
     /// `VoiceIntent`'s case, without what was said: "meetingMode(off)", "toolCommand".
-    public let intent: String
+    public internal(set) var intent: String
     public var action: String
     /// What Jarvis said for it: the read-back, then the result or "Cancelled.".
     public var said: [String]

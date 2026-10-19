@@ -256,6 +256,23 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Checked against:** DEC-16 (a route change still re-checks the room mic), DEC-24 (each restart still ends the
   chunk), DEC-28 and DEC-31 (permission lines unchanged), DEC-45 (health changes are logged by name only).
 
+### DEC-50 · A near miss of a control is asked about, never sent to Claude (2026-10-19)
+- **Why:** D12 review (J-018) of QA-27. A control matched only as the exact whole utterance, so any mishearing
+  ("meeting mode of") silently became a Claude tool command with a read-back.
+- **Decided by:** Jarvis-Orc (the behaviour), J-021 (the matching).
+- **What:** `VoiceIntentParser`, the one owner of what an utterance means, returns `.didYouMean(candidates)` for an
+  utterance close to a control. Close means one of:
+  - within a small edit distance: none under 7 characters, so "pass" is never "pause"; 1 under 12; then 2;
+  - a control of two or more words plus one extra word ("turn meeting mode off").
+
+  A one-word control with more words stays a tool command ("pause the music"). Of equally close controls, the
+  router asks about the one that would change something (with Meeting mode on, "meeting mode of" means off).
+  The question is a read-back in the confirmation loop: yes runs the control, anything else cancels. A near miss
+  of "forget the last hour" goes straight to its own read-back, which already asks. A near miss never reaches a
+  command runner.
+- **Checked against:** DEC-15 (a control during a read-back still cancels it), DEC-47 (recorded as
+  `didYouMean(<control>)`).
+
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)
 - **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,

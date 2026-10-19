@@ -216,7 +216,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
       <div class="tags"><span class="pill all">Any Mac</span></div>
       <h3>Control it by voice</h3>
       <p>"Jarvis, pause." "Jarvis, resume."</p>
-      <p class="muted">Also: meeting mode on/off, demo mode on/off, forget the last hour, and "what did …?"</p>
+      <p class="muted">Also: meeting mode on/off, demo mode on/off, forget the last hour, and "what did …?" If Jarvis half-hears one of these, it asks "Did you mean …?" and acts only on yes.</p>
       <details><summary>How it's built</summary><div>
         <p>Jarvis handles these itself, without Claude, so they're instant and confirmed with a tick sound.</p>
         <p>"Forget the last hour" can't be undone, so Jarvis reads it back and waits for your yes.</p>
@@ -268,7 +268,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
     <li>Audio is never stored and never uploaded. Audio stays in memory. The one exception: if the whisper server is down, the fallback writes a temporary file and deletes it once transcribed.</li>
     <li><b>What leaves your Mac:</b> only text, and only to the AI you use. If Claude Code writes your notes, each hour's transcript text goes to Anthropic. A voice command's words go to Claude so it can draft the plan, before you say yes. Only the action itself waits for your yes.</li>
     <li>Want nothing to leave? Use Apple's on-device model (macOS 26+) or Ollama for notes, and skip voice commands.</li>
-    <li><b>Forget last hour</b> deletes that hour's transcript, notes and search entries, including anything still being written. It deletes exactly the hour it showed you, even if you take a while to confirm.</li>
+    <li><b>Forget last hour</b> deletes that hour's transcript, voice-command records, notes and search entries, including anything still being written. It deletes exactly the hour it showed you, even if you take a while to confirm.</li>
     <li>If the microphone permission is off, the menu says so, with a button to fix it. A red icon always means it can really hear.</li>
   </ul>
   <p class="note">Tell people when you're recording them. Consent and local laws apply to you.</p>

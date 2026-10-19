@@ -19,6 +19,27 @@ import JarvisCore
         }
     }
 
+    // J-021: a near miss of a control is never a tool command: Jarvis asks "did you mean …?". Every closest
+    // control is a candidate; the router picks the one that would change something.
+    @Test(arguments: [
+        ("meeting mode of", [VoiceIntent.meetingMode(true), .meetingMode(false)]),
+        ("meeting mod off", [.meetingMode(false)]),
+        ("turn meeting mode off", [.meetingMode(false)]),
+        ("meeting mode off now", [.meetingMode(false)]),
+        ("demo mode onn", [.demoMode(true)]),
+        ("pause listing", [.pause]),
+        ("forget the last our", [.forgetLastHour]),
+    ])
+    func aNearMissOfAControlIsAskedAbout(heard: String, candidates: [VoiceIntent]) {
+        #expect(VoiceIntentParser.parse("Jarvis, " + heard) == .didYouMean(candidates), "\(heard)")
+    }
+
+    /// Short single words are matched exactly: "pass" or "cause" is not taken for "pause".
+    @Test(arguments: ["pass", "cause", "presume", "pause music"])
+    func aShortControlIsNeverGuessed(heard: String) {
+        #expect(VoiceIntentParser.parse("Jarvis, " + heard) == .toolCommand(heard))
+    }
+
     @Test func dashesFromTranscriptionCountAsSpaces() {
         #expect(VoiceIntentParser.parse("Jarvis, demo-mode on.") == .demoMode(true))
     }

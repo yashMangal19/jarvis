@@ -103,22 +103,35 @@ import Testing
         #expect(records.first?.trigger == "wake word")
     }
 
-    /// QA-27: a near miss of a control is a tool command, and the record shows it.
-    @Test func aMisheardControlIsRecordedAsAToolCommand() async throws {
+    /// QA-27, J-021: a near miss of a control is asked about, never sent to Claude, and recorded as such.
+    @Test func aMisheardControlIsAskedAboutAndActedOnOnlyOnYes() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let (router, log, session) = router()
         session.modes.meetingMode = true
 
         await router.handle("Jarvis, meeting mode of")
+        #expect(session.modes.meetingMode)
+        await router.heardReply("yes")
+
+        #expect(!session.modes.meetingMode)
+        let record = try #require(try log.records().first)
+        #expect(record.intent == "didYouMean(meetingMode(off))")
+        #expect(record.said == ["Did you mean meeting mode off?", "Meeting mode off."])
+        #expect(record.replies == ["yes"])
+        #expect(record.outcome == .done)
+    }
+
+    @Test func aMisheardControlAnsweredNoChangesNothing() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (router, log, session) = router()
+
+        await router.handle("Jarvis, meeting mode of")  // Meeting mode is off, so "on" is the one that changes something
         await router.heardReply("no")
 
-        #expect(session.modes.meetingMode)
+        #expect(!session.modes.meetingMode)
         let record = try #require(try log.records().first)
-        #expect(record.intent == "toolCommand")
-        #expect(record.said == ["I will meeting mode of.", "Cancelled."])
-        #expect(record.replies == ["no"])
+        #expect(record.said == ["Did you mean meeting mode on?", "Cancelled."])
         #expect(record.outcome == .cancelled)
-        #expect(record.reason == "declined")
     }
 
     @Test func aConfirmedToolCommandIsRecordedOnceItsResultIsIn() async throws {

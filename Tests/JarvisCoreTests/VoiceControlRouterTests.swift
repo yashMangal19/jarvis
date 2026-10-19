@@ -68,6 +68,23 @@ private final class RouterLog {
                        transcripts: transcripts, notes: notes, index: index)
     }
 
+    // J-021: a near miss never reaches the command runner (Claude), whatever the reply.
+    @Test func aNearMissNeverAsksTheCommandRunner() async {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let f = make()
+        f.session.modes.meetingMode = true
+
+        await f.router.handle("Jarvis, turn meeting mode off")
+        await f.router.heardReply("yes")
+        await f.router.handle("Jarvis, demo mode onn")
+        await f.router.heardReply("no")
+
+        #expect(log.runnerRequests == 0)
+        #expect(runner.drafts.isEmpty && runner.executed.isEmpty)
+        #expect(!f.session.modes.meetingMode && !f.session.modes.demoMode)
+        #expect(log.spoken == ["Did you mean meeting mode off?", "Meeting mode off.", "Did you mean demo mode on?", "Cancelled."])
+    }
+
     @Test func meetingModeOnSwitchesTheModeAndSaysSo() async {
         defer { try? FileManager.default.removeItem(at: root) }
         let f = make()

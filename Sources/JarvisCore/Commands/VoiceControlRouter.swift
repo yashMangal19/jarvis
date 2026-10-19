@@ -95,21 +95,21 @@ public final class VoiceControlRouter {
 
     private func act(on intent: VoiceIntent) async {
         switch intent {
-        case .pause:
-            session.pause(.voice)
-            done("paused", saying: "Paused.")
-        case .resume:
-            // A route-lost pause is ended by voice too: capture carries on from the MacBook mic, and the
-            // headset is picked up again when it reconnects.
-            let headsetWasLost = session.state == .paused(.routeLost)
-            session.resume()
-            done("resumed", saying: headsetWasLost ? "Listening through the MacBook mic." : "Listening.")
-        case .meetingMode(let on):
-            session.modes.meetingMode = on
-            done(on ? "meeting mode on" : "meeting mode off", saying: on ? "Meeting mode on." : "Meeting mode off.")
-        case .demoMode(let on):
-            session.modes.demoMode = on
-            done(on ? "demo mode on" : "demo mode off", saying: on ? "Demo mode on." : "Demo mode off.")
+        case .pause, .resume, .meetingMode, .demoMode:
+            let (action, said) = perform(intent)
+            done(action, saying: said)
+        case .didYouMean(let candidates):
+            // Never sent to a command runner: Jarvis asks, and acts only on a yes (J-021, DEC-50).
+            let control = candidates.first(where: changesSomething) ?? candidates[0]
+            current?.intent = "didYouMean(\(control.logName))"
+            current?.action = "ask"
+            if control == .forgetLastHour {
+                // Its own read-back already asks before anything is deleted.
+                await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
+            } else {
+                await commands.submit(control.spoken, runner: ControlRunner(
+                    question: "Did you mean \(control.spoken)?", run: { [weak self] in self?.perform(control).said ?? "" }))
+            }
         case .forgetLastHour:
             current?.action = "read back"
             await commands.submit("forget the last hour", runner: ForgetRunner(forget: forget, clock: clock))
@@ -134,6 +134,41 @@ public final class VoiceControlRouter {
         case .toolCommand(let command):
             current?.action = "read back"
             await commands.submit(command)
+        }
+    }
+
+    /// Runs a built-in control that needs no confirmation; returns the action's name and what to say.
+    private func perform(_ control: VoiceIntent) -> (action: String, said: String) {
+        switch control {
+        case .pause:
+            session.pause(.voice)
+            return ("paused", "Paused.")
+        case .resume:
+            // A route-lost pause is ended by voice too: capture carries on from the MacBook mic, and the
+            // headset is picked up again when it reconnects.
+            let headsetWasLost = session.state == .paused(.routeLost)
+            session.resume()
+            return ("resumed", headsetWasLost ? "Listening through the MacBook mic." : "Listening.")
+        case .meetingMode(let on):
+            session.modes.meetingMode = on
+            return (on ? "meeting mode on" : "meeting mode off", on ? "Meeting mode on." : "Meeting mode off.")
+        case .demoMode(let on):
+            session.modes.demoMode = on
+            return (on ? "demo mode on" : "demo mode off", on ? "Demo mode on." : "Demo mode off.")
+        case .forgetLastHour, .memoryQuestion, .toolCommand, .didYouMean:
+            preconditionFailure("not a direct control: \(control.logName)")
+        }
+    }
+
+    /// Of several equally close controls, the one that would change something: with Meeting mode on,
+    /// "meeting mode of" means off.
+    private func changesSomething(_ control: VoiceIntent) -> Bool {
+        switch control {
+        case .meetingMode(let on): return session.modes.meetingMode != on
+        case .demoMode(let on): return session.modes.demoMode != on
+        case .pause: return session.state == .listening
+        case .resume: if case .paused = session.state { return true } else { return false }
+        default: return true
         }
     }
 
@@ -201,19 +236,46 @@ private extension VoiceIntent {
         case .forgetLastHour: return "forgetLastHour"
         case .memoryQuestion: return "memoryQuestion"
         case .toolCommand: return "toolCommand"
+        case .didYouMean(let candidates): return "didYouMean(\(candidates.map(\.logName).joined(separator: "|")))"
+        }
+    }
+
+    /// How Jarvis names a control when asking about it.
+    var spoken: String {
+        switch self {
+        case .pause: return "pause"
+        case .resume: return "resume"
+        case .meetingMode(let on): return on ? "meeting mode on" : "meeting mode off"
+        case .demoMode(let on): return on ? "demo mode on" : "demo mode off"
+        case .forgetLastHour: return "forget the last hour"
+        case .memoryQuestion, .toolCommand, .didYouMean: return logName
         }
     }
 
     var isBuiltInControl: Bool {
         switch self {
         case .pause, .resume, .meetingMode, .demoMode, .forgetLastHour: return true
-        case .memoryQuestion, .toolCommand: return false
+        case .memoryQuestion, .toolCommand, .didYouMean: return false
         }
     }
 }
 
 /// "Forget the last hour" as a two-phase command: the draft is the read-back, the yes deletes.
 /// The window is fixed when it is read back, so a yes deletes exactly the hour that was named.
+/// "Did you mean …?" as a two-phase command: the question is the read-back, and only the yes runs the control.
+private final class ControlRunner: CommandRunner {
+    private let question: String
+    private let run: @MainActor () -> String
+
+    init(question: String, run: @escaping @MainActor () -> String) {
+        self.question = question
+        self.run = run
+    }
+
+    func draft(_ command: String) async throws -> String { question }
+    func execute(_ draft: String) async throws -> String { await run() }
+}
+
 private final class ForgetRunner: CommandRunner {
     private let forget: ForgetLastHour
     private let clock: any TimeSource
