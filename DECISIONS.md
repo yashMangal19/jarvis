@@ -319,6 +319,24 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Checked against:** DEC-15 (a control during a read-back still cancels it), DEC-47 (records name the outcome:
   `controls(…)`, `didYouMean(…)`, `unclear`), DEC-50 (superseded in part).
 
+### DEC-55 · The wake word stays on while Jarvis speaks; only controls, yes/no and stop barge in (2026-10-19)
+- **Why:** QA-22, and QA-23's H2. The wake word was off for a whole read-back (about 8 s), so a quick retry was
+  ignored.
+- **Decided by:** Jarvis-Orc (J-027): (ii) barge-in only for controls, yes/no and stop/cancel; (iii) hardware echo
+  cancellation deferred to after 0.1.0.
+- **What:**
+  - The wake listener stays on while Jarvis speaks.
+  - Jarvis's own words are taken out of what the mic heard (`SpeechEcho`): its sentences, kept until 3 s after
+    speech ends, are aligned in order against each wake window and each captured command, and the aligned words
+    are removed. A sentence naming Jarvis cancels only its own "Jarvis".
+  - A wake word heard over Jarvis is decided once its command is heard. A control (or a near one), yes/no or
+    stop/cancel stops the speech at once (`stopSpeaking`, the app's synthesizer) and is handled; during a read-back
+    that means the DEC-15 and DEC-54 rules. Anything else said over Jarvis is ignored and logged, with no chime.
+  - "Jarvis, yes" by wake word answers a waiting read-back, as a held command does.
+- **Ceiling:** a word the user says that also comes, in order, in Jarvis's sentence can be removed with it. On
+  speakers and the built-in mic, hardware echo cancellation is the full answer (backlog).
+- **Checked against:** D-8 (Jarvis never answers itself: now by echo removal instead of muting), DEC-15, DEC-54.
+
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)
 - **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,

@@ -22,6 +22,8 @@ public final class WakeWordListener {
     public var onDetected: () -> Void = {}
     /// The command text, without the wake word.
     public var onCommand: (String) -> Void = { _ in }
+    /// What Jarvis said lately; its words are taken out of every window and command before they are read (DEC-55).
+    var echo: () -> [String] = { [] }
 
     /// Audio-time cadence and window of the wake-word check (≈ every 1 s, the last 2.5 s).
     private static let checkEvery = 4
@@ -126,9 +128,10 @@ public final class WakeWordListener {
         guard !gate.isSilent(frame: window, sampleRate: capture.buffer.sampleRate) else { return }
         transcribing = true
         Task {
-            let text = (try? await transcriber.transcribe(
+            let heard = (try? await transcriber.transcribe(
                 AudioChunk(samples: window, sampleRate: capture.buffer.sampleRate,
                            start: capture.date(of: from), source: .mic))) ?? ""
+            let text = SpeechEcho.removing(echo(), from: heard)
             transcribing = false
             let seconds = Double(window.count) / capture.buffer.sampleRate
             let found = Self.afterWakeWord(text) != nil
@@ -144,10 +147,15 @@ public final class WakeWordListener {
         capturing = true
         onDetected()
         // The window's utterance usually holds "Jarvis" and the command's first words.
-        var command = await capture.capture(from: start).map { Self.afterWakeWord($0) ?? $0 }
+        var command = await capture.capture(from: start).map { heard in
+            let text = SpeechEcho.removing(echo(), from: heard)
+            return Self.afterWakeWord(text) ?? text
+        }
         // "Jarvis." then a pause: the command is still to come.
         if command?.isEmpty == true, listening {
-            command = await capture.capture(from: capture.lastEnd).map(Self.withoutLeadingWakeWord)
+            command = await capture.capture(from: capture.lastEnd).map {
+                Self.withoutLeadingWakeWord(SpeechEcho.removing(echo(), from: $0))
+            }
         }
         finishCapture(command)
     }

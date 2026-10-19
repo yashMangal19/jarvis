@@ -39,10 +39,11 @@ public final class VoiceControlRouter {
         }
     }
 
-    /// What was heard after the wake word. Does nothing while Stopped.
+    /// What was heard after the wake word. Does nothing while Stopped. With a read-back waiting, it is the reply
+    /// ("Jarvis, yes"), as a held command is (J-027).
     public func handle(_ utterance: String) async {
         if isStopped { return }
-        await route(utterance, trigger: "wake word")
+        await reply(utterance, trigger: "wake word")
     }
 
     /// What was said during a hold (⌥Space, story 8a). Routes in every state, Stopped and quiet hours
@@ -267,7 +268,7 @@ public final class VoiceControlRouter {
     }
 }
 
-private extension VoiceIntent {
+extension VoiceIntent {
     /// The case without what was said, for the logs.
     var logName: String {
         switch self {
@@ -299,7 +300,8 @@ private extension VoiceIntent {
         }
     }
 
-    /// Said during a read-back, it cancels the read-back instead of being a correction (DEC-15, J-027).
+    /// Said during a read-back, it cancels the read-back instead of being a correction (DEC-15, J-027). The same set
+    /// may be said over Jarvis while it speaks (DEC-55).
     var interruptsReadBack: Bool {
         switch self {
         case .pause, .resume, .meetingMode, .demoMode, .forgetLastHour, .cancel, .controls, .didYouMean: return true

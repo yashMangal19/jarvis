@@ -12,6 +12,7 @@ enum Triggers {
     static func install(into jarvis: Jarvis) {
         let speech = Speech(jarvis: jarvis)
         jarvis.speak = { speech.say($0) }
+        jarvis.stopSpeaking = { speech.stop() }
         jarvis.onChime = Sounds.chime
         // Works while Stopped and during quiet hours: `Jarvis` decides what a hold does (DEC-22).
         hotKey = HotKey(pressed: { Sounds.tick(); jarvis.beginHoldCommand() },

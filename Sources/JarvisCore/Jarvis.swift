@@ -15,6 +15,8 @@ public final class Jarvis: ObservableObject {
     public var speak: (String) -> Void = { _ in }
     /// The wake word was heard.
     public var onChime: () -> Void = {}
+    /// Stops what Jarvis is saying, at once: a barge-in was heard (DEC-55). The app stops its synthesizer.
+    public var stopSpeaking: () -> Void = {}
     /// A spoken memory question was answered. The Ask panel reads `lastMemoryAnswer` instead.
     public var onMemoryAnswer: (MemoryAnswer) -> Void = { _ in }
     /// The latest memory answer since launch, typed or spoken, for the Ask panel (story 22: spoken and shown).
@@ -84,6 +86,14 @@ public final class Jarvis: ObservableObject {
     /// Set by a hold, so the command it captures routes even while Stopped (DEC-22). Ceiling: a hold that
     /// captures nothing leaves it set, and the next wake-word command is then routed as a held one.
     private var heldCommandPending = false
+    /// The wake word was heard while Jarvis was speaking: the command is a barge-in (DEC-55).
+    private var bargeInPending = false
+    /// For tests: barge-ins heard and ignored, as not a control, yes/no or stop/cancel.
+    private(set) var bargeInsIgnored = 0
+    /// What Jarvis said in the current stretch of speech, kept a little past its end: the mic still hears the tail.
+    private var spokenLately: [String] = []
+    private var lastSpeechEnd = Date.distantPast
+    private static let echoTail: TimeInterval = 3
     private var speaking = SpeakingTracker()
     private(set) var timer: Task<Void, Never>?
     private var lastMaintenance = Date.distantPast
@@ -165,13 +175,24 @@ public final class Jarvis: ObservableObject {
                 Task { @MainActor in await self?.store(chunk, heardWhileListening: listening) }
             }
         }
+        wakeWord.echo = { [unowned self] in spokenEcho() }
         wakeWord.onDetected = { [unowned self] in
-            Log.command.info("Wake word heard")
-            onChime()
+            Log.command.info("Wake word heard\(isSpeaking ? " while Jarvis spoke" : "", privacy: .public)")
+            // Over Jarvis's speech it is a barge-in, decided once the command is heard; no chime over the speech.
+            if isSpeaking { bargeInPending = true } else { onChime() }
         }
         wakeWord.onCommand = { [unowned self] text in
-            let held = heldCommandPending
+            let held = heldCommandPending, bargeIn = bargeInPending
             heldCommandPending = false
+            bargeInPending = false
+            if bargeIn, !held {
+                guard Self.allowedOverSpeech(text) else {
+                    bargeInsIgnored += 1
+                    Log.command.info("Barge-in ignored: not a control, yes/no or stop")
+                    return
+                }
+                stopSpeaking()
+            }
             Task { held ? await router.handleHeld(text) : await router.handle(text) }
         }
         screenLock.onLock = { [weak self] in Task { @MainActor in self?.session.screenLocked() } }
@@ -399,14 +420,31 @@ public final class Jarvis: ObservableObject {
 
     public func speechEnded() {
         speaking.end()
+        if !speaking.isSpeaking { lastSpeechEnd = clock.now }
         publishSpeaking()
     }
 
     /// Every sentence goes out here. An empty one is dropped: it would get no finish to end it.
     private func say(_ text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if !isSpeaking, clock.now.timeIntervalSince(lastSpeechEnd) > Self.echoTail { spokenLately = [] }
+        spokenLately.append(text)
         speak(text)
     }
+
+    /// What the mic may be hearing of Jarvis: the current stretch of speech, until a moment after it ends.
+    private func spokenEcho() -> [String] {
+        isSpeaking || clock.now.timeIntervalSince(lastSpeechEnd) <= Self.echoTail ? spokenLately : []
+    }
+
+    /// Over Jarvis's speech only a control (or something near one), yes/no, or stop/cancel is taken (DEC-55).
+    static func allowedOverSpeech(_ text: String) -> Bool {
+        if CommandSession.isYesOrNo(WakeWordListener.withoutLeadingWakeWord(text)) { return true }
+        return CommandInterpreter.interpret(text)?.interruptsReadBack == true
+    }
+
+    /// For tests: the router, as the wake word reaches it.
+    var voiceRouter: VoiceControlRouter { router }
 
     private func publishSpeaking() {
         if speaking.isSpeaking != isSpeaking { isSpeaking = speaking.isSpeaking }
@@ -511,7 +549,8 @@ public final class Jarvis: ObservableObject {
         mic.run(session.wakeWordActive || holding)
         systemAudio.run(session.storesMemory)
         roomMic.run(session.storesMemory && session.modes.meetingMode)
-        let wake = session.wakeWordActive && !isSpeaking
+        // On while Jarvis speaks too: its own words are taken out (SpeechEcho), and only controls barge in (DEC-55).
+        let wake = session.wakeWordActive
         if wake != wakeWordOn {
             wakeWordOn = wake
             wake ? wakeWord.start() : wakeWord.stop()

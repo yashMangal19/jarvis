@@ -20,6 +20,11 @@ final class Speech: NSObject, AVSpeechSynthesizerDelegate {
         synthesizer.speak(AVSpeechUtterance(string: text))
     }
 
+    /// A barge-in was heard (DEC-55): stop now. Each sentence cut off reports `didCancel`, so speaking ends.
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+    }
+
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in self.jarvis.speechEnded() }
     }

@@ -24,6 +24,7 @@ import Testing
     private let runner = SwapCommandRunner()
     private var spoken: [String] = []
     private var chimes = 0
+    private var stops = 0
 
     deinit { try? FileManager.default.removeItem(at: root) }
 
@@ -43,6 +44,7 @@ import Testing
                             tickInterval: tickInterval, captureRetryDelays: captureRetryDelays)
         jarvis.speak = { [unowned self] in spoken.append($0) }
         jarvis.onChime = { [unowned self] in chimes += 1 }
+        jarvis.stopSpeaking = { [unowned self] in stops += 1 }
         return jarvis
     }
 
@@ -379,27 +381,63 @@ import Testing
     }
 
     // D-8: while Jarvis speaks, its own voice cannot trigger the wake word.
-    @Test func theWakeWordIsMutedWhileJarvisSpeaks() async throws {
+    // J-027 (QA-23 H2), DEC-55: the wake word stays on while Jarvis speaks. Its own words never wake it; a
+    // control, yes/no or stop/cancel said over it stops it at once; anything else said over it is ignored.
+    @Test func jarvisOwnWordsNeverWakeIt() async throws {
         let jarvis = makeJarvis()
         await jarvis.start()
-        await swapWaitUntil { self.sources.mic.isRunning }
-        wake.saying = "Jarvis, what did we decide"
-        transcriber.saying = "Jarvis, what did we decide"
-
+        await swapWaitUntil { jarvis.wakeWordListening }
+        await jarvis.voiceRouter.handle("Jarvis, tell me a story about Jarvis")  // the read-back names Jarvis
         jarvis.speechStarted()
-        await swapWaitUntil { !jarvis.wakeWordListening }
+        await swapWaitUntil { jarvis.wakeWordListening }
+        #expect(jarvis.isSpeaking && jarvis.wakeWordListening)  // not muted any more
+
+        wake.saying = SwapCommandRunner.draft
         let before = jarvis.wakeWordFramesTaken
         sources.say(speech: 8, silence: 8)
-        // Every frame said while muted is read, and dropped, before speech ends.
         await swapWaitUntil { jarvis.wakeWordFramesTaken >= before + 16 }
-        #expect(chimes == 0)
+        #expect(chimes == 0 && stops == 0)
+        #expect(runner.executed.isEmpty)
+        await jarvis.shutdown()
+    }
 
-        jarvis.speechEnded()
+    @Test func stopSaidOverJarvisStopsItAndCancelsTheReadBack() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
         await swapWaitUntil { jarvis.wakeWordListening }
-        // Once: the fake wake transcriber hears "Jarvis" in any speech, so saying it again chimes again.
+        await jarvis.voiceRouter.handle("Jarvis, create a file")
+        jarvis.speechStarted()
+
+        // The mic hears Jarvis's read-back with the user's "Jarvis, stop" over it.
+        wake.saying = SwapCommandRunner.draft + " Jarvis, stop"
+        transcriber.saying = SwapCommandRunner.draft + " Jarvis, stop"
         sources.say(speech: 8, silence: 8)
-        await swapWaitUntil { self.chimes > 0 }
-        #expect(chimes == 1)
+        // Speech stops as soon as the barge-in is accepted; the routing that says "Cancelled." follows on a task.
+        await swapWaitUntil { self.stops == 1 && self.spoken.last == "Cancelled." }
+
+        #expect(stops == 1)
+        #expect(spoken.last == "Cancelled.")
+        #expect(runner.executed.isEmpty)
+        await jarvis.shutdown()
+    }
+
+    @Test func anythingElseSaidOverJarvisIsIgnored() async throws {
+        let jarvis = makeJarvis()
+        await jarvis.start()
+        await swapWaitUntil { jarvis.wakeWordListening }
+        jarvis.speechStarted()
+        let spokenBefore = spoken.count
+
+        wake.saying = "Jarvis, what did we decide about Friday"
+        transcriber.saying = "Jarvis, what did we decide about Friday"
+        let before = jarvis.wakeWordFramesTaken
+        sources.say(speech: 8, silence: 8)
+        await swapWaitUntil { jarvis.bargeInsIgnored == 1 }
+
+        #expect(jarvis.bargeInsIgnored == 1)
+        #expect(stops == 0)
+        #expect(spoken.count == spokenBefore)
+        #expect(jarvis.lastMemoryAnswer == nil)
         await jarvis.shutdown()
     }
 
