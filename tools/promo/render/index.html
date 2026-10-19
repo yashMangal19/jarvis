@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>jarvis · the 45-second version</title>
+<style>
+  @font-face { font-family: "Caveat"; src: url("fonts/Caveat.ttf"); font-weight: 400 700; }
+  @font-face { font-family: "Courier Prime"; src: url("fonts/CourierPrime-Regular.ttf"); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #E9E4D6; }
+  .beat, .beat > svg { position: absolute; inset: 0; }
+  .txt { position: absolute; white-space: pre; line-height: 1; transform-origin: left top; }
+  #caption {
+    position: absolute; left: 0; right: 0; bottom: 40px; text-align: center;
+    font: 700 64px "Caveat"; color: #2E2D2B;
+  }
+</style>
+<div id="stage"></div>
+<div id="caption"></div>
+<script src="render.js"></script>
