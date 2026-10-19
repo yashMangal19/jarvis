@@ -448,8 +448,8 @@
   "texts": [
    {
     "t": "ears",
-    "x": 640,
-    "y": 160,
+    "x": 730,
+    "y": 120,
     "size": 40,
     "font": "Caveat",
     "color": "#2E2D2B",
@@ -458,8 +458,8 @@
    },
    {
     "t": "transcriber",
-    "x": 1000,
-    "y": 330,
+    "x": 960,
+    "y": 168,
     "size": 40,
     "font": "Caveat",
     "color": "#C8302A",

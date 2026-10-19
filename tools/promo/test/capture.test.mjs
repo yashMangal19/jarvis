@@ -6,6 +6,7 @@ import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { openPromo } from '../capture.mjs';
 
 const capture = path.resolve(import.meta.dirname, '../capture.mjs');
 
@@ -44,4 +45,30 @@ test('a frame rendered cold matches the same frame rendered mid-sequence', async
   const [[, coldHash]] = await hashes(cold);
   const sequential = new Map(await hashes(await twoSeconds));
   assert.equal(coldHash, sequential.get('frame-00030.png'));
+});
+
+test('every text stays inside the 60 px frame margin, and inside its w, at its beat\'s end frame', async () => {
+  const beats = JSON.parse(await readFile(path.resolve(import.meta.dirname, '../storyboard/beats.json'), 'utf8'));
+  const { page, close } = await openPromo();
+  try {
+    let end = 0;
+    for (const beat of beats) {
+      end += beat.secs;
+      const boxes = await page.evaluate(t => {
+        window.render(t);
+        return [...document.querySelectorAll('.beat:not([hidden]) .txt')].map(el => {
+          const { left, top, right, bottom, width } = el.getBoundingClientRect();
+          return { text: el.textContent, left, top, right, bottom, width };
+        });
+      }, end - 1 / 30);
+      for (const spec of beat.texts) {
+        const box = boxes.find(b => b.text === spec.t);
+        const where = `beat ${beat.key} "${spec.t}" ${JSON.stringify(box)}`;
+        assert.ok(box.left >= 60 && box.top >= 60 && box.right <= 1860 && box.bottom <= 1020, where);
+        if (spec.w) assert.ok(box.width <= spec.w, where);
+      }
+    }
+  } finally {
+    await close();
+  }
 });

@@ -7,6 +7,9 @@ const span = (u, a, b) => ease((u - a) / (b - a));
 const INK = [0, 0.35], WORDS = [0.3, 0.65], MARKER = [0.65, 0.8];
 // Words the action reveals only after the red marker has done its work (beat 7: the page goes blank).
 const AFTER_MARKER = new Set(['(nothing here)']);
+// Every text is shrunk, never stretched, to fit: its `w`, else the filled art it sits on (keeping the same
+// inset on the right as on the left), else the frame less this margin.
+const MARGIN = 60;
 const BEATS = [];
 
 async function load(file) {
@@ -26,6 +29,56 @@ function textEl(spec) {
   return el;
 }
 
+// The smallest filled shape under the middle of a text's first line, in frame coordinates.
+function artUnder(layer, spec) {
+  const x = spec.x + 1, y = spec.y + spec.size / 2;
+  let best = null;
+  for (const el of layer.querySelectorAll('path:not([fill="none"])')) {
+    const r = el.getBoundingClientRect();
+    const inside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    if (inside && (!best || r.width * r.height < best.width * best.height)) best = r;
+  }
+  return best;
+}
+
+function fit(el, spec, layer) {
+  const art = spec.w ? null : artUnder(layer, spec);
+  const right = spec.w ? spec.x + spec.w : Math.min(art ? art.right - (spec.x - art.left) : Infinity, 1920 - MARGIN);
+  const width = el.getBoundingClientRect().width;
+  if (width > right - spec.x) el.style.fontSize = `${(spec.size * (right - spec.x)) / width}px`;
+}
+
+function wordRects(el) {
+  return [...el.textContent.matchAll(/\S+/g)].map(m => {
+    const range = document.createRange();
+    range.setStart(el.firstChild, m.index);
+    range.setEnd(el.firstChild, m.index + m[0].length);
+    return range.getBoundingClientRect();
+  });
+}
+
+// A flat red line across a text is a strike. Note which words it crosses before the text is fitted, then
+// stretch the line along x to span exactly those words once it is.
+function strikes(layer, texts) {
+  return [...layer.querySelectorAll(`path[stroke="${RED}"]`)].flatMap(path => {
+    const r = path.getBoundingClientRect();
+    if (r.height > 6) return [];
+    for (const el of texts) {
+      const box = el.getBoundingClientRect();
+      if (r.top < box.top || r.top > box.bottom) continue;
+      const words = wordRects(el).flatMap((w, i) => (w.right > r.left && w.left < r.right ? [i] : []));
+      if (words.length) return [{ path, el, words, r }];
+    }
+    return [];
+  });
+}
+
+function stretch({ path, el, words, r }) {
+  const rects = wordRects(el), a = rects[words[0]].left, b = rects[words.at(-1)].right;
+  const x0 = path.getBBox().x;
+  path.setAttribute('transform', `translate(${x0 + a - r.left} 0) scale(${(b - a) / r.width} 1) translate(${-x0} 0)`);
+}
+
 // Spreads n marks over [a, b], each overlapping the next a little.
 const slots = (n, [a, b]) => Array.from({ length: n }, (_, i) => {
   const w = (b - a) / n;
@@ -33,13 +86,14 @@ const slots = (n, [a, b]) => Array.from({ length: n }, (_, i) => {
 });
 
 window.ready = (async () => {
+  // Text sits in hidden layers, which never trigger a font load on their own.
+  await Promise.all([document.fonts.load('700 40px "Caveat"'), document.fonts.load('40px "Courier Prime"')]);
   const stage = document.getElementById('stage');
   let start = 0;
   for (const beat of await (await load('beats.json')).json()) {
     const layer = document.createElement('div');
     layer.className = 'beat';
     layer.innerHTML = await (await load(`sb-${beat.key}.svg`)).text();
-    layer.hidden = true;
     stage.append(layer);
 
     const paths = [...layer.querySelectorAll('path')].map(el => {
@@ -48,15 +102,20 @@ window.ready = (async () => {
       if (stroked) el.style.strokeDasharray = `${len}`;
       return { el, stroked, len, red: el.getAttribute('stroke') === RED };
     });
+    const els = new Map(beat.texts.map(s => [s, layer.appendChild(textEl(s))]));
+    const struck = strikes(layer, [...els.values()]);
+    for (const [s, el] of els) fit(el, s, layer);
+    struck.forEach(stretch);
+    layer.hidden = true;
     const ink = paths.filter(p => !p.red), marker = paths.filter(p => p.red);
     const words = beat.texts.filter(s => !s.rot && !AFTER_MARKER.has(s.t));
     const late = beat.texts.filter(s => s.rot || AFTER_MARKER.has(s.t));
     const marks = [
       ...ink.map((p, i) => ({ ...p, kind: 'path', at: slots(ink.length, INK)[i] })),
-      ...words.map((s, i) => ({ el: layer.appendChild(textEl(s)), kind: s.font === 'Caveat' ? 'letter' : 'type', text: s.t, at: slots(words.length, WORDS)[i] })),
+      ...words.map((s, i) => ({ el: els.get(s), kind: s.font === 'Caveat' ? 'letter' : 'type', text: s.t, at: slots(words.length, WORDS)[i] })),
       ...marker.map((p, i) => ({ ...p, kind: 'path', at: slots(marker.length + late.length, MARKER)[i] })),
       ...late.map((s, i) => {
-        const el = layer.appendChild(textEl(s));
+        const el = els.get(s);
         el.style.rotate = `${s.rot}deg`;
         return { el, kind: s.rot ? 'stamp' : 'fade', at: slots(marker.length + late.length, MARKER)[marker.length + i] };
       }),
@@ -65,8 +124,6 @@ window.ready = (async () => {
     start += beat.secs;
   }
   window.DURATION = start;
-  // Text sits in hidden layers, which never trigger a font load on their own.
-  await Promise.all([document.fonts.load('700 40px "Caveat"'), document.fonts.load('40px "Courier Prime"')]);
 })();
 
 function draw(mark, p) {
