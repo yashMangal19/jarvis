@@ -1,0 +1,254 @@
+/* Sketchbook shell: tokens, header, p. 1–3. Area files (hero, suit-up, try-it) load after this. */
+:root {
+  --paper: #E9E4D6;
+  --blueprint: #1F3F73;
+  --graphite: #2E2D2B;
+  --red: #C8302A;
+  --tape: #E3D3A0;
+  --chalk: #F4F1E8;
+  --hand: "Caveat", "Bradley Hand", "Segoe Print", cursive;
+  --typed: "Courier Prime", "Courier New", ui-monospace, monospace;
+  --gutter: 64px;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--paper); color: var(--graphite);
+  font: 18px/1.6 var(--typed); overflow-x: clip;
+}
+/* Grain over every page; never catches a click. */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  background: url("../assets/texture/grain.png") repeat; mix-blend-mode: multiply; opacity: .4;
+}
+img { display: block; max-width: 100%; height: auto; }
+[hidden] { display: none !important; }
+a { color: inherit; }
+h1, h2, h3, p, figure, ol { margin: 0; }
+ol { padding: 0; list-style: none; }
+.defs { position: absolute; }
+
+.hand { font-family: var(--hand); font-weight: 700; }
+.red { color: var(--red); }
+.blue { color: var(--blueprint); }
+.muted { color: #6f6b62; font-weight: 400; }
+.folio { font: 700 14px var(--typed); letter-spacing: .3em; }
+
+/* Live slots: fixed size before data arrives (CLS), a pencil blank while empty. */
+.slot { display: inline-block; min-width: 2ch; text-align: right; }
+.slot.w4 { min-width: 4ch; }
+.slot.w7 { min-width: 7ch; text-align: left; }
+.slot:empty { border-bottom: 1.5px dashed currentColor; opacity: .45; height: .9em; vertical-align: baseline; }
+
+.tape {
+  position: absolute; width: 150px; height: 34px; background: var(--tape); opacity: .85;
+  transform: rotate(var(--r, 3deg)); z-index: 2;
+}
+
+.page { position: relative; padding: 48px var(--gutter); scroll-margin-top: 16px; }
+.page:empty { padding: 0; }
+
+/* ---- header ---- */
+.top {
+  position: relative; z-index: 5; display: flex; align-items: flex-start; gap: 96px;
+  padding: 40px var(--gutter) 0;
+}
+.brand a { display: block; font: 700 15px var(--typed); letter-spacing: .35em; text-decoration: none; }
+.brand .hand { font-size: 21px; }
+.nav-desk { display: flex; gap: 0; font-size: 15px; letter-spacing: .05em; padding-top: 2px; }
+.nav-desk a { text-decoration: none; }
+.nav-desk a + a::before { content: "·"; padding: 0 1.2em; }
+.github { margin-left: auto; color: var(--red); font-size: 26px; text-decoration: none; }
+.nav-phone { display: none; }
+
+/* ---- p. 1 hero ---- */
+.hero {
+  display: grid; padding-top: 24px; column-gap: 40px;
+  grid-template-columns: 300px 260px minmax(0, 1fr);
+  grid-template-areas: "title title sheet" "lede lede sheet" "cta log sheet" "launch launch sheet";
+  grid-template-rows: auto auto auto 1fr;
+}
+.hero h1 { grid-area: title; font-size: 120px; line-height: .98; width: 6ch; }
+.hero .underline { text-decoration: underline var(--red) 5px; text-underline-offset: 18px; white-space: nowrap; }
+.lede { grid-area: lede; margin-top: 32px; font-size: 19px; }
+.cta {
+  grid-area: cta; align-self: start; justify-self: start; margin-top: 44px;
+  font-size: 26px; text-decoration: none; padding: 8px 20px; border: 2px solid var(--graphite);
+  box-shadow: 3px 3px 0 -1px var(--paper), 3px 3px 0 1px var(--graphite);
+}
+.build-log {
+  grid-area: log; justify-self: start; margin-top: 18px; width: 200px; padding: 16px 20px 20px;
+  background: #F2E7B4; transform: rotate(-5deg); box-shadow: 2px 6px 12px rgb(0 0 0 / .12);
+  font-size: 13px; line-height: 1.7;
+}
+.build-log h2 { color: var(--red); font-size: 24px; margin-bottom: 4px; }
+
+.launch { grid-area: launch; display: flex; align-items: flex-end; gap: 24px; margin-top: 40px; }
+.gauge { position: relative; width: 280px; flex: none; }
+.gauge figcaption { display: flex; justify-content: space-between; margin: -6px -40px 0; font-size: 17px; }
+.countdown { flex: 1; }
+.countdown .hand { font-size: 22px; font-weight: 400; }
+.countdown .clock { font-weight: 700; font-size: 52px; line-height: 1; }
+.countdown .sep { display: none; }
+.when { display: block; }
+.launch-extra { position: relative; height: 34px; }
+.launch-extra img { position: absolute; left: 0; top: 0; width: 34px; height: 34px; }
+
+.sheet {
+  grid-area: sheet; position: relative; align-self: start; margin-top: -40px;
+  background-color: var(--blueprint); color: var(--chalk); padding: 24px 24px 72px;
+  background-image:
+    linear-gradient(rgb(244 241 232 / .09) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(244 241 232 / .09) 1px, transparent 1px);
+  background-size: 24px 24px; transform: rotate(1.5deg);
+  box-shadow: 0 18px 30px rgb(0 0 0 / .18);
+}
+.sheet .t1 { top: -18px; left: 18%; --r: 2deg; }
+.sheet .t2 { top: -14px; right: -12px; --r: -4deg; }
+.sheet .t3 { bottom: -14px; right: 9%; --r: 1deg; }
+.title-block {
+  position: absolute; top: 24px; left: 24px; padding: 8px 12px; border: 1.5px solid rgb(244 241 232 / .7);
+  font: 700 11px/1.5 var(--typed); letter-spacing: .12em;
+}
+.plates { position: relative; width: 86%; margin: 24px auto 0; }
+.plates img { filter: url(#chalk); }
+.plates .label { position: absolute; left: var(--x); top: var(--y); font-size: 26px; line-height: 1; }
+.plates .dim { font-size: 18px; font-weight: 400; opacity: .8; }
+.callout { position: absolute; right: 48px; bottom: 56px; width: 270px; color: #F07A6E; font-size: 25px; line-height: 1.15; transform: rotate(4deg); }
+
+/* ---- p. 2 promo ---- */
+.promo { display: grid; grid-template-columns: minmax(0, 810px) minmax(0, 1fr); column-gap: 60px; padding-top: 72px; }
+.promo .folio, .promo h2, .frames { grid-column: 1 / -1; }
+.promo h2 { font-size: 64px; margin: 16px 0 28px; }
+.player { position: relative; transform: rotate(.6deg); box-shadow: 0 16px 26px rgb(0 0 0 / .2); }
+.player .t1 { top: -14px; left: 4%; --r: 3deg; }
+.player .t2 { bottom: -14px; right: -5%; --r: -3deg; }
+.player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #1E2633; }
+.player-label {
+  position: absolute; left: 24px; bottom: 56px; color: #c9c6bd; font-size: 13px; letter-spacing: .15em;
+  pointer-events: none;
+}
+.frames { font-size: 26px; margin: 36px 0 0 30px; }
+.flip { grid-row: 3; grid-column: 2; align-self: center; position: relative; }
+.flip-cue { font-size: 32px; text-align: center; }
+.flip-cue img { margin: 0 auto; }
+.arrow-r { display: none; }
+.cards { display: flex; margin-top: 8px; }
+.cards li {
+  flex: none; width: 160px; aspect-ratio: 1; margin-left: -96px; background: var(--chalk);
+  box-shadow: 0 4px 10px rgb(0 0 0 / .14); transform: rotate(calc(var(--i) * 2deg - 4deg)) translateY(calc(var(--i) * 10px));
+}
+.cards li:first-child { margin-left: 0; }
+.cards li:nth-child(1) { --i: 0; } .cards li:nth-child(2) { --i: 1; } .cards li:nth-child(3) { --i: 2; }
+.cards li:nth-child(4) { --i: 3; } .cards li:nth-child(5) { --i: 4; } .cards li:nth-child(6) { --i: 5; }
+.flip-label { margin: 56px 0 0 80px; font-size: 24px; font-weight: 400; }
+
+/* ---- p. 3 live build ---- */
+.live { padding-top: 72px; }
+.graph {
+  position: relative; display: grid; column-gap: 48px; padding: 40px 40px 72px;
+  grid-template-columns: minmax(0, 1fr) 520px;
+  grid-template-areas: "folio folio" "title commits" "waves commits" "stats commits";
+  grid-template-rows: auto auto auto 1fr;
+  background-color: #E9EBE0; transform: rotate(-.3deg); box-shadow: 0 14px 28px rgb(0 0 0 / .14);
+  background-image:
+    linear-gradient(rgb(110 150 120 / .22) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(110 150 120 / .22) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+.graph .folio { grid-area: folio; }
+.graph h2 { grid-area: title; font-size: 64px; line-height: 1.1; align-self: start; }
+.updates { position: absolute; top: 96px; left: 560px; font-size: 22px; font-weight: 400; transform: rotate(2deg); }
+.stale { position: absolute; top: 128px; left: 560px; font-size: 22px; }
+.waves { grid-area: waves; margin-top: 36px; }
+.waves h3 { font-size: 26px; }
+.wave-row { display: flex; gap: 12px; }
+.wave-row li { width: 46px; flex: none; }
+.done { margin: 18px 0 0 400px; font-size: 26px; line-height: 1.1; height: 1.1em; }
+.stats { grid-area: stats; display: flex; gap: 72px; margin-top: 36px; }
+.stat { display: flex; flex-direction: column; }
+.stat .big { font-size: 112px; line-height: 1; height: 1.05em; }
+.stat .hand:not(.big) { font-size: 26px; font-weight: 400; }
+.commits {
+  grid-area: commits; position: relative; align-self: start; margin-top: 40px;
+  background: var(--chalk); padding: 28px 28px 24px; transform: rotate(1deg); box-shadow: 0 10px 20px rgb(0 0 0 / .14);
+}
+.commits .t1 { top: -16px; left: 32%; --r: 2deg; }
+.commits h3 { font: 700 13px var(--typed); letter-spacing: .3em; text-transform: uppercase; }
+.commits li {
+  display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: center; height: 62px;
+  border-bottom: 1px solid rgb(46 45 43 / .14);
+}
+.commits li:first-child .age { color: var(--red); }
+.age { font-size: 13px; color: #6f6b62; }
+.msg { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commits a { display: inline-block; margin-top: 28px; font-size: 26px; text-decoration: none; }
+
+/* ---- phone (M1–M3) ---- */
+@media (max-width: 600px) {
+  :root { --gutter: 20px; }
+  body { font-size: 16px; }
+  .top { gap: 0; padding-top: 24px; align-items: center; }
+  .brand .hand, .nav-desk, .github { display: none; }
+  .nav-phone { display: block; margin-left: auto; position: relative; }
+  .nav-phone summary { list-style: none; cursor: pointer; color: var(--red); font-size: 28px; }
+  .nav-phone summary::-webkit-details-marker { display: none; }
+  .nav-phone nav {
+    position: absolute; right: 0; top: 100%; display: flex; flex-direction: column; gap: 6px;
+    min-width: 160px; padding: 12px 20px; background: var(--chalk); box-shadow: 0 8px 20px rgb(0 0 0 / .15);
+  }
+
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "lede" "sheet" "launch" "cta"; grid-template-rows: none;
+  }
+  .hero h1 { font-size: 96px; }
+  .hero .underline { text-underline-offset: 14px; }
+  .lede { font-size: 15px; }
+  .build-log { display: none; }
+  .sheet { margin-top: 40px; padding: 16px 12px 104px; transform: rotate(-1deg); }
+  .title-block { display: none; }
+  .plates { width: 100%; margin-top: 0; }
+  .plates .label { font-size: 17px; }
+  .plates .dim { display: none; }
+  .callout { right: 16px; bottom: 36px; width: auto; left: 16px; font-size: 20px; transform: none; }
+  .launch { flex-direction: column; align-items: stretch; margin-top: 40px; }
+  .gauge { width: 82%; margin: 0 auto; }
+  .gauge figcaption { margin: 0; }
+  .countdown p.clock { font-size: 48px; margin-top: 16px; }
+  .countdown .hand { font-size: 19px; }
+  .countdown .sep { display: inline; }
+  .when { display: inline; }
+  .cta { justify-self: stretch; text-align: center; margin-top: 16px; }
+
+  .promo { grid-template-columns: minmax(0, 1fr); padding-top: 56px; }
+  .promo h2 { font-size: 42px; }
+  .frames { display: none; }
+  .player-label { top: 12px; bottom: auto; left: auto; right: 16px; }
+  .flip { grid-row: auto; grid-column: 1; margin-top: 48px; }
+  .flip-cue { text-align: left; font-size: 28px; display: flex; align-items: center; gap: 8px; }
+  .flip-cue img { margin: 0; }
+  .arrow-d { display: none; }
+  .arrow-r { display: block; }
+  .cards li { width: 24%; margin-left: -8.8%; }
+  .flip-label { margin: 24px 0 0; }
+
+  .live { padding: 40px 12px; }
+  .graph {
+    grid-template-columns: minmax(0, 1fr); padding: 24px 20px 40px;
+    grid-template-areas: "folio" "title" "updates" "waves" "stats" "commits"; grid-template-rows: none;
+  }
+  .graph h2 { font-size: 40px; }
+  .updates { position: static; grid-area: updates; margin-top: 4px; font-size: 18px; transform: none; }
+  .stale { top: 24px; left: auto; right: 20px; font-size: 18px; }
+  .waves h3 { display: none; }
+  .wave-row { gap: 2%; }
+  .wave-row li { width: 8.2%; }
+  .done { margin: 12px 0 0; }
+  .stats { gap: 32px; }
+  .stat .big { font-size: 72px; }
+  .commits { margin-top: 48px; padding: 24px 20px; }
+  .commits li { grid-template-columns: 52px minmax(0, 1fr); height: 84px; }
+  .msg { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}

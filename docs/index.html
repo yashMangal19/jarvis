@@ -1,5 +1,163 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=guide.html">
-<title>Jarvis for Mac</title>
-<a href="guide.html">Jarvis for Mac guide</a>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis · build your own suit</title>
+<meta name="description" content="Jarvis is bare metal. Strip it, swap it, make it yours. Watch it get built, live.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Courier+Prime:wght@400;700&display=swap">
+<link rel="stylesheet" href="css/site.css">
+<link rel="stylesheet" href="css/hero.css">
+<link rel="stylesheet" href="css/suit-up.css">
+<link rel="stylesheet" href="css/try-it.css">
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<!-- Recolours the blueprint-ink plates to chalk on the blue sheet; the red marker stays red. -->
+<svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+  <filter id="chalk" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values=".588 0 1.963 0 0  -.212 0 2.153 0 0  -.226 0 2.078 0 0  0 0 0 1 0"/>
+  </filter>
+</svg>
+
+<header class="top">
+  <div class="brand">
+    <a href="#p1">JARVIS</a>
+    <span class="hand muted">workshop notes, p. 1</span>
+  </div>
+  <nav class="nav-desk" aria-label="pages">
+    <a href="#p3">build</a><a href="#p4">suit up</a><a href="#p5">try it</a><a href="#p7">hall</a><a href="#p8">fork it</a>
+  </nav>
+  <a class="github hand" href="https://github.com/yashMangal19/jarvis">github →</a>
+  <details class="nav-phone">
+    <summary class="hand">contents ↓</summary>
+    <nav aria-label="pages">
+      <a href="#p3">build</a><a href="#p4">suit up</a><a href="#p5">try it</a><a href="#p7">hall</a><a href="#p8">fork it</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+<section id="p1" class="page hero" aria-labelledby="p1-title">
+  <h1 id="p1-title" class="hand">Build <span class="underline">your own</span> suit.</h1>
+  <p class="lede">Jarvis is bare metal.<br>Strip it, swap it, make it yours.</p>
+  <a class="cta hand" href="#p3">watch it get built ↓</a>
+
+  <aside class="build-log" aria-labelledby="log-title">
+    <h2 id="log-title" class="hand">build log</h2>
+    <p>wave <span class="slot w2" data-slot="waves-done"></span> / <span class="slot w2" data-slot="waves-total"></span></p>
+    <p><span class="slot w4" data-slot="tests-green"></span> tests green</p>
+    <p>last commit <span class="slot w7" data-slot="last-commit-age"></span></p>
+  </aside>
+
+  <div class="launch">
+    <figure class="gauge" data-slot="gauge">
+      <img src="assets/art/a-gauge.svg" width="600" height="320" alt="">
+      <figcaption><span class="hand blue">empty</span><span class="hand red">online!</span></figcaption>
+    </figure>
+    <div class="countdown" data-slot="countdown">
+      <p class="clock hand"><span class="slot w2" data-slot="days"></span>d <span class="slot w2" data-slot="hours"></span>h <span class="slot w2" data-slot="minutes"></span>m</p>
+      <p class="hand"><span data-slot="launch-line">till it goes online</span> <span class="sep">·</span> <span class="when">mon 19 oct, 9 pm IST</span></p>
+      <div class="launch-extra">
+        <p class="hand" data-slot="reason-line" hidden></p>
+        <img data-slot="busy-art" src="assets/busy/busy-01.svg" width="64" height="64" alt="" loading="lazy" hidden>
+      </div>
+    </div>
+  </div>
+
+  <figure class="sheet" aria-labelledby="sheet-caption">
+    <span class="tape t1"></span><span class="tape t2"></span><span class="tape t3"></span>
+    <p class="title-block">JARVIS · SUIT ASSY<br>SHEET 1 OF 8 &nbsp; REV. b1<br>DRAWN: y.m. &nbsp; 17·10·26</p>
+    <div class="plates">
+      <img src="assets/art/a-plates.svg" width="760" height="760" alt="Jarvis drawn as five plates around a core: ears, transcriber, hands, notes and memory, with the notes plate popped out and circled in red.">
+      <span class="label hand" style="--x: 47%; --y: 2%">ears</span>
+      <span class="label hand" style="--x: 76%; --y: 30%">transcriber</span>
+      <span class="label hand" style="--x: 72%; --y: 80%">hands</span>
+      <span class="label hand" style="--x: 2%; --y: 63%">notes</span>
+      <span class="label hand" style="--x: 1%; --y: 27%">memory</span>
+      <span class="label hand dim" style="--x: 45%; --y: 50%">core</span>
+    </div>
+    <figcaption id="sheet-caption" class="callout hand">← pop this one out. swap claude for ollama, your notes stay on your mac.</figcaption>
+  </figure>
+</section>
+
+<section id="p2" class="page promo" aria-labelledby="p2-title">
+  <p class="folio">p. 2</p>
+  <h2 id="p2-title" class="hand">the 45-second version</h2>
+  <figure class="player" data-slot="player">
+    <span class="tape t1"></span><span class="tape t2"></span>
+    <video controls muted playsinline preload="none" width="1280" height="720" aria-describedby="player-label">
+      <source src="media/promo.mp4" type="video/mp4">
+    </video>
+    <figcaption id="player-label" class="player-label">no sound</figcaption>
+  </figure>
+  <p class="frames hand red">made frame by frame. no stock footage.</p>
+  <div class="flip" data-slot="flip">
+    <p class="flip-cue hand">or flip it yourself <img class="arrow-d" src="assets/art/arrow-d.svg" width="40" height="80" alt=""><img class="arrow-r" src="assets/art/arrow-r.svg" width="40" height="20" alt=""></p>
+    <ol class="cards" aria-label="flip-book, six cards">
+      <li><img src="assets/art/flip-0.svg" width="160" height="160" alt=""></li>
+      <li><img src="assets/art/flip-1.svg" width="160" height="160" alt=""></li>
+      <li><img src="assets/art/flip-2.svg" width="160" height="160" alt=""></li>
+      <li><img src="assets/art/flip-3.svg" width="160" height="160" alt=""></li>
+      <li><img src="assets/art/flip-4.svg" width="160" height="160" alt=""></li>
+      <li><img src="assets/art/flip-5.svg" width="160" height="160" alt="the finished suit: five plates around a core"></li>
+    </ol>
+    <p class="flip-label hand blue">scroll = flip</p>
+  </div>
+</section>
+
+<section id="p3" class="page live" aria-labelledby="p3-title">
+  <div class="graph">
+    <p class="folio">p. 3</p>
+    <h2 id="p3-title" class="hand">how far along it is</h2>
+    <p class="updates hand blue" data-slot="updates-line">updates itself every hour</p>
+    <p class="stale hand red" data-slot="stale-note" hidden></p>
+
+    <div class="waves">
+      <h3 class="hand">build waves</h3>
+      <ol class="wave-row" data-slot="wave-boxes" aria-label="build waves, ten in all">
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+        <li><img src="assets/art/box.svg" width="46" height="46" alt=""></li>
+      </ol>
+      <p class="done hand red"><span class="slot w2" data-slot="waves-done"></span> of 10 done.</p>
+    </div>
+
+    <div class="stats">
+      <p class="stat"><span class="big hand slot w4" data-slot="tests-green"></span><span class="hand">tests green</span></p>
+      <p class="stat"><span class="big hand"><span class="slot w2" data-slot="hand-checks-pass"></span>/<span data-slot="hand-checks-total">88</span></span><span class="hand">final hand checks</span></p>
+    </div>
+
+    <aside class="commits" aria-labelledby="commits-title">
+      <span class="tape t1"></span>
+      <h3 id="commits-title">last commits</h3>
+      <ol data-slot="commits">
+        <li><span class="age" data-slot="commit-age"></span><span class="msg" data-slot="commit-msg"></span></li>
+        <li><span class="age" data-slot="commit-age"></span><span class="msg" data-slot="commit-msg"></span></li>
+        <li><span class="age" data-slot="commit-age"></span><span class="msg" data-slot="commit-msg"></span></li>
+        <li><span class="age" data-slot="commit-age"></span><span class="msg" data-slot="commit-msg"></span></li>
+        <li><span class="age" data-slot="commit-age"></span><span class="msg" data-slot="commit-msg"></span></li>
+      </ol>
+      <a class="hand red" href="https://github.com/yashMangal19/jarvis/commits">see all on github →</a>
+    </aside>
+  </div>
+</section>
+
+<!-- p. 4–8 are filled by T-9; the anchors exist now so the nav resolves. -->
+<section id="p4" class="page"></section>
+<section id="p5" class="page"></section>
+<section id="p6" class="page"></section>
+<section id="p7" class="page"></section>
+<section id="p8" class="page"></section>
+</main>
+</body>
+</html>
