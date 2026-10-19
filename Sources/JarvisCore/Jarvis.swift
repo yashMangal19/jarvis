@@ -169,6 +169,7 @@ public final class Jarvis: ObservableObject {
     /// background, and speech starts as soon as it is there, without a relaunch (DEC-5 amended).
     public static func live() async throws -> Jarvis {
         let paths = JarvisPaths.standard
+        try paths.adoptLegacyData(from: JarvisPaths.legacyRoot)
         try paths.ensureLayout()
         let settings = SettingsStore(paths: paths)
         let locales = Locale.preferredLanguages.map(Locale.init(identifier:))
@@ -202,7 +203,7 @@ public final class Jarvis: ObservableObject {
     public var notesAvailable: Bool { engines.noteWriter != nil }
     public var openNotesURL: URL { paths.notesHourly.deletingLastPathComponent() }
 
-    /// Lays out `~/Jarvis`, runs maintenance, refreshes the index, starts listening (stopped at once in
+    /// Lays out the data home, runs maintenance, refreshes the index, starts listening (stopped at once in
     /// quiet hours or with the screen locked, DEC-25) and, once speech exists, the importers; then ticks
     /// every 30 s. A second call does nothing, and nothing after `shutdown` has begun is started.
     public func start() async {

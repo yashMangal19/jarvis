@@ -9,7 +9,7 @@ import Foundation
 ///
 /// Baseline (backlog decision A): the first time the folder is readable, every memo already there is
 /// recorded as seen without being imported, so only memos that appear afterwards are imported.
-/// Old memos can still be imported by hand through `~/Jarvis/inbox`.
+/// Old memos can still be imported by hand through the data home's `inbox` folder.
 public final class ImportLedger {
     private struct Stored: Codable {
         var baseline: Bool

@@ -32,7 +32,7 @@ One command (once the Homebrew tap is published):
 brew install yashMangal19/tap/jarvis
 ```
 
-Then run `jarvis`. The first run copies the whisper models into `~/Jarvis/models` and opens the app.
+Then run `jarvis`. The first run copies the whisper models into Jarvis's data folder and opens the app.
 Opening Jarvis from Finder or Spotlight the first time skips that copy.
 
 Or from source:
@@ -47,7 +47,7 @@ with the Jarvis icon in the menu bar. The script:
 
 1. checks for macOS 13+, Homebrew, the Command Line Tools and Swift 6.0+, and stops if Jarvis is running;
 2. installs `whisper-cpp` with Homebrew, unless it's already there;
-3. puts the wake-word model in `~/Jarvis/models`, and downloads the whisper `small` model (about
+3. puts the wake-word model in Jarvis's data folder, and downloads the whisper `small` model (about
    470 MB) on macOS 15 and earlier. On macOS 26 and later Apple's speech recognition is used, and Jarvis
    downloads a whisper model in the background only if your language needs it;
 4. looks for Claude Code. If it's missing, it offers to install Ollama (about 2 GB) for notes;
@@ -80,7 +80,7 @@ missing. For `claude`, link it into `~/.local/bin`.
    "Call audio off — Allow Screen Recording…" in case you change your mind.
 3. **Full Disk Access** (only to import iPhone Voice Memos): the menu shows "Allow Full Disk Access to
    import Voice Memos" with a button that opens System Settings › Privacy & Security › Full Disk Access.
-   Only memos recorded after that are imported. To add older ones, drop them in `~/Jarvis/inbox`.
+   Only memos recorded after that are imported. To add older ones, drop them in the `inbox` folder of Jarvis's data folder (below).
 4. **Connect Claude (optional):** install Claude Code and sign in. Add tools with `claude mcp add`.
 5. Click **Start listening**. Turn on **Demo mode** to see a note in 2 minutes.
 
@@ -94,8 +94,8 @@ right Settings page. If the switch there looks on but the menu line stays, turn 
 ### Uninstall
 
 ```sh
-install/uninstall.sh            # removes ~/Applications/Jarvis.app, keeps your notes in ~/Jarvis
-install/uninstall.sh --purge    # also deletes ~/Jarvis (asks you to type "delete" first)
+install/uninstall.sh            # removes ~/Applications/Jarvis.app, keeps your notes
+install/uninstall.sh --purge    # also deletes your notes and data (asks you to type "delete" first)
 ```
 
 `--purge` can't be undone. It only deletes after you type "delete" in Terminal. If it isn't run from a
@@ -166,10 +166,10 @@ Tell people when you're recording them. Consent and local laws apply to you.
 
 ## Your data
 
-Plain files you own, in `~/Jarvis`:
+Plain files you own, in `~/Library/Application Support/Jarvis`. **Open notes** in the menu opens the notes folder in Finder.
 
 ```
-~/Jarvis/
+~/Library/Application Support/Jarvis/
 ├── inbox/          phone recordings to import
 ├── transcripts/    deleted after 7 days
 ├── notes/          hourly/, daily/, weekly/
@@ -177,6 +177,11 @@ Plain files you own, in `~/Jarvis`:
 ├── prompts/        edit to change how your notes read
 └── models/         whisper models
 ```
+
+Builds before 0.1.0 used `~/Jarvis`. On a Mac whose disk ignores case (the default), that is the
+same folder as a `~/jarvis` clone of this repo. The first launch brings the old files across: it moves
+them, or, when `~/Jarvis` is a git repository, copies them and leaves the originals for you to delete.
+Jarvis refuses to start with its data folder inside a git repository.
 
 ## Known limits
 

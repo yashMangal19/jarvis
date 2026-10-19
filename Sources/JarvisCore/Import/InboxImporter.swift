@@ -1,6 +1,6 @@
 import Foundation
 
-/// Imports whatever lands in `~/Jarvis/inbox`: once at start for files already there, then on every change.
+/// Imports whatever lands in the data home's `inbox` folder: once at start for files already there, then on every change.
 public final class InboxImporter {
     private let folder: URL
     private let watcher: any FolderWatcher

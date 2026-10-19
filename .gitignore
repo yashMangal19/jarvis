@@ -6,3 +6,13 @@
 # Model binaries are never committed: the whisper model is ~148 MB, above GitHub's
 # 100 MB file limit. They are fetched at install time instead.
 models/*.bin
+# Jarvis's own data, written here when it still used ~/Jarvis, which on a case-insensitive disk is a
+# ~/jarvis clone (DEC-41). Never commit it: it holds room-speech transcripts.
+/transcripts/
+/notes/
+/index/
+/prompts/
+/inbox/
+/imports/
+/settings.json
+/.adopted-legacy

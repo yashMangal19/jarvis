@@ -173,7 +173,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
       <h3>Memory that stays small</h3>
       <p>Hourly notes become a daily note. Daily notes become a weekly note.</p>
       <details><summary>How it's built</summary><div>
-        <p>Plain Markdown in <code>~/Jarvis/notes/hourly</code>, <code>daily</code> and <code>weekly</code>.</p>
+        <p>Plain Markdown in <code>notes/hourly</code>, <code>daily</code> and <code>weekly</code>, under Jarvis&rsquo;s data folder. <b>Open notes</b> in the menu shows them in Finder.</p>
         <p>Raw transcripts are deleted after 7 days. Notes stay.</p>
       </div></details>
     </div>
@@ -244,9 +244,9 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
       <h3>Away from your Mac</h3>
       <p>Record on your phone. Jarvis adds the recording to your memory when the Mac wakes.</p>
       <details><summary>How it's built</summary><div>
-        <p><b>iPhone:</b> Voice Memos sync over iCloud and are imported automatically. The first time, Jarvis asks for Full Disk Access, with a button that opens the right Settings page. Only memos recorded after that are imported. To add older ones, drop them in <code>~/Jarvis/inbox</code>.</p>
+        <p><b>iPhone:</b> Voice Memos sync over iCloud and are imported automatically. The first time, Jarvis asks for Full Disk Access, with a button that opens the right Settings page. Only memos recorded after that are imported. To add older ones, drop them in Jarvis&rsquo;s <code>inbox</code> folder.</p>
         <p>A recording is removed from the inbox only after it has been transcribed. If transcription fails, it stays and is tried again.</p>
-        <p><b>Android:</b> save recordings into a synced folder that points at <code>~/Jarvis/inbox</code>.</p>
+        <p><b>Android:</b> save recordings into a synced folder that points at Jarvis&rsquo;s <code>inbox</code> folder (<code>~/Library/Application Support/Jarvis/inbox</code>).</p>
         <p>Imported recordings are labelled <b>Me</b>.</p>
         <p>If your AirPods disconnect, Jarvis pauses and marks the gap in that hour's note. Say "Jarvis, resume" to continue on the MacBook mic.</p>
       </div></details>
@@ -302,7 +302,7 @@ cd jarvis &amp;&amp; ./install.sh</code></pre>
 <section id="files">
   <span class="eyebrow">Your data</span>
   <h2>Plain files you own.</h2>
-<pre><code>~/Jarvis/
+<pre><code>~/Library/Application Support/Jarvis/
 ├── inbox/          phone recordings to import
 ├── transcripts/    deleted after 7 days
 ├── notes/

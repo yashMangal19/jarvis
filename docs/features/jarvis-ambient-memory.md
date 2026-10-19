@@ -22,7 +22,7 @@ JarvisCore folders:
 |---|---|
 | `Pipeline/` | the four protocols (`Transcriber`, `NoteWriter`, `Embedder`, `CommandRunner`), `SilenceGate`, `CapturePipeline`, `TranscriptText` |
 | `Model/` | `AudioChunk`, `AudioSource` → `SpeakerLabel` ("Me"/"Others"), `TimeSource` |
-| `Storage/` | `JarvisPaths` (`~/Jarvis`), `TranscriptStore` (JSONL per day), `Settings`/`SettingsStore` |
+| `Storage/` | `JarvisPaths` (`~/Library/Application Support/Jarvis`, DEC-41; adopts a pre-0.1 `~/Jarvis` once), `TranscriptStore` (JSONL per day), `Settings`/`SettingsStore` |
 | `Session/` | `ListeningSession` (Listening/Paused/Stopped, gaps, quiet hours, lock), `SleepGuard`, `ScreenLockObserver`, `SpeakingTracker` |
 | `Audio/` | `MicSource`, `SystemAudioSource`, `RoomMicSource`, `ChunkAssembler`, `RollingAudioBuffer`, `AudioRouteMonitor` |
 | `Notes/` | `PromptStore`, `NoteStore`, `HourlyNoteScheduler`, `RollupScheduler`, `LaunchMaintenance` |
@@ -144,7 +144,7 @@ draft, and the third correction drops the command. Claude runs are locked down (
 `--permission-mode dontAsk`, unticked MCP servers on `--disallowedTools`, and a private cwd. `SpeakingTracker` mutes
 the wake word while Jarvis speaks, for at most 2 minutes if the speech never reports that it ended.
 
-**Imports.** `InboxImporter` watches `~/Jarvis/inbox` for m4a, mp3, wav, caf, aiff, aac and mp4. `ScanScheduler`
+**Imports.** `InboxImporter` watches the data home's `inbox` for m4a, mp3, wav, caf, aiff, aac and mp4. `ScanScheduler`
 runs one scan at a time, waits until a file's size is stable for 2 s, and retries every 5 s up to 12 times.
 `ImportCoordinator.importFile` dates the recording (asset metadata, then Spotlight, then file creation date),
 decodes it to 30 s chunks labelled "Me" (DEC-18) and runs them through the same pipeline. It deletes the file only
@@ -260,7 +260,7 @@ tests.
 ## 7. Testing performed
 
 **Automated.** The tests use Swift Testing (`swift build` then `swift test` from the repo root), with fake engines,
-a fake clock and a temp `~/Jarvis` root. The last gate passed **323 tests in 40 suites**. Every wave gate ran the
+a fake clock and a temp data-home root. The last gate passed **323 tests in 40 suites**. Every wave gate ran the
 whole suite. From the wave-6 repair through wave 9, each wave close ran it twice, and it passed again at the wave-10
 close. `SwappabilityTests` drives the full loop with a fake in each of the four protocols. Real engines have smoke
 tests that are skipped when the engine is missing (SpeechAnalyzer, Foundation Models, Core AI, contextual

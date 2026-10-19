@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Removes Jarvis.app. Your notes and settings in ~/Jarvis stay unless you pass --purge.
+# Removes Jarvis.app. Your notes and settings in ~/Library/Application Support/Jarvis stay unless you pass --purge.
 # Run with --help for the options.
 set -euo pipefail
 
 prefix="$HOME/Applications"
-jarvis_home="$HOME/Jarvis"   # JarvisPaths.standard
+jarvis_home="$HOME/Library/Application Support/Jarvis"   # JarvisPaths.standard
 purge=0 yes=0 dry_run=0
 
 usage() {
@@ -12,7 +12,8 @@ usage() {
 Usage:
   install/uninstall.sh                  remove ~/Applications/Jarvis.app
   install/uninstall.sh --prefix <dir>   remove <dir>/Jarvis.app
-  install/uninstall.sh --purge          also delete ~/Jarvis (notes, transcripts, index, models, settings);
+  install/uninstall.sh --purge          also delete ~/Library/Application Support/Jarvis (notes, transcripts,
+                                        index, models, settings);
                                         asks you to type "delete" first
   install/uninstall.sh --purge --yes    the same without asking; required when not run from a terminal
   install/uninstall.sh --dry-run        print every action, change nothing
@@ -44,7 +45,7 @@ if pgrep -x JarvisApp >/dev/null; then
   die "Jarvis is running. Quit it from its menu (Quit), then run this again."
 fi
 
-# Confirmed before anything is removed, so a refusal leaves everything as it was. Deleting ~/Jarvis
+# Confirmed before anything is removed, so a refusal leaves everything as it was. Deleting the data home
 # can't be undone: without a terminal to type "delete" in, only an explicit --yes allows it (DEC-36).
 purge_now=0
 if [ "$purge" = 1 ] && [ -d "$jarvis_home" ]; then

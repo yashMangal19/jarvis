@@ -1,6 +1,6 @@
 import Foundation
 
-/// Imports Voice Memos as they sync to the Mac: each new memo is copied into `~/Jarvis/imports`,
+/// Imports Voice Memos as they sync to the Mac: each new memo is copied into the data home's `imports` folder,
 /// the copy is transcribed and deleted, and the memo is recorded in the ledger so it is imported once.
 /// Originals are only ever listed and read by the copy; never opened for writing, moved or deleted.
 ///

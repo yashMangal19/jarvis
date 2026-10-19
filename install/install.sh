@@ -6,7 +6,7 @@ set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 prefix="$HOME/Applications"
-jarvis_home="$HOME/Jarvis"                                              # JarvisPaths.standard
+jarvis_home="$HOME/Library/Application Support/Jarvis"                   # JarvisPaths.standard
 model_url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"  # WhisperModelDownloader.baseURL
 model=small
 with_whisper=0 with_ollama=0 bundle_only=0 dry_run=0

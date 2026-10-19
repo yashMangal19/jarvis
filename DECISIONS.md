@@ -183,6 +183,27 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   only while Jarvis is listening or paused, never when Stopped, in quiet hours or with the screen locked. The side effects are listed in the README.
 - **Checked against:** DEC-14, DEC-22 (⌥Space hold is unaffected).
 
+## Storage
+
+### DEC-41 · The data home is `~/Library/Application Support/Jarvis`, not `~/Jarvis` (2026-10-19)
+- **Why:** on a case-insensitive disk (the macOS default) `~/Jarvis` is the same folder as a `~/jarvis` clone.
+  QA found room-speech transcripts, `settings.json`, `index/` and `prompts/` in the repo's working tree
+  (J-005, QA-85). Nothing was committed. `~/Documents/Jarvis` was rejected: with iCloud "Desktop & Documents"
+  on, transcripts would leave the Mac (DEC-32).
+- **Decided by:** human (J-005, option A).
+- **What:** the first launch brings the old `~/Jarvis` files across once. They are moved, but copied when
+  `~/Jarvis` is a git repository, and the originals are left for the user to delete. An item the new home
+  already has, such as a model the installer put there, is never replaced. Jarvis refuses to start when its
+  data home is inside a git repository. The check stops below the home folder, so a dotfiles `~/.git`
+  does not count. `.gitignore` also lists Jarvis's folders, as a second guard. **Open notes** in the menu
+  replaces "look in your home folder". Supersedes the spec's `~/Jarvis/` storage line.
+- **Affects:** `Storage/JarvisPaths.swift` (`standard`, `legacyRoot`, `adoptLegacyData(from:)`, the
+  `ensureLayout` guard), `Jarvis.live()`, `install/install.sh`, `install/uninstall.sh`, README, guide,
+  the Homebrew `jarvis` launcher (DEC-40), and `.gitignore`.
+- **Checked against:** DEC-19 and DEC-40 (paths updated, decisions unchanged); DEC-32 (strengthened: the
+  folder is not iCloud-synced); DEC-36 (`--purge` now deletes the new folder, with the same confirmation).
+  The legacy `~/Jarvis` is never deleted.
+
 ## Imports
 
 ### DEC-18 · Imported recordings are labelled "Me" (blueprint D-7)
@@ -191,7 +212,7 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 ### DEC-19 · Voice Memos backlog: only new memos are imported (option A)
 - **Decided by:** human (decision:memo-backlog)
 - **What:** on first access, the memos already there become the baseline and are skipped. If `Recordings/`
-  is missing, the baseline is empty. To bring in old memos, drop them in `~/Jarvis/inbox`.
+  is missing, the baseline is empty. To bring in old memos, drop them in the data home's `inbox` (DEC-41).
 - **Affects:** `Import/VoiceMemosImporter.swift` (`start()` is async throws).
 
 ### DEC-23 · An imported recording is deleted only after a successful transcription
@@ -233,7 +254,7 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 
 ### DEC-40 · Homebrew installs copy the models on the first `jarvis` run
 - **Decided by:** review (T-29), forced by Homebrew 7 (no `post_install`, and its sandbox can't write to your home folder)
-- **What:** the `jarvis` command copies any missing model into `~/Jarvis/models` (never over an existing file),
+- **What:** the `jarvis` command copies any missing model into the data home's `models` (DEC-41; never over an existing file),
   then opens the app. The caveats say to open it with `jarvis` the first time.
 
 ### DEC-36 · `uninstall.sh --purge` never deletes without a typed confirmation

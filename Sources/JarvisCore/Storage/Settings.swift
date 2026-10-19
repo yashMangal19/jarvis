@@ -6,7 +6,7 @@ public enum ToolIDs {
     public static let fileEdits = ["Edit", "Write", "MultiEdit", "NotebookEdit"]
 }
 
-/// What the user chose in Settings, stored as `~/Jarvis/settings.json`.
+/// What the user chose in Settings, stored as `settings.json` in the data home (`JarvisPaths`).
 public struct Settings: Codable, Equatable {
     /// The Claude Code tools the user ticked. Empty by default: shell and file edits stay off.
     public var allowedTools: [String]

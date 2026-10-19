@@ -62,8 +62,8 @@ struct CoreAIEmbedderTests {
         #expect(total == 64)
     }
 
-    /// Runs only on a Mac where the real model has been installed in ~/Jarvis/models.
-    @Test(.enabled(if: installedModel, "needs ~/Jarvis/models/jarvis-embedding.aimodel"))
+    /// Runs only on a Mac where the real model has been installed in the data home's models folder.
+    @Test(.enabled(if: installedModel, "needs models/jarvis-embedding.aimodel in the data home"))
     func installedModelLoadsEmbedsAtFixedDimensionAndCanBeDisabled() async throws {
         guard #available(macOS 27, *) else { return }
         let models = JarvisPaths.standard.models

@@ -2,7 +2,7 @@
 import CoreAI
 import Foundation
 
-/// Core AI (macOS 27) embeddings from a user-supplied model file in `~/Jarvis/models`.
+/// Core AI (macOS 27) embeddings from a user-supplied model file in the data home's `models` folder.
 ///
 /// Core AI is a generic tensor runtime with no text or tokenizer API, so Jarvis expects a
 /// byte-level encoder: function `main`, input `input_ids` (int32, `[1, n]`, the text's UTF-8
