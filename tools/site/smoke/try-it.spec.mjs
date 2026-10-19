@@ -3,11 +3,33 @@ import { readFileSync } from "node:fs";
 
 const T0 = Date.parse("2026-10-19T10:00:00Z");
 
+const fixture = (name) => readFileSync(new URL(`../test/fixtures/status/${name}.json`, import.meta.url), "utf8");
+const serve = (page, name) => page.route("https://raw.githubusercontent.com/**", (route) =>
+  route.fulfill({ status: 200, body: fixture(name), headers: { "access-control-allow-origin": "*" } }));
+// The stamp's tilt in degrees, read from its computed transform.
+const tilt = (locator) => locator.evaluate((el) => {
+  const m = new DOMMatrix(getComputedStyle(el).transform);
+  return Math.round(Math.atan2(m.b, m.a) * 180 / Math.PI);
+});
+
+// try-it.css loads after hero.css, so its stamp rules must stay on p. 5.
+test("p. 1's ONLINE stamp keeps hero.css's double border and -4deg tilt", async ({ page }) => {
+  const late = Date.parse("2026-10-20T01:30:00+05:30");
+  await serve(page, "shipped-early");
+  await page.clock.install({ time: late - 1000 });
+  await page.clock.pauseAt(late);
+  await page.goto("/");
+  const stamp = page.locator("#p1 [data-slot=stamp]");
+  await expect(stamp).toBeVisible();
+  await expect(stamp).toHaveCSS("border-top-style", "double");
+  expect(await tilt(stamp)).toBe(-4);
+  await expect(stamp).toHaveCSS("animation-name", "none");
+});
+
+test.describe("p. 5 demo", () => {
 // The page fetches status.json from GitHub; serve the fresh fixture so this smoke never hits the network.
 test.beforeEach(async ({ page }) => {
-  const body = readFileSync(new URL("../test/fixtures/status/fresh.json", import.meta.url), "utf8");
-  await page.route("https://raw.githubusercontent.com/**", (route) =>
-    route.fulfill({ status: 200, body, headers: { "access-control-allow-origin": "*" } }));
+  await serve(page, "fresh");
   // Paused after load, so only runFor moves time and each step lands on its exact millisecond.
   await page.clock.install({ time: T0 });
   await page.goto("/");
@@ -25,6 +47,13 @@ test("priya, then yes, stamps SENT ✓", async ({ page }) => {
   await say(page, "priya");
   await p5(page).getByRole("button", { name: "yes" }).click();
   await expect(p5(page).locator("[data-slot=stamp]")).toHaveText("SENT ✓");
+});
+
+test("the p. 5 stamp shows, tilted 6deg", async ({ page }) => {
+  await say(page, "priya");
+  await p5(page).getByRole("button", { name: "yes" }).click();
+  await expect(p5(page).locator("[data-slot=stamp]")).toBeVisible();
+  expect(await tilt(p5(page).locator("[data-slot=stamp]"))).toBe(6);
 });
 
 test("reminder, then yes, says DONE ✓ and reminder set for 7 pm", async ({ page }) => {
@@ -94,4 +123,5 @@ test("shown yes/no have names, and the result lives in a polite region", async (
     await expect(p5(page).locator(`[data-slot=${name}]`)).toHaveAccessibleName(name);
   }
   await expect(p5(page).locator("[aria-live=polite] [data-slot=stamp]")).toHaveCount(1);
+});
 });

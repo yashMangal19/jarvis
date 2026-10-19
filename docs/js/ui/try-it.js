@@ -12,7 +12,8 @@ const page = document.querySelector("#p5");
 const slot = (name) => page.querySelector(`[data-slot="${name}"]`);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
-// The result (stamp + line) sits in one polite live region; T-9 left none on p. 5 and index.html is not ours.
+// The result (stamp + line) goes in an aria-live="polite" region whose content each answer replaces.
+// T-9 left no live region on p. 5, and index.html is not this ticket's file, so it is built here.
 const result = document.createElement("div");
 result.className = "result";
 result.dataset.slot = "result";
@@ -23,7 +24,7 @@ line.dataset.slot = "result-line";
 const stamp = slot("stamp");
 stamp.replaceWith(result);
 result.append(stamp, line);
-// The cards are what the demo says back, so they are announced as they appear.
+// The card slot is a polite live region too: its read-back or answer content is replaced on each run.
 page.querySelector(".card-slot").setAttribute("aria-live", "polite");
 
 let token = 0;
