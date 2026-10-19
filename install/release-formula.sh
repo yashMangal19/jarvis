@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Fills in the Homebrew formula's checksums for a release tag (J-024). Dry run by default: prints what would
-# change and changes nothing. With --apply it edits Formula/jarvis.rb in the tap and makes a LOCAL commit there;
+# Fills in the Homebrew formula for a release tag (J-024): the source tarball's checksum, and both whisper models
+# at their pinned revision with their pinned checksums from install/whisper-models.txt (J-026, DEC-53). Dry run
+# by default: prints what would change and changes nothing. With --apply it edits Formula/jarvis.rb in the tap and makes a LOCAL commit there;
 # pushing the tap stays a human step. Run with --help for the options.
 set -euo pipefail
 
 repo_url="https://github.com/yashMangal19/jarvis"
-small_url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
-tag="" tap="$HOME/homebrew-tap" apply=0 tarball_sha="" small_sha=""
+manifest="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/whisper-models.txt"
+tag="" tap="$HOME/homebrew-tap" apply=0 tarball_sha=""
 
 usage() {
   cat <<'HELP'
@@ -16,7 +17,7 @@ Usage:
 Options:
   --tap <dir>            the tap checkout (default ~/homebrew-tap)
   --tarball-sha <sha>    use this instead of downloading the tag's source tarball
-  --small-sha <sha>      use this instead of downloading ggml-small.bin (about 470 MB, streamed, not saved)
+The whisper models' URLs and checksums come from install/whisper-models.txt; nothing large is downloaded.
 HELP
 }
 
@@ -30,7 +31,6 @@ while [ $# -gt 0 ]; do
     --tap)          [ $# -ge 2 ] || die "--tap needs a folder"; tap="$2"; shift ;;
     --apply)        apply=1 ;;
     --tarball-sha)  [ $# -ge 2 ] || die "--tarball-sha needs a value"; tarball_sha="$2"; shift ;;
-    --small-sha)    [ $# -ge 2 ] || die "--small-sha needs a value"; small_sha="$2"; shift ;;
     -h|--help)      usage; exit 0 ;;
     *)              usage >&2; die "unknown option: $1" ;;
   esac
@@ -48,20 +48,26 @@ if [ -z "$tarball_sha" ]; then
   printf 'Downloading %s to checksum it…\n' "$tarball_url"
   tarball_sha="$(sha_of_url "$tarball_url")"
 fi
-if [ -z "$small_sha" ]; then
-  printf 'Streaming ggml-small.bin to checksum it (about 470 MB, not saved)…\n'
-  small_sha="$(sha_of_url "$small_url")"
-fi
+[ -f "$manifest" ] || die "no model manifest at $manifest"
+revision="$(awk '$1 == "revision" { print $2 }' "$manifest")"
+small_sha="$(awk '$1 == "ggml-small.bin" { print $2 }' "$manifest")"
+base_sha="$(awk '$1 == "ggml-base.en.bin" { print $2 }' "$manifest")"
+[[ "$revision" =~ ^[0-9a-f]{40}$ ]] || die "no pinned revision in $manifest"
 is_sha "$tarball_sha" || die "not a sha256: $tarball_sha"
-is_sha "$small_sha" || die "not a sha256: $small_sha"
+is_sha "$small_sha" || die "ggml-small.bin isn't pinned in $manifest"
+is_sha "$base_sha" || die "ggml-base.en.bin isn't pinned in $manifest"
 
 # The formula's first url/sha256 pair is the source tarball; the sha256 after ggml-small.bin is the small model's.
-updated="$(TAG="$tag" URL="$tarball_url" TSHA="$tarball_sha" SSHA="$small_sha" perl -0pe '
+# Each model resource: its url moves to the pinned revision and the sha256 that follows it to the pinned value.
+updated="$(URL="$tarball_url" TSHA="$tarball_sha" REV="$revision" SSHA="$small_sha" BSHA="$base_sha" perl -0pe '
   s{^(  url ")[^"]+(")}{$1$ENV{URL}$2}m;
   s{^  # PLACEHOLDER: no v\d+\.\d+\.\d+ tag exists yet\..*\n}{}m;
   s{^(  sha256 ")[0-9a-f]{64}(")}{$1$ENV{TSHA}$2}m;
-  s{(ggml-small\.bin"\n(?:\s*#[^\n]*\n)*\s*sha256 ")[0-9a-f]{64}(")}{$1$ENV{SSHA}$2}s;
   s{\n\s*# PLACEHOLDER: replace with the file.s sha256\.}{}s;
+  for my $m (["ggml-small.bin", $ENV{SSHA}], ["ggml-base.en.bin", $ENV{BSHA}]) {
+    my ($file, $sha) = @$m;
+    s{(url "https://huggingface\.co/ggerganov/whisper\.cpp/resolve/)[^/"]+(/\Q$file\E"\n(?:\s*#[^\n]*\n)*\s*sha256 ")[0-9a-f]{64}(")}{$1$ENV{REV}$2$sha$3}s;
+  }
 ' "$formula")"
 
 if diff -q "$formula" <(printf '%s\n' "$updated") >/dev/null; then

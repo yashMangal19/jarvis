@@ -49,7 +49,8 @@ with the Jarvis icon in the menu bar. The script:
 2. installs `whisper-cpp` with Homebrew, unless it's already there;
 3. puts the wake-word model in Jarvis's data folder, and downloads the whisper `small` model (about
    470 MB) on macOS 15 and earlier. On macOS 26 and later Apple's speech recognition is used, and Jarvis
-   downloads a whisper model in the background only if your language needs it;
+   downloads a whisper model in the background only if your language needs it. Every model comes from one
+   pinned version and is checked against its checksum; a file that doesn't match is removed and not used;
 4. looks for Claude Code. If it's missing, it offers to install Ollama (about 2 GB) for notes;
 5. builds Jarvis (`swift build -c release`) and prints how long it took;
 6. puts the app at `~/Applications/Jarvis.app`, signed locally (ad hoc, not for distribution), and opens it.

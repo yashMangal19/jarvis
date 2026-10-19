@@ -303,7 +303,7 @@ The 88 spec cases were written at the spec gate.
 | Stale catch-branch comment in `VoiceMemosImporter` after DEC-23. That path is effectively unreachable | RESUME, T-24 fix N |
 | DEC-23 relaunch duplicates: **done** (J-023, DEC-52). Import progress is kept on disk per file version | DEC-23 |
 | DEC-35: ad-hoc signing resets permissions after a reinstall. A stable signing identity is deferred | DEC-35, T-28 N |
-| Pin the Hugging Face model URLs to a commit (`resolve/<sha>/…`). `resolve/main` can change and break the sha256 check | T-29 N |
+| Pin the Hugging Face model URLs: **done** (J-026, DEC-53). One manifest, `install/whisper-models.txt`; every download is checked against its sha256 and refused on a mismatch | T-29 N |
 | Turn on GitHub Pages (default branch, `/docs`) so `guide.html#install` resolves | DEC-29 |
 | `prompts/answer.md` default should tell the model to name the note ids it used | T-8 N |
 | `ListeningSession.gapMarkers` is unused since the T-6 fix. Delete it or give it a zone | T-6 fix N |
@@ -323,8 +323,9 @@ The 88 spec cases were written at the spec gate.
    must be 10 full runs green in a row (J-010).
 3. **Merge:** a PR from `feature/jarvis-ambient-memory` into `main`, reviewed and merged.
 4. **Tag:** `git tag -a v0.1.0 -m "Jarvis 0.1.0"` on the merged `main`, then push the tag.
-5. **Formula:** `install/release-formula.sh --tag v0.1.0` (dry run: it shows the checksum changes), then the same
-   with `--apply`. That checksums the tag's source tarball and `ggml-small.bin`, and commits in `~/homebrew-tap`.
+5. **Formula:** `install/release-formula.sh --tag v0.1.0` (dry run: it shows the changes), then the same with
+   `--apply`. That checksums the tag's source tarball, pins both whisper models to the revision and sha256 in
+   `install/whisper-models.txt`, and commits in `~/homebrew-tap`.
 6. **Push the tap:** `git -C ~/homebrew-tap push` (the repo is public since D14).
 7. **Smoke test, by the user:** `brew tap yashMangal19/tap`, `brew install yashMangal19/tap/jarvis`, `jarvis`,
    then `brew test jarvis` and `brew audit --strict --new yashMangal19/tap/jarvis`.

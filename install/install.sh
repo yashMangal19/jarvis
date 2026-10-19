@@ -7,7 +7,9 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 prefix="$HOME/Applications"
 jarvis_home="$HOME/Library/Application Support/Jarvis"                   # JarvisPaths.standard
-model_url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"  # WhisperModelDownloader.baseURL
+# Every model is fetched from one pinned revision and checked against its sha256 (DEC-53); the app's
+# WhisperModels.swift holds the same values.
+manifest="$repo/install/whisper-models.txt"
 model=small
 with_whisper=0 with_ollama=0 bundle_only=0 dry_run=0
 
@@ -90,14 +92,32 @@ find_tool() {
   return 1
 }
 
-# Downloads ggml-<name>.bin into the models folder unless it is there. Like the app's downloader, it
-# writes <file>.part and renames on completion, so a half download never looks like a model; a re-run
-# resumes the .part.
+pinned_sha() { awk -v f="$1" '$1 == f { print $2 }' "$manifest"; }
+pinned_url() {
+  printf 'https://huggingface.co/ggerganov/whisper.cpp/resolve/%s/%s' \
+    "$(awk '$1 == "revision" { print $2 }' "$manifest")" "$1"
+}
+sha_matches() { [ "$(shasum -a 256 "$1" | cut -d' ' -f1)" = "$2" ]; }
+
+# Downloads ggml-<name>.bin into the models folder unless a copy that matches its pinned sha256 is there.
+# Like the app's downloader it writes <file>.part and renames only once the checksum matches, so a half or
+# wrong download never looks like a model; a re-run resumes the .part. Fails closed: a mismatch is removed
+# and the install stops.
 download_model() {
-  local name="$1" file="$models/ggml-$1.bin"
-  if [ -f "$file" ]; then note "ggml-$name.bin already downloaded."; return; fi
+  local name="$1" file="$models/ggml-$1.bin" sha
+  sha="$(pinned_sha "ggml-$name.bin")"
+  [ -n "$sha" ] || die "ggml-$name.bin isn't pinned in install/whisper-models.txt, so it won't be downloaded."
+  if [ -f "$file" ]; then
+    if [ "$dry_run" = 1 ] || sha_matches "$file" "$sha"; then note "ggml-$name.bin already downloaded."; return; fi
+    say "ggml-$name.bin doesn't match its pinned checksum; downloading it again"
+    run rm -f "$file"
+  fi
   say "Downloading whisper model ggml-$name.bin (resumes if interrupted)"
-  run curl -fL --retry 3 -C - -o "$file.part" "$model_url/ggml-$name.bin"
+  run curl -fL --retry 3 -C - -o "$file.part" "$(pinned_url "ggml-$name.bin")"
+  if [ "$dry_run" = 0 ] && ! sha_matches "$file.part" "$sha"; then
+    rm -f "$file.part"
+    die "ggml-$name.bin doesn't match its pinned checksum, so it was removed and not installed. Run the installer again to download it afresh."
+  fi
   run mv "$file.part" "$file"
 }
 
@@ -169,14 +189,12 @@ install_whisper() {
 install_models() {
   run mkdir -p "$models"
   # The wake-word model. Model files are not committed (.gitignore), so a fresh clone downloads it.
-  if [ -f "$models/ggml-base.en.bin" ]; then
-    note "Wake-word model already in place."
-  elif [ -f "$repo/models/ggml-base.en.bin" ]; then
+  if [ ! -f "$models/ggml-base.en.bin" ] && [ -f "$repo/models/ggml-base.en.bin" ] \
+     && sha_matches "$repo/models/ggml-base.en.bin" "$(pinned_sha ggml-base.en.bin)"; then
     say "Copying the wake-word model"
     run cp "$repo/models/ggml-base.en.bin" "$models/"
-  else
-    download_model base.en
   fi
+  download_model base.en   # checks a copy already in place, downloads one otherwise
   if [ "$with_whisper" = 1 ] || [ "$macos_major" -lt 26 ]; then
     download_model "$model"
   else

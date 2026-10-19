@@ -7,6 +7,10 @@ public enum WhisperError: Error, Equatable {
     case serverNotReady
     case serverKeepsExiting
     case downloadFailed(status: Int)
+    /// A downloaded model did not match its pinned sha256; it was removed (J-026).
+    case checksumMismatch(file: String)
+    /// No pinned sha256 for this model, so it is never downloaded (J-026).
+    case notPinned(file: String)
 }
 
 /// The baseline on-device `Transcriber`: whisper.cpp, fed a 16 kHz WAV.

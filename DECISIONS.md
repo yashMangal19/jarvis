@@ -363,6 +363,23 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Checked against:** DEC-23 (audio still deleted only after a full transcription), DEC-48 (the ledger stays the
   Voice Memos verdict; progress is per file, for both importers), DEC-41 (in the data home, removed by `--purge`).
 
+### DEC-53 · Every model download is pinned to one revision and checked against its sha256, failing closed (2026-10-19)
+- **Why:** release blocker (J-026). Models came from `resolve/main`, which can change under the same name, and the
+  app's downloader and the installer checked nothing, so a changed or corrupted file would have been used.
+- **Decided by:** Jarvis-Orc (J-026).
+- **What:** `install/whisper-models.txt` is the one list: a pinned revision of `ggerganov/whisper.cpp` and each
+  model's sha256. Every path that fetches a model uses it:
+  - the installer: pinned URL; it also checks a model copied from the repo or already in place;
+  - the app's `WhisperModelDownloader`: only pinned models, verified before the `.part` becomes the model;
+  - `release-formula.sh`: writes both formula resources' URLs and checksums, so Homebrew verifies them, and the
+    `jarvis` launcher copies files Homebrew has already verified.
+
+  A mismatch is removed and never used: the installer stops, and the app reports `checksumMismatch` and stays
+  without that model. `WhisperModels.swift` holds the same values, and a test fails if the two drift. A model
+  already in the app's models folder is trusted, because every path that puts one there has verified it.
+- **Checked against:** DEC-5 (live transcriber swap unchanged), DEC-40 (launcher copy unchanged), DEC-45 (the
+  mismatch is logged by kind).
+
 ### DEC-44 · Real-device and on-device-model tests are opt-in; run once by hand before a tag (2026-10-19)
 - **Decided by:** Jarvis-Orc (J-011, from J-010).
 - **What:** `FoundationModelsNoteWriterTests` joins the mic, room-mic and call-audio smoke tests behind

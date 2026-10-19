@@ -1,0 +1,9 @@
+# The whisper models Jarvis downloads, pinned to one revision of huggingface.co/ggerganov/whisper.cpp (J-026,
+# DEC-53). Every download is checked against these sha256s and refused on a mismatch. install.sh and
+# release-formula.sh read this file; the app's WhisperModels.swift holds the same values, and a test checks
+# that the two agree. To move to a newer revision, change both and run the tests.
+revision 5359861c739e955e79d9a303bcbc70fb988958b1
+ggml-base.en.bin a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002 147964211
+ggml-small.bin 1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b 487601967
+ggml-medium.bin 6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208 1533763059
+ggml-large-v3-turbo.bin 1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69 1624555275

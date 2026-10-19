@@ -199,6 +199,12 @@ import Testing
 
     // MARK: WhisperModelDownloader
 
+    /// Test pins: the stub's payload, under the names the downloader is asked for.
+    var stubPins: WhisperModels.Pins {
+        WhisperModels.Pins(revision: "0123456789abcdef0123456789abcdef01234567",
+                           files: ["ggml-small.bin": WhisperModels.sha256Hex(of: StubModel.payload)])
+    }
+
     @Test func downloadWritesThePartFileThenRenamesAndReportsProgress() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubModel.self]
@@ -206,15 +212,55 @@ import Testing
         let models = try folder(with: [])
         let progress = ProgressLog()
 
-        let file = try await WhisperModelDownloader(configuration: config)
+        let file = try await WhisperModelDownloader(configuration: config, pins: stubPins)
             .download("small", into: models, progress: { progress.values.append($0) })
 
         #expect(file.path == models.appending(path: "ggml-small.bin").path)
         #expect(try Data(contentsOf: file) == StubModel.payload)
         #expect(try FileManager.default.contentsOfDirectory(atPath: models.path) == ["ggml-small.bin"])
+        // J-026: from the pinned revision, never a moving branch.
         #expect(StubModel.requested.map(\.absoluteString)
-                == ["https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"])
+                == ["https://huggingface.co/ggerganov/whisper.cpp/resolve/0123456789abcdef0123456789abcdef01234567/ggml-small.bin"])
         #expect(progress.values.last == 1.0)
+    }
+
+    /// J-026: a download that doesn't match its pinned sha256 never becomes a model, and leaves nothing behind.
+    @Test func aDownloadWhoseChecksumDiffersIsRefusedAndRemoved() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubModel.self]
+        let models = try folder(with: [])
+        let wrong = WhisperModels.Pins(revision: stubPins.revision,
+                                       files: ["ggml-small.bin": String(repeating: "0", count: 64)])
+
+        await #expect(throws: WhisperError.checksumMismatch(file: "ggml-small.bin")) {
+            try await WhisperModelDownloader(configuration: config, pins: wrong).download("small", into: models)
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: models.path).isEmpty)
+    }
+
+    @Test func aModelThatIsNotPinnedIsNeverDownloaded() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubModel.self]
+        StubModel.requested = []
+        let models = try folder(with: [])
+
+        await #expect(throws: WhisperError.notPinned(file: "ggml-tiny.bin")) {
+            try await WhisperModelDownloader(configuration: config, pins: stubPins).download("tiny", into: models)
+        }
+        #expect(StubModel.requested.isEmpty)
+    }
+
+    /// The app's pins and the installer's manifest are one list: a change to one without the other fails here.
+    @Test func theAppsPinsMatchTheInstallersManifest() throws {
+        let manifest = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../install/whisper-models.txt")
+        let lines = try String(contentsOf: manifest, encoding: .utf8).split(separator: "\n")
+            .filter { !$0.hasPrefix("#") && !$0.isEmpty }.map { $0.split(separator: " ").map(String.init) }
+        let revision = try #require(lines.first { $0.first == "revision" })[1]
+        let files = Dictionary(uniqueKeysWithValues: lines.filter { $0.first != "revision" }.map { ($0[0], $0[1]) })
+
+        #expect(WhisperModels.pinned.revision == revision)
+        #expect(WhisperModels.pinned.files == files)
+        #expect(Set(files.keys).isSuperset(of: ["ggml-small.bin", "ggml-medium.bin", "ggml-large-v3-turbo.bin"]))
     }
 
     @Test func ensureSmallKeepsAPresentModelWithoutTouchingTheNetwork() async throws {
@@ -223,7 +269,7 @@ import Testing
         StubModel.requested = []
         let models = try folder(with: ["ggml-small.bin"])
 
-        let file = try await WhisperModelDownloader(configuration: config).ensureSmall(in: models)
+        let file = try await WhisperModelDownloader(configuration: config, pins: stubPins).ensureSmall(in: models)
 
         #expect(file.lastPathComponent == "ggml-small.bin")
         #expect(StubModel.requested.isEmpty)
