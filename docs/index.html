@@ -54,15 +54,16 @@
 
   <div class="launch">
     <figure class="gauge" data-slot="gauge">
-      <img src="assets/art/a-gauge.svg" width="600" height="320" alt="">
+      <div class="dial"><img src="assets/art/a-gauge-dial.svg" width="600" height="320" alt=""><span class="needle"></span></div>
       <figcaption><span class="hand blue">empty</span><span class="hand red">online!</span></figcaption>
     </figure>
     <div class="countdown" data-slot="countdown">
       <p class="clock hand"><span class="slot w2" data-slot="days"></span>d <span class="slot w2" data-slot="hours"></span>h <span class="slot w2" data-slot="minutes"></span>m</p>
-      <p class="hand"><span data-slot="launch-line">till it goes online</span> <span class="sep">·</span> <span class="when">mon 19 oct, 9 pm IST</span></p>
-      <div class="launch-extra">
+      <p class="line hand"><span data-slot="launch-line">till it goes online</span> <span class="sep">·</span> <span class="when">mon 19 oct, 9 pm IST</span></p>
+      <div class="launch-extra" aria-live="polite">
+        <p class="stamp" data-slot="stamp">ONLINE <span class="hand" data-slot="stamp-suffix"></span></p>
         <p class="hand" data-slot="reason-line" hidden></p>
-        <img data-slot="busy-art" src="assets/busy/busy-01.svg" width="64" height="64" alt="" loading="lazy" hidden>
+        <span class="busy-art" data-slot="busy-art" hidden></span>
       </div>
     </div>
   </div>
