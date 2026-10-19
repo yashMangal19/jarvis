@@ -81,10 +81,10 @@ test("every 5 minutes it refetches; a failed later tick keeps the last good numb
   await open(page);
   await expect(slot(page, "tests-green")).toHaveText("198");
 
-  await page.clock.runFor(5 * 60e3);
+  await page.clock.fastForward(5 * 60e3); // jump to the tick: runFor would step every animation-frame timer on the page
   await expect(slot(page, "tests-green")).toHaveText("287");
 
-  await page.clock.runFor(5 * 60e3);
+  await page.clock.fastForward(5 * 60e3);
   await expect.poll(() => hits.n).toBe(3);
   await expect(slot(page, "tests-green")).toHaveText("287");
   await expect(slot(page, "updates-line")).toHaveText("updates itself every hour");
@@ -98,10 +98,10 @@ test("a fetch that never answers times out to status offline, and the next tick 
   });
   await open(page);
   await expect.poll(() => hits.n).toBe(1);
-  await page.clock.runFor(20e3);
+  await page.clock.fastForward(20e3);
   await expect(slot(page, "updates-line")).toHaveText("status offline");
 
-  await page.clock.runFor(5 * 60e3 - 20e3 + 1e3); // just past the 5-minute tick, short of its own timeout
+  await page.clock.fastForward(5 * 60e3 - 20e3 + 1e3); // just past the 5-minute tick, short of its own timeout
   await expect.poll(() => hits.n).toBe(2);
   await expect(slot(page, "tests-green")).toHaveText("198");
 });
