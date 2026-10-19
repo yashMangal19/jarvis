@@ -18,7 +18,7 @@ test("p. 4–8 and the footer show their fixed copy", async ({ page }) => {
     "brew install yashMangal19/tap/jarvis",
     "git clone github.com/yashMangal19/jarvis",
     "not affiliated with marvel or disney.",
-    "mark 1 · @you?",
+    "@you?",
   ]) {
     await expect(page.getByText(text, { exact: false }).first()).toBeVisible();
   }

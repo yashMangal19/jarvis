@@ -16,21 +16,51 @@ test.beforeEach(async ({ page }) => {
 
 const marks = (page) => page.locator('#p7 ol[data-slot="marks"] > li.mark');
 
-test("two forks → mark 1 and 2 by owner, then mark 3 · @you?", async ({ page }) => {
+test("two forks → mark 1 and 2 by owner, then mark 3 @you?", async ({ page }) => {
   const forks = fixture("forks/two.json");
   await page.route("https://api.github.com/**", (route) =>
     route.fulfill({ status: 200, body: forks, headers: { ...CORS, "content-type": "application/json" } }));
   await page.goto("/");
-  await expect(marks(page)).toHaveText(["mark 1 · @fork-owner-1", "mark 2 · @fork-owner-2", "mark 3 · @you?"]);
+  await expect(marks(page)).toHaveText(["mark 1 @fork-owner-1", "mark 2 @fork-owner-2", "mark 3 @you?"]);
 });
 
-test("forks API 403 → only mark 1 · @you?", async ({ page }) => {
+test("every mark card: an icon at least 56px wide, the handle on its own line under the name", async ({ page }) => {
+  const forks = fixture("forks/two.json");
+  await page.route("https://api.github.com/**", (route) =>
+    route.fulfill({ status: 200, body: forks, headers: { ...CORS, "content-type": "application/json" } }));
+  await page.goto("/");
+  await expect(marks(page)).toHaveCount(3);
+  for (const [name, handle] of [["mark 1", "@fork-owner-1"], ["mark 3", "@you?"]]) {
+    const card = marks(page).filter({ hasText: handle });
+    expect((await card.locator("img").boundingBox()).width).toBeGreaterThanOrEqual(56);
+    await expect(card.getByText(handle, { exact: true })).toBeVisible();
+    const n = await card.getByText(name, { exact: true }).boundingBox();
+    const h = await card.getByText(handle, { exact: true }).boundingBox();
+    expect(h.y).toBeGreaterThanOrEqual(n.y + n.height - 1);
+  }
+});
+
+test("a second page load in the same session makes no forks request", async ({ page }) => {
+  const forks = fixture("forks/two.json");
+  let calls = 0;
+  await page.route("https://api.github.com/**", (route) => {
+    calls++;
+    return route.fulfill({ status: 200, body: forks, headers: { ...CORS, "content-type": "application/json" } });
+  });
+  await page.goto("/");
+  await expect(marks(page)).toHaveCount(3);
+  await page.reload();
+  await expect(marks(page)).toHaveCount(3);
+  expect(calls).toBe(1);
+});
+
+test("forks API 403 → only mark 1 @you?", async ({ page }) => {
   await page.route("https://api.github.com/**", (route) =>
     route.fulfill({ status: 403, body: '{"message":"API rate limit exceeded"}', headers: CORS }));
   const answered = page.waitForResponse((r) => r.url().startsWith("https://api.github.com/"));
   await page.goto("/");
   await answered;
-  await expect(marks(page)).toHaveText(["mark 1 · @you?"]);
+  await expect(marks(page)).toHaveText(["mark 1 @you?"]);
 });
 
 test("the brew strip's copy button puts the line on the clipboard and says copied", async ({ page, context }) => {
@@ -58,7 +88,7 @@ test("a 39-character login without hyphens fits at 390 with no horizontal scroll
   await page.route("https://api.github.com/**", (route) =>
     route.fulfill({ status: 200, json: [{ owner: { login: max } }], headers: CORS }));
   await page.goto("/");
-  await expect(marks(page).first()).toHaveText(`mark 1 · @${max}`);
+  await expect(marks(page).first()).toHaveText(`mark 1 @${max}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
