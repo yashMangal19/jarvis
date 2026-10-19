@@ -307,7 +307,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .other-plates { display: flex; flex-wrap: wrap; gap: 12px; }
 .other-plates button { display: block; width: 56px; height: 56px; }
 
-/* p. 5 try it: slips on the left; every step has a fixed cell, so revealing one moves nothing. */
+/* p. 5 try it: slips on the left. A step not shown yet keeps its real size (try-it.css), so revealing one moves nothing. */
 .try {
   display: grid; column-gap: clamp(32px, 4.2vw, 64px);
   grid-template-columns: minmax(0, 720fr) minmax(0, 560fr);
@@ -326,13 +326,19 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .slips li:nth-child(3) .slip { margin-left: 32px; }
 .stage { display: contents; }
 .flow {
-  grid-area: flow; display: grid; align-content: start; column-gap: 32px; margin-top: 64px; min-height: 240px;
-  grid-template-columns: 120px minmax(0, 1fr); grid-template-areas: "mic wave" "mic transcript";
+  grid-area: flow; display: grid; align-content: start; column-gap: 16px; margin-top: 64px;
+  grid-template-columns: 120px 80px minmax(0, 1fr) 80px; grid-template-areas: "mic to-wave wave to-card" "mic to-wave transcript to-card";
 }
 .mic { grid-area: mic; } .wave { grid-area: wave; } .transcript { grid-area: transcript; }
+/* D5's hand-drawn arrows mic → wave → card; the second turns up toward the card. */
+.flow .arrow { width: 100%; height: auto; align-self: start; }
+.to-wave { grid-area: to-wave; margin-top: 44px; }
+.to-card { grid-area: to-card; margin-top: 8px; transform: rotate(-38deg); }
+.card-caption { margin-top: 20px; font-size: 20px; }
 .step figcaption { font-size: 20px; font-weight: 400; }
 .transcript { min-height: 3.2em; font-size: 16px; }
-.card-slot { grid-area: card; min-height: 330px; }
+.card-slot { grid-area: card; display: grid; align-content: start; }
+.card-slot > .read-back { grid-area: 1 / 1; }
 .read-back {
   position: relative; padding: 28px 36px 36px; background: #F6F3EA;
   transform: rotate(1deg); box-shadow: 0 14px 26px rgb(0 0 0 / .14); font-size: clamp(17px, 1.5vw, 21px);
@@ -341,7 +347,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .read-back h3 { font: 700 12px var(--typed); letter-spacing: .3em; text-transform: uppercase; color: #6f6b62; margin-bottom: 16px; }
 .answers { display: flex; gap: 24px; margin-top: 40px; }
 .answers button { min-width: 120px; min-height: 48px; font-size: 28px; border: 2px solid currentColor; }
-.try .stamp { grid-area: stamp; justify-self: end; min-height: 120px; }
 .promise { grid-area: promise; font-size: clamp(26px, 2.2vw, 32px); margin-top: 24px; }
 
 /* p. 6 how it fits: the pipeline inside the dashed "your mac" box. */
@@ -431,7 +436,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .suit { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "sheet" "cards"; }
   .card-col { margin-top: 48px; max-width: 560px; }
   .try { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "slips" "flow" "card" "stamp" "promise"; }
-  .flow { margin-top: 48px; min-height: 200px; }
+  .flow { margin-top: 48px; }
+  .to-card { display: none; }
+  .card-slot { margin-top: 48px; }
   .pipeline { flex-direction: column; gap: 0; }
   .pipeline li { display: grid; grid-template-columns: clamp(72px, 14vw, 120px) minmax(0, 1fr); column-gap: 32px; align-items: center; }
   .pipeline li img { grid-row: 1 / 3; width: 100%; }
@@ -459,7 +466,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .index-card { padding: 24px 20px; transform: none; }
   .slip { font-size: 20px; padding: 10px 16px; }
   .slips li:nth-child(n) .slip { margin-left: 0; }
-  .flow { grid-template-columns: 64px minmax(0, 1fr); column-gap: 16px; }
+  .flow { grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "mic wave" "mic transcript"; }
+  .flow .arrow, .card-caption { display: none; }
   .step figcaption { display: none; }
   .read-back { padding: 24px 20px; transform: none; }
   .fits > p.pieces { display: none; }

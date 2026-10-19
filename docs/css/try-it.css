@@ -1,22 +1,35 @@
 /* p. 5 try it: the scripted demo's states. Layout cells are in site.css. */
+/* A step not shown yet keeps its real box (visibility, not display), so the cells size to content and a reveal moves nothing.
+   !important only to outrank site.css's global [hidden] { display: none !important }. */
+.try :is(.step, .transcript, .read-back, .stamp)[hidden] { display: block !important; visibility: hidden; opacity: 0; translate: 0 6px; }
 .slip[aria-pressed="true"] { background: var(--tape); }
-.read-back [data-slot="read-back-text"] { white-space: pre-line; }
+/* The marker hangs off the list item, not the button, and its alt text is empty: the slip's name stays its words. */
+.slips li { position: relative; }
+.slips li:has(> .slip[aria-pressed="true"])::after {
+  content: "← this one" / ""; position: absolute; left: calc(100% + 24px); top: 50%; translate: 0 -50%;
+  font: 700 clamp(22px, 2vw, 28px) var(--hand); color: var(--red); white-space: nowrap;
+}
+/* An arrow or the card caption shows with the step it points from. */
+.try :is(.wave[hidden] ~ .to-wave, .transcript[hidden] ~ .to-card, [data-slot="read-back"][hidden] ~ .card-caption) { visibility: hidden; }
+/* 3lh: the longest scripted read-back (priya) is 3 lines, so swapping slips never resizes the card. */
+.read-back [data-slot="read-back-text"] { white-space: pre-line; min-height: 3lh; }
 .answers [aria-disabled="true"] { opacity: .45; cursor: default; }
 
 /* The live region takes the stamp's cell; the stamp moved inside it. Scoped to .try: p. 1 has its own stamp. */
-.try .result { grid-area: stamp; display: grid; justify-items: end; align-content: start; gap: 12px; min-height: 120px; margin-top: 32px; }
+.try .result { grid-area: stamp; display: grid; justify-items: end; align-content: start; gap: 12px; margin-top: 32px; }
 .try .stamp {
   display: block; min-height: 0; padding: 10px 28px; border: 4px solid var(--red); border-radius: 10px;
   color: var(--red); font: 700 clamp(28px, 2.6vw, 38px) var(--typed); letter-spacing: .12em; transform: rotate(6deg);
 }
-.try .result-line { font-size: clamp(22px, 2vw, 28px); }
-.try .result-line:empty { display: none; }
+/* pretty: the line never ends on an orphaned word ("7 / pm"). */
+.try .result-line { min-height: 1lh; font-size: clamp(22px, 2vw, 28px); text-wrap: pretty; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .try .step, .try .transcript, .try .read-back, .try .stamp { animation: try-in .3s ease-out; }
+  .try :is(.step, .transcript, .read-back, .stamp) { transition: opacity .3s ease-out, translate .3s ease-out; }
 }
-@keyframes try-in { from { opacity: 0; translate: 0 6px; } }
 
 @media (max-width: 600px) {
   .try .result { margin-top: 24px; }
+  /* M5: under the slip, at its right end. */
+  .slips li:has(> .slip[aria-pressed="true"])::after { position: static; display: block; translate: none; margin-top: 4px; text-align: end; }
 }

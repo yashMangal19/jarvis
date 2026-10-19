@@ -124,4 +124,57 @@ test("shown yes/no have names, and the result lives in a polite region", async (
   }
   await expect(p5(page).locator("[aria-live=polite] [data-slot=stamp]")).toHaveCount(1);
 });
+
+// V-2: the page opens filled, like D5/M5, not on a run's worth of blank reserved paper.
+test("before any pick, the last slip is followed by content within 120px", async ({ page }) => {
+  const gap = await p5(page).evaluate((sec) => {
+    const slipsBottom = sec.querySelector(".slips").getBoundingClientRect().bottom;
+    const tops = [...sec.querySelectorAll(".step, .transcript, .read-back, .promise")]
+      .filter((el) => el.checkVisibility({ visibilityProperty: true }))
+      .map((el) => el.getBoundingClientRect().top).filter((t) => t >= slipsBottom);
+    return Math.min(...tops) - slipsBottom;
+  });
+  expect(gap).toBeLessThan(120);
+});
+
+// V-2's other half: steps not shown yet keep their size, so a run never collapses or jumps the page.
+test("from the opening state through a run to yes, nothing below the demo moves", async ({ page }) => {
+  const promise = p5(page).locator(".promise");
+  // Relative to p. 5's top, so a page above it changing height cannot move the number.
+  const at = () => promise.evaluate((el) => Math.round(el.getBoundingClientRect().top - el.closest("#p5").getBoundingClientRect().top));
+  const opening = await at();
+  await slip(page, "reminder").click();
+  await page.clock.runFor(450); // mid-run: the mic is in, the rest is not
+  expect(await at()).toBe(opening);
+  await page.clock.runFor(1050);
+  expect(await at()).toBe(opening);
+  await p5(page).getByRole("button", { name: "yes" }).click();
+  expect(await at()).toBe(opening);
+});
+
+// V-16: "reminder set for 7 pm" stays on one line; it once broke as "7 / pm" at 390.
+test("the result line after yes is one line", async ({ page }) => {
+  await say(page, "reminder");
+  await p5(page).getByRole("button", { name: "yes" }).click();
+  const lines = await p5(page).locator("[data-slot=result-line]").evaluate((el) =>
+    Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+  expect(lines).toBe(1);
+});
+
+// V-15: D5 draws arrows mic → wave → card and captions the card. M5 drops them, like the step captions.
+test("during a run the flow arrows and the card caption show on desktop", async ({ page }, info) => {
+  test.skip(info.project.name === "phone", "M5 draws no flow arrows or step captions");
+  await say(page, "priya");
+  await expect(p5(page).locator(".flow .arrow")).toHaveCount(2);
+  for (const arrow of await p5(page).locator(".flow .arrow").all()) await expect(arrow).toBeVisible();
+  await expect(p5(page).getByText("3. reads it back. you say yes.")).toBeVisible();
+});
+
+test("the picked slip is marked '← this one', outside its accessible name", async ({ page }) => {
+  await slip(page, "reminder").click();
+  const mark = (id) => slip(page, id).evaluate((b) => getComputedStyle(b.parentElement, "::after").content);
+  expect(await mark("reminder")).toContain("this one");
+  expect(await mark("priya")).toBe("none");
+  await expect(slip(page, "reminder")).toHaveAccessibleName("“remind me to call mom at 7”");
+});
 });

@@ -24,8 +24,6 @@ line.dataset.slot = "result-line";
 const stamp = slot("stamp");
 stamp.replaceWith(result);
 result.append(stamp, line);
-// The card slot is a polite live region too: its read-back or answer content is replaced on each run.
-page.querySelector(".card-slot").setAttribute("aria-live", "polite");
 
 let token = 0;
 let current = null;
@@ -36,12 +34,16 @@ function reset() {
   for (const b of [slot("yes"), slot("no")]) b.removeAttribute("aria-disabled");
 }
 
-function run(id) {
-  const mine = ++token;
+function pick(id) {
   current = id;
   reset();
   for (const s of page.querySelectorAll('[data-slot="slip"]')) s.setAttribute("aria-pressed", String(s.value === id));
   slot("transcript").textContent = page.querySelector(`[data-slot="slip"][value="${id}"]`).textContent;
+}
+
+function run(id) {
+  const mine = ++token;
+  pick(id);
 
   let at = 0;
   for (const [name, ms] of STEPS) {
@@ -58,6 +60,7 @@ function showCard(s) {
     slot("answer").hidden = false;
   } else {
     slot("read-back-text").textContent = s.readBack;
+    slot("stamp").textContent = s.stamp; // still hidden: its box is reserved at its real size until yes
     slot("read-back").hidden = false;
   }
 }
@@ -68,7 +71,6 @@ function settle(yes) {
   // aria-disabled, not disabled: the pressed button keeps focus.
   for (const b of [slot("yes"), slot("no")]) b.setAttribute("aria-disabled", "true");
   if (yes) {
-    slot("stamp").textContent = s.stamp;
     slot("stamp").hidden = false;
     line.textContent = s.line ?? "";
   } else {
@@ -82,4 +84,10 @@ page.addEventListener("click", (e) => {
   else if (b?.dataset.slot === "yes") settle(true);
   else if (b?.dataset.slot === "no") settle(false);
 });
-for (const s of page.querySelectorAll('[data-slot="slip"]')) s.setAttribute("aria-pressed", "false");
+// p. 5 opens the way D5/M5 draw it: priya already read back, waiting for yes or no. Shown at once, no timers.
+pick("priya");
+for (const [name] of STEPS) slot(name).hidden = false;
+showCard(SLIPS.priya);
+// The card slot is a polite live region too: its read-back or answer content is replaced on each run.
+// Marked after the opening card is in, so loading the page announces nothing.
+page.querySelector(".card-slot").setAttribute("aria-live", "polite");
