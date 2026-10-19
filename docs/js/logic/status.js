@@ -43,3 +43,11 @@ export function liveLine(status, now) {
   if (!status.release.shipped) return "updates itself every hour";
   return `final numbers · shipped ${IST_DAY.format(new Date(status.release.shipped_at)).toLowerCase()}`;
 }
+
+// A commit's age as the page prints it: "18m ago", "3h ago", "2d ago".
+export function ageLabel(at, now) {
+  const minutes = Math.floor((Number(now) - Date.parse(at)) / 60e3);
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 48 * 60) return `${Math.floor(minutes / 60)}h ago`;
+  return `${Math.floor(minutes / (24 * 60))}d ago`;
+}

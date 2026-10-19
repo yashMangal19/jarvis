@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { parseStatus, freshness, liveLine } from "../../../docs/js/logic/status.js";
+import { parseStatus, freshness, liveLine, ageLabel } from "../../../docs/js/logic/status.js";
 import { NOW } from "./fixtures/clock.mjs";
 
 const fixture = (name) =>
@@ -87,4 +87,14 @@ test("live line: ship date is the IST calendar day, not UTC", () => {
   const s = shippedStale();
   s.release.shipped_at = "2026-10-19T20:00:00Z"; // 01:30 on 20 Oct in IST
   assert.equal(liveLine(s, NOW), "final numbers · shipped 20 oct");
+});
+
+test("commit age: minutes under an hour, hours under two days, then days", () => {
+  const at = (minutesAgo) => new Date(NOW.getTime() - minutesAgo * 60e3).toISOString();
+  assert.equal(ageLabel(at(18), NOW), "18m ago");
+  assert.equal(ageLabel(at(59), NOW), "59m ago");
+  assert.equal(ageLabel(at(60), NOW), "1h ago");
+  assert.equal(ageLabel(at(47 * 60 + 59), NOW), "47h ago");
+  assert.equal(ageLabel(at(48 * 60), NOW), "2d ago");
+  assert.equal(ageLabel(at(9 * 24 * 60), NOW.getTime()), "9d ago");
 });

@@ -1,4 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
+
+// The page fetches status.json from GitHub; serve the fresh fixture so this smoke never hits the network.
+test.beforeEach(async ({ page }) => {
+  const body = readFileSync(new URL("../test/fixtures/status/fresh.json", import.meta.url), "utf8");
+  await page.route("https://raw.githubusercontent.com/**", (route) =>
+    route.fulfill({ status: 200, body, headers: { "access-control-allow-origin": "*" } }));
+});
 
 test("p. 1–3 show their fixed copy", async ({ page }) => {
   await page.goto("/");
