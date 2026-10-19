@@ -1,14 +1,27 @@
 // Reads only the two flat QA shapes the build run writes. Not a YAML parser: any other shape is out of scope.
 
-// Number of cases in qa/cases.yaml: one top-level "- case_id:" line each ("writer_case_id" lines do not count).
-export const countCases = (text) => text.split("\n").filter((l) => /^\s*- case_id:/.test(l)).length;
-
 // The run writes single-quoted scalars only.
 const unquote = (v) => {
   const s = v.trim();
   if (s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1).replaceAll("''", "'");
   return s;
 };
+
+// Ids of the spec-moment cases in qa/cases.yaml: entries of the top-level `cases:` list that carry no
+// per-case `moment: ticket` (those were written per ticket, after the spec).
+export function specCaseIds(text) {
+  const ids = new Set();
+  let inCases = false;
+  let id = null;
+  for (const line of text.split("\n")) {
+    if (/^\S/.test(line) && !line.startsWith("- ")) { inCases = line.startsWith("cases:"); id = null; continue; }
+    if (!inCases) continue;
+    const m = /^- case_id:(.*)$/.exec(line);
+    if (m) ids.add(id = unquote(m[1]));
+    else if (id && /^  moment:\s*ticket\s*$/.test(line)) ids.delete(id);
+  }
+  return ids;
+}
 
 // qa/results.yaml: `results:` then a flat list of { case_id, result, at, note }. Returns [{ case_id, result, at }].
 export function parseResults(text) {

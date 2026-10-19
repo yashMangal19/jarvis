@@ -39,6 +39,12 @@ test("QA with a fail: the latest `at` per case wins, not the last line", () => {
   assert.notEqual(parseStatus(s), null);
 });
 
+test("QA counts only the spec-moment cases: ticket-moment cases and their results are left out", () => {
+  const s = status("qa-moments");
+  assert.deepEqual(s.qa, { total: 2, pass: 1, fail: 0, blocked: 1 });
+  assert.notEqual(parseStatus(s), null);
+});
+
 const notes = {
   "busy.md": ["busy", null],
   "qa.md": ["qa", null],

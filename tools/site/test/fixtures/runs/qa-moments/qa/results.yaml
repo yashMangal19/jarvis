@@ -1,0 +1,17 @@
+results:
+- case_id: QA-1
+  result: pass
+  at: '2026-10-19T10:00:00+05:30'
+  note: ok
+- case_id: QA-3
+  result: fail
+  at: '2026-10-19T10:10:00+05:30'
+  note: ticket case, not counted
+- case_id: QA-4
+  result: blocked
+  at: '2026-10-19T10:20:00+05:30'
+  note: ticket case, not counted
+- case_id: QA-2
+  result: blocked
+  at: '2026-10-19T10:30:00+05:30'
+  note: needs a second device

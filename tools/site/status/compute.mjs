@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
-import { countCases, parseResults } from "./parse-yaml-lite.mjs";
+import { specCaseIds, parseResults } from "./parse-yaml-lite.mjs";
 import { collectGit } from "./collect-git.mjs";
 
 const DEADLINE = "2026-10-19T21:00:00+05:30";
@@ -58,12 +58,14 @@ function tests(path) {
 }
 
 function qa(runDir) {
-  const total = countCases(readFileSync(join(runDir, "qa", "cases.yaml"), "utf8"));
+  const spec = specCaseIds(readFileSync(join(runDir, "qa", "cases.yaml"), "utf8"));
+  const total = spec.size;
   const counts = { pass: 0, fail: 0, blocked: 0 };
   const resultsPath = join(runDir, "qa", "results.yaml");
   if (!existsSync(resultsPath)) return { total, ...counts };
   const latest = new Map();
   for (const r of parseResults(readFileSync(resultsPath, "utf8"))) {
+    if (!spec.has(r.case_id)) continue;
     const prev = latest.get(r.case_id);
     if (!prev || Date.parse(r.at) >= Date.parse(prev.at)) latest.set(r.case_id, r);
   }
