@@ -216,7 +216,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
       <div class="tags"><span class="pill all">Any Mac</span></div>
       <h3>Control it by voice</h3>
       <p>"Jarvis, pause." "Jarvis, resume."</p>
-      <p class="muted">Also: meeting mode on/off, demo mode on/off, forget the last hour, and "what did …?" Say several in a row ("pause, Jarvis, resume") and they run in order. If Jarvis half-hears one, even as a similar-sounding word, it asks "Did you mean …?" and acts only on yes; a single word it doesn't know gets "Sorry, I didn't catch that." "Stop" or "cancel" ends a read-back.</p>
+      <p class="muted">Also: meeting mode on/off, demo mode on/off, forget the last hour, and "what did …?" Say several in a row ("pause, Jarvis, resume") and they run in order. If Jarvis half-hears one, even as a similar-sounding word, it asks "Did you mean …?" and acts only on yes; a single word it doesn't know gets "Sorry, I didn't catch that." "Stop" or "cancel" ends a read-back, and you can say "Jarvis, stop" (or any control, or yes/no) while Jarvis is still talking: it stops and listens.</p>
       <details><summary>How it's built</summary><div>
         <p>Jarvis handles these itself, without Claude, so they're instant and confirmed with a tick sound.</p>
         <p>"Forget the last hour" can't be undone, so Jarvis reads it back and waits for your yes.</p>
