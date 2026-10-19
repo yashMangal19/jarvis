@@ -14,9 +14,9 @@ const TYPES = {
 const { port } = parseArgs({ options: { port: { type: "string", default: "4173" } } }).values;
 
 createServer(async (req, res) => {
-  const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  const file = normalize(join(ROOT, path.endsWith("/") ? path + "index.html" : path));
   try {
+    const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    const file = normalize(join(ROOT, path.endsWith("/") ? path + "index.html" : path));
     if (!file.startsWith(ROOT) && file + sep !== ROOT) throw new Error("outside docs/");
     const body = await readFile(file);
     res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });

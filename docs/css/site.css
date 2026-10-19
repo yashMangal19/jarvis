@@ -51,12 +51,12 @@ ol { padding: 0; list-style: none; }
 
 /* ---- header ---- */
 .top {
-  position: relative; z-index: 5; display: flex; align-items: flex-start; gap: 96px;
+  position: relative; z-index: 5; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px clamp(24px, 6.7vw, 96px);
   padding: 40px var(--gutter) 0;
 }
 .brand a { display: block; font: 700 15px var(--typed); letter-spacing: .35em; text-decoration: none; }
 .brand .hand { font-size: 21px; }
-.nav-desk { display: flex; gap: 0; font-size: 15px; letter-spacing: .05em; padding-top: 2px; }
+.nav-desk { display: flex; flex-wrap: wrap; gap: 0; font-size: 15px; letter-spacing: .05em; padding-top: 2px; }
 .nav-desk a { text-decoration: none; }
 .nav-desk a + a::before { content: "·"; padding: 0 1.2em; }
 .github { margin-left: auto; color: var(--red); font-size: 26px; text-decoration: none; }
@@ -64,12 +64,12 @@ ol { padding: 0; list-style: none; }
 
 /* ---- p. 1 hero ---- */
 .hero {
-  display: grid; padding-top: 24px; column-gap: 40px;
-  grid-template-columns: 300px 260px minmax(0, 1fr);
+  display: grid; padding-top: 24px; column-gap: clamp(20px, 2.8vw, 40px);
+  grid-template-columns: minmax(0, 300fr) minmax(0, 260fr) minmax(0, 672fr);
   grid-template-areas: "title title sheet" "lede lede sheet" "cta log sheet" "launch launch sheet";
   grid-template-rows: auto auto auto 1fr;
 }
-.hero h1 { grid-area: title; font-size: 120px; line-height: .98; width: 6ch; }
+.hero h1 { grid-area: title; font-size: clamp(72px, 8.4vw, 120px); line-height: .98; width: 6ch; }
 .hero .underline { text-decoration: underline var(--red) 5px; text-underline-offset: 18px; white-space: nowrap; }
 .lede { grid-area: lede; margin-top: 32px; font-size: 19px; }
 .cta {
@@ -78,16 +78,16 @@ ol { padding: 0; list-style: none; }
   box-shadow: 3px 3px 0 -1px var(--paper), 3px 3px 0 1px var(--graphite);
 }
 .build-log {
-  grid-area: log; justify-self: start; margin-top: 18px; width: 200px; padding: 16px 20px 20px;
+  grid-area: log; justify-self: start; margin-top: 18px; width: min(200px, 100%); padding: 16px 20px 20px;
   background: #F2E7B4; transform: rotate(-5deg); box-shadow: 2px 6px 12px rgb(0 0 0 / .12);
   font-size: 13px; line-height: 1.7;
 }
 .build-log h2 { color: var(--red); font-size: 24px; margin-bottom: 4px; }
 
-.launch { grid-area: launch; display: flex; align-items: flex-end; gap: 24px; margin-top: 40px; }
-.gauge { position: relative; width: 280px; flex: none; }
+.launch { grid-area: launch; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 24px; margin-top: 40px; }
+.gauge { position: relative; width: clamp(200px, 19.5vw, 280px); flex: none; }
 .gauge figcaption { display: flex; justify-content: space-between; margin: -6px -40px 0; font-size: 17px; }
-.countdown { flex: 1; }
+.countdown { flex: 1 1 200px; }
 .countdown .hand { font-size: 22px; font-weight: 400; }
 .countdown .clock { font-weight: 700; font-size: 52px; line-height: 1; }
 .countdown .sep { display: none; }
@@ -113,12 +113,12 @@ ol { padding: 0; list-style: none; }
 }
 .plates { position: relative; width: 86%; margin: 24px auto 0; }
 .plates img { filter: url(#chalk); }
-.plates .label { position: absolute; left: var(--x); top: var(--y); font-size: 26px; line-height: 1; }
+.plates .label { position: absolute; left: var(--x); top: var(--y); font-size: clamp(17px, 1.8vw, 26px); line-height: 1; }
 .plates .dim { font-size: 18px; font-weight: 400; opacity: .8; }
-.callout { position: absolute; right: 48px; bottom: 56px; width: 270px; color: #F07A6E; font-size: 25px; line-height: 1.15; transform: rotate(4deg); }
+.callout { position: absolute; right: 48px; bottom: 56px; width: min(270px, 60%); color: #F07A6E; font-size: 25px; line-height: 1.15; transform: rotate(4deg); }
 
 /* ---- p. 2 promo ---- */
-.promo { display: grid; grid-template-columns: minmax(0, 810px) minmax(0, 1fr); column-gap: 60px; padding-top: 72px; }
+.promo { display: grid; grid-template-columns: minmax(0, 810fr) minmax(0, 442fr); column-gap: clamp(32px, 4.2vw, 60px); padding-top: 72px; }
 .promo .folio, .promo h2, .frames { grid-column: 1 / -1; }
 .promo h2 { font-size: 64px; margin: 16px 0 28px; }
 .player { position: relative; transform: rotate(.6deg); box-shadow: 0 16px 26px rgb(0 0 0 / .2); }
@@ -136,7 +136,7 @@ ol { padding: 0; list-style: none; }
 .arrow-r { display: none; }
 .cards { display: flex; margin-top: 8px; }
 .cards li {
-  flex: none; width: 160px; aspect-ratio: 1; margin-left: -96px; background: var(--chalk);
+  flex: none; width: 32%; aspect-ratio: 1; margin-left: -19%; background: var(--chalk);
   box-shadow: 0 4px 10px rgb(0 0 0 / .14); transform: rotate(calc(var(--i) * 2deg - 4deg)) translateY(calc(var(--i) * 10px));
 }
 .cards li:first-child { margin-left: 0; }
@@ -147,9 +147,9 @@ ol { padding: 0; list-style: none; }
 /* ---- p. 3 live build ---- */
 .live { padding-top: 72px; }
 .graph {
-  position: relative; display: grid; column-gap: 48px; padding: 40px 40px 72px;
-  grid-template-columns: minmax(0, 1fr) 520px;
-  grid-template-areas: "folio folio" "title commits" "waves commits" "stats commits";
+  position: relative; display: grid; column-gap: clamp(24px, 3.3vw, 48px); padding: 40px 40px 72px;
+  grid-template-columns: minmax(0, 456fr) minmax(0, 208fr) minmax(0, 520fr);
+  grid-template-areas: "folio folio folio" "title notes commits" "waves waves commits" "stats stats commits";
   grid-template-rows: auto auto auto 1fr;
   background-color: #E9EBE0; transform: rotate(-.3deg); box-shadow: 0 14px 28px rgb(0 0 0 / .14);
   background-image:
@@ -159,16 +159,17 @@ ol { padding: 0; list-style: none; }
 }
 .graph .folio { grid-area: folio; }
 .graph h2 { grid-area: title; font-size: 64px; line-height: 1.1; align-self: start; }
-.updates { position: absolute; top: 96px; left: 560px; font-size: 22px; font-weight: 400; transform: rotate(2deg); }
-.stale { position: absolute; top: 128px; left: 560px; font-size: 22px; }
-.waves { grid-area: waves; margin-top: 36px; }
+/* Both share the notes cell; .updates reserves two lines so showing the stale note moves nothing. */
+.updates { grid-area: notes; align-self: start; min-height: 2.6em; margin-top: 24px; font-size: 22px; line-height: 1.3; font-weight: 400; transform: rotate(2deg); }
+.stale { grid-area: notes; align-self: start; margin-top: calc(24px + 1.3em); font-size: 22px; line-height: 1.3; }
+.waves { grid-area: waves; display: grid; justify-content: start; margin-top: 36px; }
 .waves h3 { font-size: 26px; }
-.wave-row { display: flex; gap: 12px; }
-.wave-row li { width: 46px; flex: none; }
-.done { margin: 18px 0 0 400px; font-size: 26px; line-height: 1.1; height: 1.1em; }
-.stats { grid-area: stats; display: flex; gap: 72px; margin-top: 36px; }
+.wave-row { display: flex; gap: min(12px, 1.5vw); }
+.wave-row li { flex: 0 1 46px; min-width: 0; }
+.done { justify-self: end; margin-top: 18px; font-size: 26px; line-height: 1.1; height: 1.1em; }
+.stats { grid-area: stats; display: flex; gap: clamp(24px, 5vw, 72px); margin-top: 36px; }
 .stat { display: flex; flex-direction: column; }
-.stat .big { font-size: 112px; line-height: 1; height: 1.05em; }
+.stat .big { font-size: clamp(64px, 7.8vw, 112px); line-height: 1; height: 1.05em; }
 .stat .hand:not(.big) { font-size: 26px; font-weight: 400; }
 .commits {
   grid-area: commits; position: relative; align-self: start; margin-top: 40px;
@@ -184,6 +185,23 @@ ol { padding: 0; list-style: none; }
 .age { font-size: 13px; color: #6f6b62; }
 .msg { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .commits a { display: inline-block; margin-top: 28px; font-size: 26px; text-decoration: none; }
+
+/* ---- between phone and desktop: stack p. 1–3 into one column ---- */
+@media (max-width: 960px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "title title" "lede lede" "cta log" "launch launch" "sheet sheet"; grid-template-rows: none;
+  }
+  .sheet { margin-top: 48px; }
+  .promo { grid-template-columns: minmax(0, 1fr); }
+  .flip { grid-row: auto; grid-column: 1; max-width: 520px; margin-top: 48px; }
+  .graph {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "folio" "title" "notes" "waves" "stats" "commits"; grid-template-rows: none;
+  }
+  .updates { margin-top: 4px; transform: none; }
+  .stale { margin-top: calc(4px + 1.3em); }
+}
 
 /* ---- phone (M1–M3) ---- */
 @media (max-width: 600px) {
@@ -226,6 +244,7 @@ ol { padding: 0; list-style: none; }
   .promo h2 { font-size: 42px; }
   .frames { display: none; }
   .player-label { top: 12px; bottom: auto; left: auto; right: 16px; }
+  .player .t2 { right: -8px; }
   .flip { grid-row: auto; grid-column: 1; margin-top: 48px; }
   .flip-cue { text-align: left; font-size: 28px; display: flex; align-items: center; gap: 8px; }
   .flip-cue img { margin: 0; }
@@ -237,15 +256,13 @@ ol { padding: 0; list-style: none; }
   .live { padding: 40px 12px; }
   .graph {
     grid-template-columns: minmax(0, 1fr); padding: 24px 20px 40px;
-    grid-template-areas: "folio" "title" "updates" "waves" "stats" "commits"; grid-template-rows: none;
+    grid-template-areas: "folio" "title" "notes" "waves" "stats" "commits"; grid-template-rows: none;
   }
   .graph h2 { font-size: 40px; }
-  .updates { position: static; grid-area: updates; margin-top: 4px; font-size: 18px; transform: none; }
-  .stale { top: 24px; left: auto; right: 20px; font-size: 18px; }
+  .updates, .stale { font-size: 18px; }
   .waves h3 { display: none; }
-  .wave-row { gap: 2%; }
-  .wave-row li { width: 8.2%; }
-  .done { margin: 12px 0 0; }
+  .waves { justify-content: stretch; }
+  .done { justify-self: start; margin-top: 12px; }
   .stats { gap: 32px; }
   .stat .big { font-size: 72px; }
   .commits { margin-top: 48px; padding: 24px 20px; }
