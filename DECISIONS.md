@@ -206,6 +206,18 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Affects:** `Log.swift`, `Jarvis.swift`, `RestartRetry`, `ImportCoordinator`, `VoiceMemosImporter`, `NoteIndex`.
 - **Checked against:** DEC-32 (privacy wording holds: the log stays on the Mac and holds no speech).
 
+### DEC-46 · Meeting mode's cross-mic duplicates ship as a known limit in 0.1.0 (2026-10-19)
+- **Why:** QA-11 and QA-10 found that the bleed goes both ways. The wearer reaches the room mic (an Others copy),
+  and a nearby phone reaches the AirPods (a Me copy). Keeping the copy from the true source needs per-utterance
+  timing and levels. Jarvis doesn't capture them: a line is a whole 30 s chunk, transcribers return text only,
+  chunk audio is dropped after transcription, and Bluetooth latency hides which mic heard it first.
+- **Decided by:** Jarvis-Orc (J-015). A text-similarity "drop the Others copy" rule was built and rejected,
+  because for a podcast it would keep the wrong copy, which is worse than the duplicate.
+- **What:** both copies are stored. README Known limits and the guide say so. Real attribution (an utterance
+  split before transcription, in-memory cross-correlation of the two mics, and level ratios against a per-device
+  baseline; 2–4 days plus paired recordings) is a post-0.1.0 backlog item.
+- **Checked against:** DEC-18 (labels still come from the source), DEC-32 (privacy unchanged: no audio kept).
+
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)
 - **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,

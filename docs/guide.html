@@ -139,6 +139,7 @@ footer { color: var(--muted); font-size: .92rem; border-top: 1px solid var(--lin
         <p>So the AirPods record you, <code>ScreenCaptureKit</code> records call audio (audio only, which needs the Screen Recording permission), and Meeting mode adds the built-in mic for the room.</p>
         <p>Jarvis asks for Screen Recording once, on first launch. If you say no, it works with your mic only, and the menu shows "Call audio off — Allow Screen Recording…" in case you change your mind.</p>
         <p>Each source is its own stream, and the source decides the label.</p>
+        <p><b>Known limit:</b> the two mics hear each other's sounds. Your words reach the MacBook mic, and a phone or speaker nearby can reach the AirPods. So in Meeting mode a sentence can be stored twice, once per mic, and only one copy has the right label; notes may repeat it. Telling which mic really heard it is planned after 0.1.0.</p>
       </div></details>
     </div>
 

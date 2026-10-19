@@ -200,6 +200,10 @@ Jarvis refuses to start with its data folder inside a git repository.
   for the microphone again, and Screen Recording or Full Disk Access may switch off silently. Turn them
   back on from Jarvis's menu (see [First launch](#first-launch)). A stable signing identity is deferred.
 - The AirPods stem squeeze is experimental and off by default. See its side effects above.
+- **Meeting mode can store a sentence twice.** The two mics hear each other's sounds. Your words reach the
+  MacBook mic, and a phone or speaker nearby can reach the AirPods. So a sentence can be stored once per
+  mic, and only one copy has the right speaker label. Notes may repeat it. Telling which mic really heard
+  it needs per-sentence timing and levels that Jarvis doesn't capture yet; it is planned after 0.1.0.
 
 ## Development
 
