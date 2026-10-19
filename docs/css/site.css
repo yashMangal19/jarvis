@@ -72,9 +72,7 @@ ol { padding: 0; list-style: none; }
   grid-template-columns: minmax(min(250px, 20vw), 250fr) minmax(min(212px, 17vw), 212fr) minmax(0, 770fr);
   grid-template-areas: "title title sheet" "lede lede sheet" "cta log sheet" "launch launch sheet";
   grid-template-rows: auto auto auto 1fr;
-  /* The gauge and the clock give way together in the narrow left column (961-1100px) so the countdown stays beside the
-     gauge; the single-column layout below has the room for the full sizes and restores them. */
-  --gauge-min: 160px; --clock-min: 36px;
+  --gauge-min: 200px; --clock-min: 48px;
 }
 .hero h1 { grid-area: title; font-size: clamp(72px, 8.4vw, 120px); line-height: .9; width: 6ch; }
 /* One marker stroke under the words: skip-ink would break it at every descender. */
@@ -83,7 +81,7 @@ ol { padding: 0; list-style: none; }
 .lede { grid-area: lede; margin-top: 24px; font-size: 19px; }
 .cta {
   grid-area: cta; align-self: start; justify-self: start; margin-top: 28px;
-  font-size: clamp(22px, 2.2vw, 26px); white-space: nowrap; text-decoration: none; padding: 8px 20px; border: 2px solid var(--graphite);
+  font-size: 26px; white-space: nowrap; text-decoration: none; padding: 8px 20px; border: 2px solid var(--graphite);
   box-shadow: 3px 3px 0 -1px var(--paper), 3px 3px 0 1px var(--graphite);
 }
 .build-log {
@@ -112,6 +110,14 @@ ol { padding: 0; list-style: none; }
 .clock :is([data-slot=hours], [data-slot=minutes]) { min-width: 2ch; text-align: end; }
 .countdown .sep { display: none; }
 .when { display: block; }
+
+/* In the two-column hero's narrow left column (961-1100px) the call-to-action, the gauge and the clock give way together,
+   so the countdown stays beside the dial and the button stays on one line. Nothing else changes: at 1101px and up they
+   are at full size (short windows included), and the single column below 960px has the room for full size. */
+@media (min-width: 961px) and (max-width: 1100px) {
+  .hero { --gauge-min: 160px; --clock-min: 36px; }
+  .cta { font-size: clamp(22px, 2.2vw, 26px); }
+}
 
 .sheet {
   grid-area: sheet; position: relative; align-self: start;
@@ -154,6 +160,19 @@ ol { padding: 0; list-style: none; }
   font-size: clamp(16px, 4.2cqi, 25px); line-height: 1.15; transform: rotate(4deg);
 }
 
+/* ---- hand-drawn arrows: every one is drawn at one weight ----
+   A shaft stretched to the arrow's box, whose stroke does not scale (vector-effect in arrow-shaft*.svg), and a head laid on
+   the tip whose stroke does not scale either. The head is 21% of the arrow's width, between 14px and 27px, so a longer arrow
+   is longer, not heavier. The pipeline's arrows (below) use the same two drawings as background layers. */
+.pen { position: relative; display: block; background: var(--shaft) 0 0 / 100% 100% no-repeat; }
+.pen::after { content: ""; position: absolute; background: var(--head) 0 0 / 100% 100% no-repeat; }
+.pen-r { --shaft: url("../assets/art/arrow-shaft.svg"); --head: url("../assets/art/arrow-head.svg"); aspect-ratio: 160 / 60; }
+/* The tip is (150, 28) of the 160x60 shaft and (29, 18) of the 34x38 head art. */
+.pen-r::after { left: 93.75%; top: 46.67%; width: clamp(14px, 21.25%, 27px); aspect-ratio: 34 / 38; translate: -85.29% -47.37%; }
+.pen-d { --shaft: url("../assets/art/arrow-shaft-d.svg"); --head: url("../assets/art/arrow-head-d.svg"); }
+/* The tip is (30.5, 133.4) of the 60x140 shaft and (19.5, 27.4) of the 38x31 head art. */
+.pen-d::after { left: 50.83%; top: 95.29%; width: clamp(18px, 63.33%, 27px); aspect-ratio: 38 / 31; translate: -51.32% -88.39%; }
+
 /* ---- p. 2 promo ---- */
 .promo { display: grid; grid-template-columns: minmax(0, 810fr) minmax(0, 442fr); column-gap: clamp(32px, 4.2vw, 60px); padding-top: 72px; }
 .promo .folio, .promo h2, .frames { grid-column: 1 / -1; }
@@ -184,8 +203,9 @@ ol { padding: 0; list-style: none; }
 .frames { font-size: 26px; margin: 36px 0 0 30px; }
 .flip { grid-row: 3; grid-column: 2; align-self: center; position: relative; }
 .flip-cue { font-size: 32px; text-align: center; }
-.flip-cue img { margin: 0 auto; }
-.arrow-r { display: none; }
+.flip-cue .pen { margin: 0 auto; }
+.arrow-d { width: 40px; height: 80px; }
+.arrow-r { display: none; width: 56px; }
 .cards { display: flex; margin-top: 8px; }
 .cards li {
   flex: none; width: 32%; aspect-ratio: 1; margin-left: -19%; background: var(--chalk);
@@ -230,9 +250,14 @@ ol { padding: 0; list-style: none; }
 .stat .hand:not(.big) { font-size: 26px; font-weight: 400; }
 /* D3's ticked box beside "tests green": out of flow, so it never widens the stat. The stat reserves what the stats gap
    does not already give it (the tick's 24px offset + 40px width + 8px clear), so the next stat never lies under it. */
-.stat:has(.tick) { padding-right: max(0px, calc(72px - var(--stats-gap))); }
+.stat:has(.tick) {
+  /* The tick sits 1.5em (39px at the 26px label) after the words where the gap has room for it; in a narrower gap it moves in
+     (8px at the least) and the stat takes the rest as padding. 40px is the tick, 8px the clearance. */
+  --tick-x: clamp(8px, calc(var(--stats-gap) - 48px), 39px);
+  padding-right: max(0px, calc(var(--tick-x) + 48px - var(--stats-gap)));
+}
 .stat .hand:not(.big):has(.tick) { position: relative; align-self: start; }
-.stat .tick { position: absolute; left: calc(100% + 24px); bottom: 0; width: 40px; }
+.stat .tick { position: absolute; left: calc(100% + var(--tick-x)); bottom: 0; width: 40px; }
 .commits {
   grid-area: commits; position: relative; align-self: start; margin-top: 40px;
   background: var(--chalk); padding: 28px 28px 24px; transform: rotate(1deg); box-shadow: 0 10px 20px rgb(0 0 0 / .14);
@@ -251,7 +276,6 @@ ol { padding: 0; list-style: none; }
 /* ---- between phone and desktop: stack p. 1–3 into one column ---- */
 @media (max-width: 960px) {
   .hero {
-    --gauge-min: 200px; --clock-min: 48px;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas: "title title" "lede lede" "cta log" "launch launch" "sheet sheet"; grid-template-rows: none;
   }
@@ -314,7 +338,7 @@ ol { padding: 0; list-style: none; }
   .player-label { font-size: 11px; padding: 1px 6px; }
   .flip { grid-row: auto; grid-column: 1; margin-top: 48px; }
   .flip-cue { text-align: left; font-size: 28px; display: flex; align-items: center; gap: 8px; }
-  .flip-cue img { margin: 0; }
+  .flip-cue .pen { margin: 0; }
   .arrow-d { display: none; }
   .arrow-r { display: block; }
   .cards li { width: 24%; margin-left: -8.8%; }
@@ -426,15 +450,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
    transform-origin, so turning the arrow leaves the tip on the corner. try-it.js sets --w and --turn so the other end,
    the tail, starts at the wave's right edge (defaults: a short arrow for when scripts are off). */
 .read-back .to-card {
-  position: absolute; aspect-ratio: 160 / 60; /* absolute, so already a block: the 960px rule that hides .to-card still wins */
-  width: var(--w, 120px); left: calc(var(--w, 120px) * -.9375); top: calc(100% - var(--w, 120px) * .175);
+  position: absolute; width: var(--w, 120px); left: calc(var(--w, 120px) * -.9375); top: calc(100% - var(--w, 120px) * .175);
   transform-origin: 93.75% 46.67%; rotate: var(--turn, -32deg);
 }
-/* One weight for every card arrow, whatever its length: the shaft is stretched with a non-scaling stroke, and the head is a
-   fixed 24px drawing (arrow-head.svg, 30 units wide) set on the tip. The head's lines sit at the shaft's 2px weight. */
-.to-card img { display: block; }
-.to-card > img:not(.head) { width: 100%; height: 100%; }
-.to-card .head { position: absolute; left: 93.75%; top: 46.67%; width: 24px; height: auto; translate: -90% -47.06%; }
 .card-caption { margin-top: 20px; font-size: 20px; }
 .step figcaption { font-size: 20px; font-weight: 400; }
 .transcript { min-height: 3.2em; font-size: 16px; }
@@ -461,8 +479,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .pipeline li { position: relative; flex: 1 1 0; min-width: 0; }
 .pipeline li + li::before {
   content: ""; position: absolute; left: calc((var(--icon) - 100% - var(--arrow)) / 2); top: calc(var(--icon) / 2 - var(--arrow) * .1875);
-  width: var(--arrow); aspect-ratio: 160 / 60;
-  background: url("../assets/art/arrow-r.svg") center / contain no-repeat;
+  width: var(--arrow); aspect-ratio: 160 / 60; --h: clamp(14px, calc(var(--arrow) * .2125), 27px);
+  /* the .pen-r drawing as two layers: the head on the tip (tip = .9375 and .175 of --arrow), the shaft stretched to the box */
+  background:
+    url("../assets/art/arrow-head.svg") calc(var(--arrow) * .9375 - var(--h) * .8529) calc(var(--arrow) * .175 - var(--h) * .5294) / var(--h) auto no-repeat,
+    url("../assets/art/arrow-shaft.svg") 0 0 / 100% 100% no-repeat;
 }
 .pipeline img { width: var(--icon); }
 .pipeline h3 { font-size: clamp(26px, 2.5vw, 36px); line-height: 1.1; margin-top: 20px; }
@@ -529,18 +550,20 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .fork h2 { grid-area: title; font-size: clamp(88px, 11vw, 160px); line-height: 1; }
 .fork .underline { text-underline-offset: 24px; }
 .strips { grid-area: strips; display: grid; justify-items: start; gap: 20px; margin-top: 24px; }
-.strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; max-width: 100%; }
+.strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px var(--strip-gap); max-width: 100%; }
 .strip code {
-  min-width: 0; max-width: 100%; padding: 14px 24px; background: var(--tape); overflow-wrap: anywhere;
+  min-width: 0; max-width: 100%; padding: 14px calc(var(--strip-pad) / 2); background: var(--tape); overflow-wrap: anywhere;
   font: 700 clamp(13px, 1.5vw, 21px) var(--typed); transform: rotate(.8deg); box-shadow: 0 4px 8px rgb(0 0 0 / .1);
 }
-/* Above the single column, the clone line is sized to the strips column (its text is ~24em wide, plus the tape's padding, the
-   gap and the copy button) so the copy button never drops below it. */
+/* Above the single column the clone line is sized to the strips column: its text is --strip-chars typed characters of .6em
+   each, then the tape's padding, the gap and the copy button must fit beside it. --strip-chars is the longest strip's length
+   (a test fails if a longer one is added); the others are the sizes of the pieces they name. */
+.strips { --strip-chars: 41; --strip-pad: 48px; --strip-gap: 24px; --copy-w: 76px; }
 @media (min-width: 961px) {
   .strips { container-type: inline-size; }
-  .strip code { font-size: min(clamp(13px, 1.5vw, 21px), calc((100cqi - 156px) / 24)); }
+  .strip code { font-size: min(clamp(13px, 1.5vw, 21px), calc((100cqi - var(--strip-pad) - var(--strip-gap) - var(--copy-w) - 8px) / (var(--strip-chars) * .6))); }
 }
-.copy { min-width: 7ch; min-height: 44px; font-size: 24px; text-align: left; }
+.copy { min-width: var(--copy-w); min-height: 44px; font-size: 24px; text-align: left; }
 .guide { font-size: 26px; text-decoration: none; }
 .fork-row { grid-area: fork; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 40px; margin-top: 40px; }
 .fork-btn {
@@ -572,7 +595,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .pipeline li + li { padding: clamp(64px, 12vw, 96px) 0 0; }
   .pipeline li + li::before {
     left: calc(var(--icon) / 2 - 15px); top: 8px; width: 30px; height: calc(clamp(64px, 12vw, 96px) - 16px);
-    aspect-ratio: auto; background-image: url("../assets/art/arrow-d.svg");
+    aspect-ratio: auto; --h: 19px; --len: calc(clamp(64px, 12vw, 96px) - 16px);
+    /* the .pen-d drawing: head on the tip (15.25px across, .9529 of --len down), shaft stretched to the box */
+    background:
+      url("../assets/art/arrow-head-d.svg") calc(15.25px - var(--h) * .5132) calc(var(--len) * .9529 - var(--h) * .7212) / var(--h) auto no-repeat,
+      url("../assets/art/arrow-shaft-d.svg") 0 0 / 100% 100% no-repeat;
   }
   .hall { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "sub" "capsules" "marks"; }
   .capsules { --shelf-run: 0px; }

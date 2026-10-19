@@ -57,7 +57,7 @@ function run(id) {
 // corner by CSS; here the tail is aimed at the wave, which depends on both boxes, so --w (length) and --turn are set
 // from layout. offset* ignores transforms (a hidden step is nudged 6px, the card is tilted 1deg), so the answer is the
 // settled one. Hidden single-column layouts hide the arrow and this costs nothing.
-const TAIL = { x: 5.65 / 160, y: 34.25 / 60 }, TIP = { x: 150 / 160, y: 28 / 60 }; // arrow-r.svg, as fractions of its box
+const TAIL = { x: 5.65 / 160, y: 34.25 / 60 }, TIP = { x: 150 / 160, y: 28 / 60 }; // arrow-shaft.svg (tail) and its tip, as fractions of the .to-card box (the head is laid on that tip by .pen-r::after)
 const at = (el) => { let x = 0, y = 0; for (let e = el; e; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return { x, y }; };
 function aim() {
   const wave = slot("wave").querySelector("img");

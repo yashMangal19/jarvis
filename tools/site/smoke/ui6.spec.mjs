@@ -47,30 +47,49 @@ test.beforeEach(({}, info) => test.skip(info.project.name === "phone", "each che
 
 const BAND = [961, 1024, 1100, 1150];
 
-// S-1: the callout is drawn at the sheet's scale, so it never lands on a plate label.
+// S-1: the callout is drawn at the sheet's scale, so it never lands on a plate label. Each line of its text is a box turned by the
+// callout's real 4deg tilt (about the callout's centre), and every label's box is tested against those turned boxes (separating
+// axes), so a corner that only the tilt brings over a label is caught.
 for (const width of [...BAND, 1280, 1440, 768]) {
-  test(`S-1 p. 1: the callout clears every plate label at ${width}`, async ({ page }) => {
+  test(`S-1 p. 1: the callout, tilted as drawn, clears every plate label at ${width}`, async ({ page }) => {
     await open(page, width);
-    // Line by line and untilted: the 4deg tilt makes each line's bounding box taller than its text, so the tilted boxes
-    // touch a label that the words never come near (the tilt is about the centre, where the labels sit).
-    const lines = await page.locator("#p1 .callout").evaluate((el) => {
-      el.style.transform = "none";
+    const result = await page.locator("#p1 .callout").evaluate((el) => {
+      const saved = el.style.transform;
+      const m = new DOMMatrix(getComputedStyle(el).transform), angle = Math.atan2(m.b, m.a);
+      el.style.transform = "none"; // lay it out flat; the box centre is the tilt's origin
+      const flat = el.getBoundingClientRect(), cx = (flat.left + flat.right) / 2, cy = (flat.top + flat.bottom) / 2;
       const range = document.createRange();
       range.selectNodeContents(el);
-      return [...range.getClientRects()].filter((r) => r.width > 0).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }));
+      const lines = [...range.getClientRects()].filter((r) => r.width > 0);
+      const labels = [...document.querySelectorAll("#p1 .plates .label")].map((l) => {
+        const r = document.createRange(); r.selectNodeContents(l); const b = r.getBoundingClientRect();
+        return { name: l.textContent.trim(), quad: [[b.left, b.top], [b.right, b.top], [b.right, b.bottom], [b.left, b.bottom]] };
+      });
+      const sheet = document.querySelector("#p1 .sheet").getBoundingClientRect();
+      el.style.transform = saved;
+      const turn = ([x, y]) => [cx + (x - cx) * Math.cos(angle) - (y - cy) * Math.sin(angle), cy + (x - cx) * Math.sin(angle) + (y - cy) * Math.cos(angle)];
+      const quads = lines.map((r) => [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]].map(turn));
+      const apart = (a, b) => { // separating axis test on two convex quads
+        for (const poly of [a, b]) for (let i = 0; i < 4; i++) {
+          const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % 4], nx = y1 - y2, ny = x2 - x1;
+          const range = (q) => q.map(([x, y]) => x * nx + y * ny);
+          const ra = range(a), rb = range(b);
+          if (Math.max(...ra) < Math.min(...rb) || Math.max(...rb) < Math.min(...ra)) return true;
+        }
+        return false;
+      };
+      return {
+        touching: labels.filter((l) => quads.some((q) => !apart(q, l.quad))).map((l) => l.name),
+        outside: quads.some((q) => q.some(([x, y]) => x > sheet.right || y > sheet.bottom)),
+      };
     });
-    const sheet = await box(page.locator("#p1 .sheet"));
-    for (const label of await page.locator("#p1 .plates .label").all()) {
-      const l = await ink(label);
-      for (const line of lines) expect(overlaps(line, l), await label.textContent()).toBe(false);
-    }
-    expect(Math.max(...lines.map((l) => l.right))).toBeLessThanOrEqual(sheet.right);
-    expect(Math.max(...lines.map((l) => l.bottom))).toBeLessThanOrEqual(sheet.bottom);
+    expect(result.touching).toEqual([]);
+    expect(result.outside).toBe(false);
   });
 }
 
 // S-2: the tick beside "tests green" is clear of the next stat's words, wherever the stats gap is narrow.
-for (const width of [1440, 1280, 1024, 768]) {
+for (const width of [1440, 1280, 1150, 1100, 1024, 961, 768]) {
   test(`S-2 p. 3: the tests-green tick clears the next stat at ${width}`, async ({ page }) => {
     await open(page, width);
     const tick = await box(page.locator("#p3 .stat .tick"));
@@ -93,13 +112,26 @@ for (const width of [...BAND, 1280, 1440]) {
   });
 }
 
-// S-4: the countdown sits beside the gauge, and the clock is above the fold of a 1024x768 window.
-for (const width of BAND) {
-  test(`S-4 p. 1: the countdown sits beside the gauge at ${width}`, async ({ page }) => {
-    await open(page, width, 768);
+test("S-3 p. 8: --strip-chars is at least as long as the longest strip", async ({ page }) => {
+  await open(page, 1440);
+  const [token, longest] = await page.locator("#p8 .strips").evaluate((el) => [
+    Number(getComputedStyle(el).getPropertyValue("--strip-chars")), Math.max(...[...el.querySelectorAll("code")].map((c) => c.textContent.length))]);
+  expect(token).toBeGreaterThanOrEqual(longest);
+});
+
+// S-4: the countdown sits beside the gauge, and the clock is above the fold. Wider windows keep the full-size gauge.
+for (const [width, height] of [...BAND.map((w) => [w, 768]), [1280, 800], [1440, 900]]) {
+  test(`S-4 p. 1: the countdown sits beside the gauge at ${width}x${height}`, async ({ page }) => {
+    await open(page, width, height);
     const gauge = await box(page.locator("#p1 .gauge")), clock = await ink(page.locator("#p1 .clock"));
     expect(clock.left).toBeGreaterThanOrEqual(gauge.right);
-    expect(clock.bottom).toBeLessThanOrEqual(768);
+    expect(clock.bottom).toBeLessThanOrEqual(height);
+  });
+}
+for (const [width, height] of [[1440, 700], [1280, 600], [1101, 800]]) {
+  test(`S-4 p. 1: the smaller gauge is only for 961-1100px: ${width}x${height} keeps its full size`, async ({ page }) => {
+    await open(page, width, height);
+    expect((await box(page.locator("#p1 .gauge"))).right - (await box(page.locator("#p1 .gauge"))).left).toBeGreaterThanOrEqual(200 - 0.5);
   });
 }
 
@@ -111,37 +143,99 @@ for (const width of [...BAND, 1280, 768]) {
   });
 }
 
-// S-6: the two card arrows are drawn at one weight. The shaft's stroke does not scale with its length and the head is a
-// fixed size, so a long arrow is longer, not heavier.
-for (const width of [1440, 1024]) {
-  test(`S-6 p. 5: the pricing arrow and the read-back arrow share one stroke and head at ${width}`, async ({ page }) => {
+// F-3: the button keeps 26px everywhere except the narrow 961-1100px band, where it shrinks to stay on one line.
+for (const width of [1440, 1280, 768, 390]) {
+  test(`S-5 p. 1: the call-to-action is 26px at ${width}`, async ({ page }) => {
     await open(page, width);
-    await page.locator("#p5 [data-slot=slip][value=pricing]").click();
+    await expect(page.locator("#p1 .cta")).toHaveCSS("font-size", "26px");
+  });
+}
+
+// S-6: every hand-drawn arrow is drawn at one weight. Each visible arrow (p. 2, p. 5's mic, wave and card arrows, p. 6's
+// pipeline) is rasterised flat (its turn and its card's tilt removed) and the thickness of its shaft is measured from the pixels:
+// the ink in each column (or row, for a vertical arrow) along the straight run at the tail's end of the shaft (before its first bend, where the drawing's two pen passes lie
+// closest). The weights must agree.
+async function arrowWeights(page, ids) {
+  const analyser = await page.context().newPage();
+  await analyser.setContent("<canvas></canvas>");
+  const weights = {};
+  const count = await page.evaluate(() => document.querySelectorAll(".pen, .arrow, .arrow-d, .arrow-r").length);
+  const sel = ".pen, .arrow, .arrow-d, .arrow-r";
+  const vis = { checkVisibilityCSS: true, visibilityProperty: true, opacityProperty: true };
+  for (let n = 0; n < count + 8; n++) {
+    // n < count: the n-th element; after that, the pipeline's pseudo-element arrows (li + li)
+    const prep = await page.evaluate(([n, count, sel, vis]) => {
+      let rect, name, undo = () => {};
+      if (n < count) {
+        const el = document.querySelectorAll(sel)[n];
+        if (!el.checkVisibility(vis)) return null;
+        const card = el.closest(".read-back"), saved = [el.style.rotate, card?.style.transform];
+        el.style.rotate = "none"; if (card) card.style.transform = "none";
+        undo = () => { el.style.rotate = saved[0]; if (card) card.style.transform = saved[1]; };
+        el.scrollIntoView({ block: "center" });
+        const b = el.getBoundingClientRect(); rect = { x: b.left, y: b.top, width: b.width, height: b.height };
+        name = `${el.closest("section")?.id}:${el.className}`;
+        if (el.closest(".mac")) return null; // never: the pipeline has no such element, only li::before
+      } else {
+        const li = document.querySelectorAll(".pipeline li")[n - count + 1];
+        if (!li || !li.checkVisibility(vis)) return null;
+        li.scrollIntoView({ block: "center" });
+        const cs = getComputedStyle(li, "::before"), b = li.getBoundingClientRect();
+        if (cs.content === "none") return null;
+        rect = { x: b.left + parseFloat(cs.left), y: b.top + parseFloat(cs.top), width: parseFloat(cs.width), height: parseFloat(cs.height) };
+        name = `p6:pipeline-${n - count + 1}`;
+      }
+      window.__undo = undo;
+      return { rect, name };
+    }, [n, count, sel, vis]);
+    if (!prep) continue;
+    await page.waitForTimeout(60);
+    const png = await page.screenshot({ clip: prep.rect });
+    await page.evaluate(() => window.__undo?.());
+    weights[prep.name] = await analyser.evaluate(async ([b64, horizontal]) => {
+      const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode();
+      const c = document.querySelector("canvas"); c.width = img.width; c.height = img.height;
+      const g = c.getContext("2d"); g.drawImage(img, 0, 0);
+      const { data } = g.getImageData(0, 0, c.width, c.height);
+      const lum = (x, y) => { const i = (y * c.width + x) * 4; return data[i]; }; // the red channel: graphite is dark in it, the page's red marks and paper are not
+      const [from, to] = horizontal ? [0.12, 0.32] : [0.12, 0.45]; // before the first bend, where the two pen passes lie closest
+      const along = horizontal ? c.width : c.height, across = horizontal ? c.height : c.width, INK = 45;
+      const at = (a, b) => horizontal ? lum(a, b) : lum(b, a);
+      const sums = [];
+      for (let a = Math.floor(along * from); a <= Math.ceil(along * to); a++) {
+        const edge = [0, 1, across - 2, across - 1].map((b) => at(a, b)).sort((p, q) => p - q), bg = (edge[1] + edge[2]) / 2;
+        let sum = 0;
+        for (let b = 0; b < across; b++) {
+          const d = Math.min(1, Math.max(0, (bg - at(a, b)) / (bg - INK)));
+          if (d > 0.6) sum += d; // the strong pen pass only: the faint second pass wanders with the arrow's length, the stroke does not
+        }
+        sums.push(sum);
+      }
+      return sums.reduce((p, q) => p + q, 0) / sums.length;
+    }, [png.toString("base64"), prep.rect.width >= prep.rect.height]);
+  }
+  await analyser.close();
+  return weights;
+}
+for (const width of [1440, 1024, 390]) {
+  test(`S-6: every arrow on the page is drawn at one stroke weight at ${width}`, async ({ page }) => {
+    await open(page, width);
+    let all = await arrowWeights(page);
+    await page.locator("#p5 [data-slot=slip][value=pricing]").click({ force: true }); // the answer card's arrow
     await page.clock.runFor(1500);
     await page.waitForTimeout(450);
-    const parts = await page.locator("#p5").evaluate(async (sec) => {
-      const out = {};
-      for (const slot of ["read-back", "answer"]) {
-        const arrow = sec.querySelector(`[data-slot=${slot}] .to-card`);
-        const head = arrow.querySelector("img.head"), shaft = arrow.querySelector("img:not(.head)");
-        out[slot] = { length: arrow.offsetWidth, head: head ? head.offsetWidth : null, shaft: shaft ? await (await fetch(shaft.src)).text() : "" };
-      }
-      return out;
-    });
-    expect(parts["read-back"].length).not.toBe(parts.answer.length); // the lengths do differ: that is the point
-    expect(parts["read-back"].head).not.toBeNull();
-    expect(parts["read-back"].head).toBe(parts.answer.head);
-    for (const slot of ["read-back", "answer"]) {
-      const paths = parts[slot].shaft.match(/<path[^>]*>/g) ?? [];
-      expect(paths.length).toBeGreaterThan(0);
-      for (const p of paths) expect(p).toContain('vector-effect="non-scaling-stroke"');
-    }
+    all = { ...all, ...Object.fromEntries(Object.entries(await arrowWeights(page)).map(([k, v]) => [`pricing ${k}`, v])) };
+    const values = Object.values(all);
+    expect(values.length, JSON.stringify(all)).toBeGreaterThanOrEqual(width === 1440 ? 8 : 4);
+    const mid = [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+    for (const [name, w] of Object.entries(all)) expect(Math.abs(w - mid), `${name} ${w.toFixed(2)}px against ${mid.toFixed(2)}px (${JSON.stringify(all)})`).toBeLessThan(0.4);
+    expect(mid).toBeGreaterThan(1.5); // it is drawn, not absent
   });
 }
 
 // S-7: the poster's own box is the video's (the figure is not stretched past it), so the play button's fixed place in
 // the poster's empty band holds at any width: above the "not affiliated" line, which is at 87-89.5% of the poster.
-for (const width of [...BAND, 1440, 768]) {
+for (const width of [...BAND, 1280, 1440, 768]) {
   test(`S-7 p. 2: the play button clears the poster's disclaimer at ${width}`, async ({ page }) => {
     await open(page, width);
     const player = await box(page.locator("#p2 .player")), video = await box(page.locator("#p2 video")), play = await box(page.locator("#p2 .play"));
