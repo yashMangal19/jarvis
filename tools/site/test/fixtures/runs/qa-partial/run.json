@@ -1,0 +1,7 @@
+{ "schema_version": "1.3.0", "slug": "demo-run",
+  "tickets": [
+    { "id": "T-1", "status": "done" },
+    { "id": "T-2", "status": "done" },
+    { "id": "T-3", "status": "in_progress" },
+    { "id": "T-4", "status": "pending" }
+  ] }

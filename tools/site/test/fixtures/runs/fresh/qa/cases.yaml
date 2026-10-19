@@ -1,0 +1,16 @@
+schema_version: 1.3.0
+contract: qa_output
+cases:
+- case_id: QA-1
+  title: Open the menu
+  steps:
+  - Open the menu
+  tc_id: null
+- case_id: QA-2
+  title: Pause listening
+  tc_id: null
+- case_id: QA-3
+  title: Resume listening
+  tc_id: null
+merged:
+- writer_case_id: QA-1

@@ -1,0 +1,17 @@
+results:
+- case_id: QA-1
+  result: pass
+  at: '2026-10-19T10:00:00+05:30'
+  note: 'Looks right, it''s fine'
+- case_id: QA-2
+  result: blocked
+  at: '2026-10-19T10:05:00+05:30'
+  note: needs a second device
+- case_id: QA-3
+  result: blocked
+  at: '2026-10-19T10:06:00+05:30'
+  note: 'retry at: noon'
+- case_id: QA-2
+  result: pass
+  at: '2026-10-19T11:00:00+05:30'
+  note: done on the second device

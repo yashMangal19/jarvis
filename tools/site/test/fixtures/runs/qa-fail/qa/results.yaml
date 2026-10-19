@@ -1,0 +1,13 @@
+results:
+- case_id: QA-1
+  result: fail
+  at: '2026-10-19T14:00:00+05:30'
+  note: icon stays red
+- case_id: QA-1
+  result: pass
+  at: '2026-10-19T09:00:00+05:30'
+  note: first pass
+- case_id: QA-4
+  result: pass
+  at: '2026-10-19T09:30:00+05:30'
+  note: ok
