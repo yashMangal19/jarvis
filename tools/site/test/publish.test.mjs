@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -27,11 +27,15 @@ function fixture() {
   const logs = [];
   const bootouts = [];
   const runner = { log: (l) => logs.push(l), bootout: (t) => bootouts.push(t), collect: collectGit };
+  // Each test gets its own temp root, so leftovers() never sees another test file's clones.
+  const tmpBase = join(dir, "tmp");
+  mkdirSync(tmpBase);
+  const leftovers = () => readdirSync(tmpBase);
   const job = (runName, now = NOW, r = runner) => main({ checkout, runDir: run(runName),
-    notePath: run("notes") + "busy.md", cacheDir: join(dir, "cache", "repo.git"), now }, r);
+    notePath: run("notes") + "busy.md", cacheDir: join(dir, "cache", "repo.git"), now, tmpBase }, r);
   const statusLog = () => git("--git-dir", remote, "log", "--format=%H", "status").split("\n");
   const statusFiles = () => git("--git-dir", remote, "ls-tree", "--name-only", "status").split("\n");
-  return { dir, checkout, remote, logs, bootouts, runner, job, statusLog, statusFiles };
+  return { dir, checkout, remote, logs, bootouts, runner, job, statusLog, statusFiles, leftovers };
 }
 
 test("first run creates the orphan status branch holding only status.json", () => {
@@ -49,7 +53,6 @@ test("first run creates the orphan status branch holding only status.json", () =
 });
 
 const MIN = 60_000;
-const leftovers = () => readdirSync(tmpdir()).filter((n) => n.startsWith("jarvis-site-status-"));
 
 test("a second run within 1 h with unchanged numbers logs skipped and pushes nothing", () => {
   const f = fixture();
@@ -100,7 +103,7 @@ test("a remote that moved on mid-run: logs an error, exits 1, does not force, le
     assert.match(f.logs[1], new RegExp(`^${NOW.toISOString()} error .*rejected`));
     assert.doesNotMatch(f.logs[1], /\n/);
     assert.equal(git("--git-dir", f.remote, "rev-parse", "status"), rivalHead());
-    assert.deepEqual(leftovers(), []);
+    assert.deepEqual(f.leftovers(), []);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
@@ -128,7 +131,7 @@ test("the main checkout is left clean with no new commits, and no temp clone is 
     f.job("qa-fail", new Date(NOW.getTime() + 5 * MIN));
     assert.equal(git("-C", f.checkout, "status", "--porcelain", "--untracked-files=all"), "");
     assert.equal(git("-C", f.checkout, "for-each-ref", "--format=%(refname) %(objectname)"), before);
-    assert.deepEqual(leftovers(), []);
+    assert.deepEqual(f.leftovers(), []);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
@@ -138,6 +141,49 @@ test("a bad run dir logs one error line, exits 1 and pushes nothing", () => {
     assert.equal(f.job("bad-json"), 1);
     assert.match(f.logs[0], new RegExp(`^${NOW.toISOString()} error .*run\\.json`));
     assert.equal(git("--git-dir", f.remote, "for-each-ref", "refs/heads/status"), "");
-    assert.deepEqual(leftovers(), []);
+    assert.deepEqual(f.leftovers(), []);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+// Shipped: tag the remote after a first publish, so the next run sees shipped: true.
+const shipFixture = () => {
+  const f = fixture();
+  f.job("qa-fail");
+  git("--git-dir", f.remote, "tag", "v0.1.0", "main");
+  return f;
+};
+
+test("the temp clone is deleted before bootout, because bootout kills the job under launchd", () => {
+  const f = shipFixture();
+  try {
+    const seen = [];
+    const runner = { ...f.runner,
+      collect: (a) => { seen.push(["collect", f.leftovers().length]); return collectGit(a); },
+      bootout: () => seen.push(["bootout", f.leftovers().length]) };
+    assert.equal(f.job("qa-fail", new Date(NOW.getTime() + 5 * MIN), runner), 0);
+    assert.deepEqual(seen, [["collect", 1], ["bootout", 0]]);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("a failed bootout after a push logs pushed, then its own bootout failed line, and exits 1", () => {
+  const f = shipFixture();
+  try {
+    const runner = { ...f.runner, bootout: () => { throw new Error("Boot-out failed: 3: No such process"); } };
+    assert.equal(f.job("qa-fail", new Date(NOW.getTime() + 5 * MIN), runner), 1);
+    const at = new Date(NOW.getTime() + 5 * MIN).toISOString();
+    assert.deepEqual(f.logs.slice(1), [`${at} pushed ${git("--git-dir", f.remote, "rev-parse", "--short", "status")}`,
+      `${at} bootout failed Boot-out failed: 3: No such process`]);
+    assert.deepEqual(f.leftovers(), []);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test("a skipped run whose committed status is shipped calls bootout again", () => {
+  const f = shipFixture();
+  try {
+    f.job("qa-fail", new Date(NOW.getTime() + 5 * MIN), { ...f.runner, bootout: () => { throw new Error("busy"); } });
+    assert.equal(f.job("qa-fail", new Date(NOW.getTime() + 10 * MIN)), 0);
+    assert.match(f.logs.at(-1), / skipped \(unchanged\)$/);
+    assert.equal(f.statusLog().length, 2);
+    assert.deepEqual(f.bootouts, [`gui/${process.getuid()}/in.jarvis.site-status`]);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
