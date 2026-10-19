@@ -307,7 +307,7 @@ The 88 spec cases were written at the spec gate.
 | Turn on GitHub Pages (default branch, `/docs`) so `guide.html#install` resolves | DEC-29 |
 | `prompts/answer.md` default should tell the model to name the note ids it used | T-8 N |
 | `ListeningSession.gapMarkers` is unused since the T-6 fix. Delete it or give it a zone | T-6 fix N |
-| No logging hook: maintenance, index and importer errors are dropped with `try?` | T-7, T-24, T-27 N |
+| Logging hook: **done** (J-012, DEC-45). Errors are logged under `dev.yashmangal.jarvis` (categories capture, transcribe, store, import, notes). Watch them with `log stream --predicate 'subsystem == "dev.yashmangal.jarvis"' --level info` | T-7, T-24, T-27 N |
 | Core AI slot has no model (T-17 F-1, open). Undecided: commit the AirPods sample as a test fixture | DECISIONS "Open" |
 | `SettingsView` builds its own `SettingsStore(paths: .standard)` instead of asking `Jarvis` | T-26 fix N |
 | Run `shellcheck` on the scripts once | T-28 N |

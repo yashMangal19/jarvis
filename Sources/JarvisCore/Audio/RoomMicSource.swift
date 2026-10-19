@@ -54,7 +54,7 @@ public final class RoomMicSource: AudioSourceStream, ReportsMicHealth, StopsItse
         self.authorized = authorized
         queue = DispatchQueue(label: "jarvis.room-mic")
         tap = makeTap(queue)
-        retry = RestartRetry(queue: queue, delays: retryDelays)
+        retry = RestartRetry(queue: queue, delays: retryDelays, name: "room mic")
         queue.setSpecific(key: onQueue, value: ())
     }
 

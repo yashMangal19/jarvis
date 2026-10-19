@@ -138,7 +138,9 @@ public final class Jarvis: ObservableObject {
 
         // DEC-26: the scheduler decides which hours an import notes again.
         let coordinator = ImportCoordinator(pipeline: pipeline) { period in
-            try? await hourlyNotes.renote(touching: period, now: clock.now)
+            do { try await hourlyNotes.renote(touching: period, now: clock.now) } catch {
+                Log.notes.error("Re-noting an import failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+            }
         }
         inbox = InboxImporter(paths: paths, coordinator: coordinator)
         voiceMemos = VoiceMemosImporter(locator: locator, coordinator: coordinator, ledger: ImportLedger(paths: paths),
@@ -201,8 +203,14 @@ public final class Jarvis: ObservableObject {
         if engines.transcriber == nil, (install.server ?? install.cli) != nil {
             jarvis.modelDownloadProgress = 0
             Task { [weak jarvis] in
-                let model = try? await WhisperModelDownloader().ensureSmall(in: paths.models) { progress in
-                    Task { @MainActor in jarvis?.modelDownloadProgress = progress }
+                let model: URL?
+                do {
+                    model = try await WhisperModelDownloader().ensureSmall(in: paths.models) { progress in
+                        Task { @MainActor in jarvis?.modelDownloadProgress = progress }
+                    }
+                } catch {
+                    Log.transcribe.error("Whisper model download failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+                    model = nil
                 }
                 jarvis?.modelDownloadProgress = nil
                 guard model != nil else { return }
@@ -243,10 +251,14 @@ public final class Jarvis: ObservableObject {
         guard !started, !shuttingDown else { return }
         started = true
         refreshPermissions()
-        try? paths.ensureLayout()
+        do { try paths.ensureLayout() } catch {
+            Log.store.error("Data folder layout failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
         lastMaintenance = clock.now
-        await maintenance.run(now: lastMaintenance)
-        try? index.rebuild(from: notes)
+        await runMaintenance(now: lastMaintenance)
+        do { try index.rebuild(from: notes) } catch {
+            Log.notes.error("Index rebuild failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
         guard !shuttingDown else { return }
         if let input = routes.current { session.handle(.inputChanged(input)) }
         session.start()
@@ -301,10 +313,23 @@ public final class Jarvis: ObservableObject {
         publishSpeaking()
         session.tick(now: now)
         commands.tick(now: now)
-        try? await hourlyNotes.tick(now: now)
+        do { try await hourlyNotes.tick(now: now) } catch {
+            Log.notes.error("Hourly note failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
         guard now.timeIntervalSince(lastMaintenance) >= 3600 else { return }
         lastMaintenance = now
-        await maintenance.run(now: now)
+        await runMaintenance(now: now)
+    }
+
+    /// Maintenance retries its own failures at the next run (T-7); they are only logged here.
+    private func runMaintenance(now: Date) async {
+        let result = await maintenance.run(now: now)
+        if let error = result.purge {
+            Log.store.error("Transcript purge failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
+        for (id, error) in result.rollups {
+            Log.notes.error("Roll-up \(id, privacy: .public) failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
     }
 
     /// Speech found after launch (whisper's model finished downloading): capture, the wake word and
@@ -396,7 +421,9 @@ public final class Jarvis: ObservableObject {
     public func recordScreenRecordingAsked() {
         var saved = settings.load()
         saved.screenRecordingAsked = true
-        try? settings.save(saved)
+        do { try settings.save(saved) } catch {
+            Log.store.error("Settings save failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
         refreshPermissions()
     }
 
@@ -436,8 +463,12 @@ public final class Jarvis: ObservableObject {
     private func startImporters() async {
         guard started, !shuttingDown, !importersStarted, speech.main != nil else { return }
         importersStarted = true
-        try? inbox.start()
-        try? await voiceMemos.start()
+        do { try inbox.start() } catch {
+            Log.imports.error("Inbox importer didn't start: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
+        do { try await voiceMemos.start() } catch {
+            Log.imports.error("Voice Memos importer didn't start: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
     }
 
     /// Starts the whisper servers behind `transcribers` in the background (EngineSelector creates them
@@ -450,7 +481,11 @@ public final class Jarvis: ObservableObject {
         guard !started.isEmpty else { return }
         servers += started
         serverStarts.append(Task.detached {
-            for server in started where !Task.isCancelled { try? await server.start() }
+            for server in started where !Task.isCancelled {
+                do { try await server.start() } catch {
+                    Log.transcribe.error("Whisper server didn't start: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+                }
+            }
         })
     }
 
@@ -495,7 +530,12 @@ public final class Jarvis: ObservableObject {
     /// that true of the whole chunk.
     private func store(_ chunk: AudioChunk, heardWhileListening: Bool) async {
         guard heardWhileListening else { return }
-        _ = try? await pipeline.process(chunk)
+        do { _ = try await pipeline.process(chunk) } catch {
+            Log.transcribe.error("""
+                A \(chunk.duration, format: .fixed(precision: 1), privacy: .public) s chunk from \(String(describing: chunk.source), privacy: .public) \
+                wasn't stored: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)
+                """)
+        }
     }
 
     /// Listens for the yes or no after a read-back. Not while Stopped: the mic runs only for a hold
@@ -580,8 +620,11 @@ private final class SourceDriver: @unchecked Sendable {
     private var applyQueued = false
     private var listening = false
 
+    private let label: String
+
     init(_ source: any AudioSourceStream, label: String) {
         self.source = source
+        self.label = label
         queue = DispatchQueue(label: label)
     }
 
@@ -602,7 +645,11 @@ private final class SourceDriver: @unchecked Sendable {
                 return wanted
             }
             if on {
-                try? source.start { [weak self] chunk in self?.deliver(chunk) }
+                do { try source.start { [weak self] chunk in self?.deliver(chunk) } } catch AudioError.redundantWithDefaultInput {
+                    // Expected: the mic stream records the room then.
+                } catch {
+                    Log.capture.error("\(label, privacy: .public) didn't start: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+                }
             } else {
                 source.stop()
             }

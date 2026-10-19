@@ -139,7 +139,9 @@ public final class VoiceMemosImporter: ObservableObject {
             // The copy is gone: a later chunk failed after lines were stored, and it was deleted.
         }
         // A ledger that cannot be written still holds the memo in memory; it re-imports after a relaunch.
-        try? ledger.record(original)
+        do { try ledger.record(original) } catch {
+            Log.imports.error("Voice Memos ledger not written, held in memory: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+        }
     }
 
     private func memos(in folder: URL) -> [URL: Int] {

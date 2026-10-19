@@ -12,13 +12,16 @@ final class RestartRetry {
 
     private let queue: DispatchQueue
     private let delays: [TimeInterval]
+    /// Names the input in the log: "mic" or "room mic".
+    private let name: String
     /// Bumped by every `begin` and `cancel`, so a try scheduled before them does nothing.
     private var generation = 0
     private var health = MicHealth.ok
 
-    init(queue: DispatchQueue, delays: [TimeInterval] = RestartRetry.delays) {
+    init(queue: DispatchQueue, delays: [TimeInterval] = RestartRetry.delays, name: String) {
         self.queue = queue
         self.delays = delays
+        self.name = name
     }
 
     /// `attempt` returns whether the input is running (or should no longer be tried).
@@ -32,6 +35,11 @@ final class RestartRetry {
     func report(_ new: MicHealth) {
         guard new != health else { return }
         health = new
+        switch new {
+        case .ok: Log.capture.info("\(self.name, privacy: .public) recording")
+        case .reconnecting: Log.capture.notice("\(self.name, privacy: .public) lost its input; retrying")
+        case .unavailable: Log.capture.error("\(self.name, privacy: .public) not recording; still retrying")
+        }
         onHealth?(new)
     }
 

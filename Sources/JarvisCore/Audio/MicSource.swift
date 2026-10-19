@@ -35,7 +35,7 @@ public final class MicSource: AudioSourceStream, ReportsMicHealth {
         queue = DispatchQueue(label: "jarvis.mic")
         tap = makeTap(queue)
         self.authorized = authorized
-        retry = RestartRetry(queue: queue, delays: retryDelays)
+        retry = RestartRetry(queue: queue, delays: retryDelays, name: "mic")
         queue.setSpecific(key: onQueue, value: ())
     }
 

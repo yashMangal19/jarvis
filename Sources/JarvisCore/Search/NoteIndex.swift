@@ -106,7 +106,9 @@ public final class NoteIndex {
         let previous = notes.onWrite
         notes.onWrite = { [weak self] note, url in
             previous?(note, url)
-            try? self?.add(noteID: note.id, text: note.body)
+            do { try self?.add(noteID: note.id, text: note.body) } catch {
+                Log.notes.error("Indexing note \(note.id, privacy: .public) failed: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+            }
         }
     }
 

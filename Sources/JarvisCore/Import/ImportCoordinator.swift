@@ -92,9 +92,13 @@ public final class ImportCoordinator {
             if Task.isCancelled { break }
             let stamp = FileStamp(url)
             if lock.withLock({ undeleted.contains(stamp) }) {
-                try? delete(url, stamp)
-            } else if let report = try? await importFile(url) {
-                reports.append(report)
+                do { try delete(url, stamp) } catch {
+                    Log.imports.error("Imported recording still not deleted: \(error.logKind, privacy: .public) \(url.path, privacy: .private)")
+                }
+            } else {
+                do { reports.append(try await importFile(url)) } catch {
+                    Log.imports.error("Import of a recording failed, kept for a later scan: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+                }
             }
         }
         return ScanReport(imported: reports, waiting: sizes(in: folder).count)

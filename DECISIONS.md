@@ -194,6 +194,18 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
   `Jarvis.statusLine`/`micHealth`/`roomMicHealth`, `MenuContent`.
 - **Checked against:** DEC-31 (kept; a separate case), DEC-24 (each restart still ends the chunk), DEC-25 (none).
 
+### DEC-45 · Errors go to the unified log, never what was said (2026-10-19)
+- **Why:** QA-8 found that failures were invisible: about a dozen error paths dropped their errors with `try?` (J-012).
+- **Decided by:** Jarvis-Orc (J-012).
+- **What:** `Log` (subsystem `dev.yashmangal.jarvis`) logs errors when capture starts, when transcription or storing
+  fails, and from the importers, notes, index, settings and maintenance, plus mic and room-mic health changes.
+  An error's domain and code are public. Its description is private, because a transcriber's message could
+  quote speech. Paths are private. Transcript and command text are never logged. Behaviour is unchanged.
+  Pitfall, checked in the log: an `Error` interpolated directly is printed in full even when marked
+  `.private`. Its description is always interpolated as `String(describing: error)`.
+- **Affects:** `Log.swift`, `Jarvis.swift`, `RestartRetry`, `ImportCoordinator`, `VoiceMemosImporter`, `NoteIndex`.
+- **Checked against:** DEC-32 (privacy wording holds: the log stays on the Mac and holds no speech).
+
 ### DEC-33 · The AirPods stem squeeze is opt-in
 - **Decided by:** human (T-27 review, option A)
 - **Why:** to hear a squeeze, Jarvis must play silence to stay "Now Playing". All the time, that blocks idle sleep,
