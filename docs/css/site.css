@@ -269,3 +269,205 @@ ol { padding: 0; list-style: none; }
   .commits li { grid-template-columns: 52px minmax(0, 1fr); height: 84px; }
   .msg { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
+
+/* ---- p. 4–8 and the footer (static; behaviour lives in suit-up / try-it / hall / fork-it) ---- */
+.page > h2 { font-size: clamp(48px, 5vw, 72px); line-height: 1.1; margin: 16px 0 32px; }
+.br-phone { display: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:is(.suit, .try, .hall, .fork, .foot) :is(button, a):focus-visible { outline: 2px dashed var(--red); outline-offset: 4px; }
+.suit ul, .try ul { margin: 0; padding: 0; list-style: none; }
+
+/* p. 4 suit up: blueprint sheet + index card. The card reserves its height so filling it moves nothing. */
+.suit {
+  display: grid; column-gap: clamp(32px, 4.2vw, 64px); align-items: start;
+  grid-template-columns: minmax(0, 790fr) minmax(0, 490fr);
+  grid-template-areas: "folio folio" "title title" "sheet cards";
+}
+.suit .folio { grid-area: folio; }
+.suit h2 { grid-area: title; }
+.suit .sheet { margin-top: 0; padding: 40px 24px 64px; transform: rotate(-.6deg); }
+.suit .sheet .t1 { left: 8%; }
+.suit .plates { width: 82%; }
+.plate {
+  position: absolute; left: var(--x); top: var(--y); min-height: 44px; padding: 4px 8px;
+  color: var(--chalk); font-size: clamp(18px, 1.9vw, 28px); line-height: 1;
+}
+.suit .hint { position: absolute; right: 12%; bottom: 20px; font-size: 22px; font-weight: 400; color: var(--chalk); }
+.card-col { grid-area: cards; margin-top: 56px; }
+.index-card {
+  position: relative; min-height: 520px; padding: 28px 32px 32px; background-color: #F6F3EA;
+  background-image: linear-gradient(transparent 58px, rgb(200 48 42 / .55) 58px 60px, transparent 60px),
+    repeating-linear-gradient(transparent 0 45px, rgb(31 63 115 / .14) 45px 46px);
+  transform: rotate(1deg); box-shadow: 0 14px 26px rgb(0 0 0 / .14);
+}
+.index-card .t1 { top: -16px; left: 38%; --r: -3deg; }
+.index-card fieldset { min-height: 380px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.offline { min-height: 1.2em; font-size: clamp(24px, 2.3vw, 32px); line-height: 1.2; }
+.others { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-top: 40px; }
+.others .hand { font-size: 24px; }
+.other-plates { display: flex; flex-wrap: wrap; gap: 12px; }
+.other-plates button { display: block; width: 56px; height: 56px; }
+
+/* p. 5 try it: slips on the left; every step has a fixed cell, so revealing one moves nothing. */
+.try {
+  display: grid; column-gap: clamp(32px, 4.2vw, 64px);
+  grid-template-columns: minmax(0, 720fr) minmax(0, 560fr);
+  grid-template-areas: "folio folio" "title title" "slips card" "flow card" "flow stamp" "flow promise";
+}
+.try .folio { grid-area: folio; }
+.try h2 { grid-area: title; }
+.slips { grid-area: slips; }
+.slips > .hand { font-size: 24px; }
+.slips ul { display: grid; justify-items: start; gap: 16px; margin-top: 8px; }
+.slip {
+  min-height: 44px; padding: 10px 24px; background: var(--chalk); font-size: clamp(22px, 2.2vw, 30px);
+  text-align: left; box-shadow: 0 4px 10px rgb(0 0 0 / .12); transform: rotate(-1deg);
+}
+.slips li:nth-child(2) .slip { transform: rotate(.6deg); margin-left: 16px; }
+.slips li:nth-child(3) .slip { margin-left: 32px; }
+.stage { display: contents; }
+.flow {
+  grid-area: flow; display: grid; align-content: start; column-gap: 32px; margin-top: 64px; min-height: 240px;
+  grid-template-columns: 120px minmax(0, 1fr); grid-template-areas: "mic wave" "mic transcript";
+}
+.mic { grid-area: mic; } .wave { grid-area: wave; } .transcript { grid-area: transcript; }
+.step figcaption { font-size: 20px; font-weight: 400; }
+.transcript { min-height: 3.2em; font-size: 16px; }
+.card-slot { grid-area: card; min-height: 330px; }
+.read-back {
+  position: relative; padding: 28px 36px 36px; background: #F6F3EA;
+  transform: rotate(1deg); box-shadow: 0 14px 26px rgb(0 0 0 / .14); font-size: clamp(17px, 1.5vw, 21px);
+}
+.read-back .t1 { top: -16px; left: 36%; --r: -2deg; }
+.read-back h3 { font: 700 12px var(--typed); letter-spacing: .3em; text-transform: uppercase; color: #6f6b62; margin-bottom: 16px; }
+.answers { display: flex; gap: 24px; margin-top: 40px; }
+.answers button { min-width: 120px; min-height: 48px; font-size: 28px; border: 2px solid currentColor; }
+.stamp { grid-area: stamp; justify-self: end; min-height: 120px; }
+.promise { grid-area: promise; font-size: clamp(26px, 2.2vw, 32px); margin-top: 24px; }
+
+/* p. 6 how it fits: the pipeline inside the dashed "your mac" box. */
+.mac { position: relative; padding: 48px clamp(16px, 2.2vw, 32px) 40px; border: 2.5px dashed var(--blueprint); }
+.mac-label { position: absolute; top: -.8em; left: 16px; padding: 0 6px; background: var(--paper); font-size: 28px; line-height: 1.2; }
+.pipeline { display: flex; }
+.pipeline li { position: relative; flex: 1 1 0; min-width: 0; }
+.pipeline li + li { padding-left: clamp(40px, 5.5vw, 96px); }
+.pipeline li + li::before {
+  content: ""; position: absolute; left: 8%; top: clamp(24px, 3vw, 44px); width: calc(clamp(40px, 5.5vw, 96px) * .76); aspect-ratio: 160 / 60;
+  background: url("../assets/art/arrow-r.svg") center / contain no-repeat;
+}
+.pipeline img { width: clamp(72px, 8.3vw, 120px); }
+.pipeline h3 { font-size: clamp(26px, 2.5vw, 36px); line-height: 1.1; margin-top: 20px; }
+.pipeline p, .pieces { font-size: clamp(13px, 1vw, 15px); color: #5d5a52; }
+.fits > p:not(.folio) { display: inline-block; margin-top: 48px; }
+.fits .pieces { margin-right: clamp(32px, 12vw, 180px); }
+.cloud { font-size: clamp(26px, 2.2vw, 32px); }
+
+/* p. 7 the hall: four capsules on a shelf, the marks column reserves room for six cards. */
+.hall {
+  display: grid; column-gap: clamp(24px, 2.8vw, 40px); align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  grid-template-areas: "folio folio" "title title" "sub sub" "capsules marks";
+}
+.hall .folio { grid-area: folio; } .hall h2 { grid-area: title; margin-bottom: 0; } .hall .sub { grid-area: sub; font-size: 26px; }
+.capsules { grid-area: capsules; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: clamp(16px, 2.8vw, 48px); margin-top: 56px; }
+.capsule { display: grid; grid-template-rows: auto auto 1fr; }
+.case { position: relative; max-width: 180px; padding-bottom: 12px; border-bottom: 2px solid #8f8a7d; }
+.ghost .case > img { opacity: .55; }
+.case .inside { position: absolute; left: 18%; top: 18%; width: 64%; }
+.tag { position: absolute; right: 10%; top: 3%; font-size: clamp(18px, 1.6vw, 24px); transform: rotate(8deg); }
+.infinity { position: absolute; inset: 30% 0 auto; text-align: center; font-size: clamp(56px, 7vw, 104px); line-height: 1; }
+.capsule h3 { font-size: clamp(28px, 2.5vw, 36px); margin-top: 24px; line-height: 1.1; }
+.capsule p { font-size: clamp(12px, 1vw, 14px); color: #5d5a52; }
+.marks { grid-area: marks; margin-top: 40px; }
+.marks h3 { font-size: 24px; font-weight: 400; }
+.marks ol { min-height: calc(6 * 104px - 5 * 24px); margin-top: 16px; }
+.mark {
+  position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 12px;
+  height: 104px; padding: 12px 16px; background: #F6F3EA; box-shadow: 0 6px 14px rgb(0 0 0 / .14); transform: rotate(-2deg);
+}
+.mark + .mark { margin-top: -24px; transform: rotate(2deg); }
+.mark .t1 { width: 72px; height: 22px; top: -10px; left: 40%; }
+.mark p { font-size: 20px; line-height: 1.1; }
+
+/* p. 8 fork it: headline, two tape strips with copy, the fork button, then the spare slot. */
+.fork {
+  display: grid; column-gap: clamp(32px, 4.2vw, 64px); align-items: center;
+  grid-template-columns: minmax(0, 820fr) minmax(0, 460fr);
+  grid-template-areas: "folio folio" "title art" "strips art" "fork art";
+}
+.fork .folio { grid-area: folio; align-self: start; }
+.fork h2 { grid-area: title; font-size: clamp(88px, 11vw, 160px); line-height: 1; }
+.fork .underline { text-decoration: underline var(--red) 5px; text-underline-offset: 24px; }
+.strips { grid-area: strips; display: grid; justify-items: start; gap: 20px; margin-top: 24px; }
+.strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; max-width: 100%; }
+.strip code {
+  min-width: 0; max-width: 100%; padding: 14px 24px; background: var(--tape); overflow-wrap: anywhere;
+  font: 700 clamp(13px, 1.5vw, 21px) var(--typed); transform: rotate(.8deg); box-shadow: 0 4px 8px rgb(0 0 0 / .1);
+}
+.copy { min-width: 7ch; min-height: 44px; font-size: 24px; text-align: left; }
+.guide { font-size: 26px; text-decoration: none; }
+.fork-row { grid-area: fork; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 40px; margin-top: 40px; }
+.fork-btn {
+  display: inline-block; padding: 14px 24px; background: var(--red); color: var(--chalk);
+  font-size: clamp(28px, 2.6vw, 36px); text-decoration: none; transform: rotate(-.6deg);
+}
+.fork-row span { font-size: 15px; }
+.slot-yours { grid-area: art; display: flex; align-items: center; gap: 16px; }
+.slot-yours figcaption { flex: 0 1 auto; font-size: clamp(24px, 2.2vw, 32px); }
+.slot-yours img { flex: 0 1 260px; min-width: 0; }
+
+/* footer */
+.foot {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 32px;
+  margin: 24px var(--gutter) 0; padding: 20px 0 40px; border-top: 1px solid #a9a597;
+  font-size: 13px; letter-spacing: .05em; color: #5d5a52;
+}
+
+@media (max-width: 960px) {
+  .suit { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "sheet" "cards"; }
+  .card-col { margin-top: 48px; max-width: 560px; }
+  .try { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "slips" "flow" "card" "stamp" "promise"; }
+  .flow { margin-top: 48px; min-height: 200px; }
+  .pipeline { flex-direction: column; gap: 0; }
+  .pipeline li { display: grid; grid-template-columns: clamp(72px, 14vw, 120px) minmax(0, 1fr); column-gap: 32px; align-items: center; }
+  .pipeline li img { grid-row: 1 / 3; width: 100%; }
+  .pipeline h3 { margin-top: 0; align-self: end; }
+  .pipeline p { align-self: start; }
+  .pipeline li + li { padding: clamp(64px, 12vw, 96px) 0 0; }
+  .pipeline li + li::before {
+    left: calc(clamp(72px, 14vw, 120px) / 2 - 15px); top: 8px; width: 30px; height: calc(clamp(64px, 12vw, 96px) - 16px);
+    aspect-ratio: auto; background-image: url("../assets/art/arrow-d.svg");
+  }
+  .hall { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "sub" "capsules" "marks"; }
+  .marks ol { display: flex; flex-wrap: wrap; gap: 16px; min-height: 0; }
+  .mark, .mark + .mark { width: 220px; margin-top: 0; }
+  .fork { grid-template-columns: minmax(0, 1fr); grid-template-areas: "folio" "title" "strips" "fork" "art"; }
+  .slot-yours { margin-top: 48px; }
+}
+
+@media (max-width: 600px) {
+  .page > h2 { font-size: 42px; }
+  .br-phone { display: inline; }
+  .suit .sheet { padding: 24px 12px 56px; transform: none; }
+  .suit .plates { width: 100%; }
+  .plate { font-size: 17px; }
+  .suit .hint { right: 16px; bottom: 12px; font-size: 18px; }
+  .index-card { padding: 24px 20px; transform: none; }
+  .slip { font-size: 20px; padding: 10px 16px; }
+  .slips li:nth-child(n) .slip { margin-left: 0; }
+  .flow { grid-template-columns: 64px minmax(0, 1fr); column-gap: 16px; }
+  .step figcaption { display: none; }
+  .read-back { padding: 24px 20px; transform: none; }
+  .fits > p.pieces { display: none; }
+  .capsules { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 40px; }
+  .marks ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .mark, .mark + .mark { width: auto; grid-template-columns: minmax(0, 1fr); height: auto; min-height: 104px; transform: none; }
+  .mark img { width: 56px; }
+  .fork h2 { font-size: 84px; }
+  .strip code { padding: 12px 14px; }
+  .fork-row { display: grid; justify-items: stretch; }
+  .fork-btn { text-align: center; }
+  .slot-yours { justify-content: center; }
+  .slot-yours img { flex-basis: 180px; }
+  .foot { flex-direction: column; }
+}

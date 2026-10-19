@@ -109,7 +109,7 @@
 </section>
 
 <section id="p3" class="page live" aria-labelledby="p3-title">
-  <div class="graph">
+  <div class="graph" aria-live="polite">
     <p class="folio">p. 3</p>
     <h2 id="p3-title" class="hand">how far along it is</h2>
     <p class="updates hand blue" data-slot="updates-line">updates itself every hour</p>
@@ -152,12 +152,149 @@
   </div>
 </section>
 
-<!-- p. 4–8 are filled by T-9; the anchors exist now so the nav resolves. -->
-<section id="p4" class="page"></section>
-<section id="p5" class="page"></section>
-<section id="p6" class="page"></section>
-<section id="p7" class="page"></section>
-<section id="p8" class="page"></section>
+<section id="p4" class="page suit" aria-labelledby="p4-title">
+  <p class="folio">p. 4</p>
+  <h2 id="p4-title" class="hand">suit up. <br class="br-phone">then swap anything.</h2>
+  <figure class="sheet suit-sheet">
+    <span class="tape t1"></span><span class="tape t3"></span>
+    <div class="plates">
+      <img src="assets/art/a-plates.svg" width="760" height="760" alt="">
+      <button type="button" class="plate hand" data-slot="plate" value="ears" aria-expanded="false" aria-controls="plate-card" style="--x: 47%; --y: 0%">ears</button>
+      <button type="button" class="plate hand" data-slot="plate" value="transcriber" aria-expanded="false" aria-controls="plate-card" style="--x: 74%; --y: 28%">transcriber</button>
+      <button type="button" class="plate hand" data-slot="plate" value="notes" aria-expanded="false" aria-controls="plate-card" style="--x: 68%; --y: 80%">notes</button>
+      <button type="button" class="plate hand" data-slot="plate" value="memory" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 26%">memory</button>
+      <button type="button" class="plate hand" data-slot="plate" value="hands" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 62%">hands</button>
+    </div>
+    <figcaption class="hint hand">click a plate to pop it out</figcaption>
+  </figure>
+  <div class="card-col">
+    <div id="plate-card" class="index-card" data-slot="plate-card">
+      <span class="tape t1"></span>
+      <fieldset data-slot="plate-options"></fieldset>
+      <p class="offline hand red" data-slot="offline-line" aria-live="polite"></p>
+    </div>
+    <div class="others">
+      <p class="hand muted" id="others-label">other plates:</p>
+      <ul class="other-plates" aria-labelledby="others-label">
+        <li><button type="button" data-slot="other-plate" value="ears" aria-label="ears"><img src="assets/art/plate-icon-0.svg" width="56" height="56" alt=""></button></li>
+        <li><button type="button" data-slot="other-plate" value="transcriber" aria-label="transcriber"><img src="assets/art/plate-icon-1.svg" width="56" height="56" alt=""></button></li>
+        <li><button type="button" data-slot="other-plate" value="notes" aria-label="notes"><img src="assets/art/plate-icon-2.svg" width="56" height="56" alt=""></button></li>
+        <li><button type="button" data-slot="other-plate" value="memory" aria-label="memory"><img src="assets/art/plate-icon-4.svg" width="56" height="56" alt=""></button></li>
+        <li><button type="button" data-slot="other-plate" value="hands" aria-label="hands"><img src="assets/art/plate-icon-3.svg" width="56" height="56" alt=""></button></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="p5" class="page try" aria-labelledby="p5-title">
+  <p class="folio">p. 5</p>
+  <h2 id="p5-title" class="hand">try it. <br class="br-phone">no mic needed.</h2>
+  <div class="slips">
+    <p class="hand muted" id="slips-label">pick something to say:</p>
+    <ul aria-labelledby="slips-label">
+      <li><button type="button" class="slip hand" data-slot="slip" value="reminder">“remind me to call mom at 7”</button></li>
+      <li><button type="button" class="slip hand" data-slot="slip" value="pricing">“what did we decide on pricing?”</button></li>
+      <li><button type="button" class="slip hand" data-slot="slip" value="priya">“send priya: running 10 min late”</button></li>
+    </ul>
+  </div>
+  <div class="stage">
+    <div class="flow">
+      <figure class="step mic" data-slot="mic" hidden>
+        <img src="assets/art/mic.svg" width="120" height="140" alt="">
+        <figcaption class="hand muted">1. it hears you</figcaption>
+      </figure>
+      <figure class="step wave" data-slot="wave" hidden>
+        <img src="assets/art/wave.svg" width="700" height="120" alt="">
+        <figcaption class="hand muted">2. writes it down</figcaption>
+      </figure>
+      <p class="transcript" data-slot="transcript" hidden></p>
+    </div>
+    <div class="card-slot">
+      <div class="read-back" data-slot="read-back" hidden>
+        <span class="tape t1"></span>
+        <h3>read-back</h3>
+        <p data-slot="read-back-text"></p>
+        <p class="answers"><button type="button" class="yes hand red" data-slot="yes">yes</button><button type="button" class="no hand" data-slot="no">no</button></p>
+      </div>
+      <div class="read-back answer" data-slot="answer" hidden>
+        <span class="tape t1"></span>
+        <h3>answer</h3>
+        <p data-slot="answer-text"></p>
+        <p class="source hand muted" data-slot="answer-source"></p>
+      </div>
+    </div>
+    <p class="stamp" data-slot="stamp" hidden></p>
+  </div>
+  <p class="promise hand red">nothing leaves without your yes.</p>
+</section>
+
+<section id="p6" class="page fits" aria-labelledby="p6-title">
+  <p class="folio">p. 6</p>
+  <h2 id="p6-title" class="hand">how it fits together</h2>
+  <div class="mac">
+    <p class="mac-label hand blue">your mac</p>
+    <ol class="pipeline">
+      <li><img src="assets/art/plate-icon-0.svg" width="120" height="120" alt=""><h3 class="hand">ears</h3><p>hears the room</p></li>
+      <li><img src="assets/art/plate-icon-1.svg" width="120" height="120" alt=""><h3 class="hand">transcriber</h3><p>turns it into words</p></li>
+      <li><img src="assets/art/plate-icon-2.svg" width="120" height="120" alt=""><h3 class="hand">notes</h3><p>writes the hour down</p></li>
+      <li><img src="assets/art/plate-icon-4.svg" width="120" height="120" alt=""><h3 class="hand">memory</h3><p>keeps it, finds it</p></li>
+      <li><img src="assets/art/plate-icon-3.svg" width="120" height="120" alt=""><h3 class="hand">hands</h3><p>does things. asks first.</p></li>
+    </ol>
+  </div>
+  <p class="pieces">every plate is its own piece. pull one out, drop yours in.</p>
+  <p class="cloud hand red">cloud? only if you plug one in.</p>
+</section>
+
+<section id="p7" class="page hall" aria-labelledby="p7-title">
+  <p class="folio">p. 7</p>
+  <h2 id="p7-title" class="hand">the hall</h2>
+  <p class="sub hand muted">every build gets a glass case. yours too.</p>
+  <ol class="capsules">
+    <li class="capsule">
+      <div class="case"><img src="assets/art/capsule.svg" width="180" height="400" alt=""><img class="inside" src="assets/art/flip-5.svg" width="160" height="160" alt=""><span class="tag hand red">now</span></div>
+      <h3 class="hand">build 1</h3><p>the mac. listens, writes, remembers, does.</p>
+    </li>
+    <li class="capsule ghost">
+      <div class="case"><img src="assets/art/capsule.svg" width="180" height="400" alt=""><img class="inside" src="assets/art/flip-3.svg" width="160" height="160" alt=""><span class="tag hand blue">next</span></div>
+      <h3 class="hand">build 2</h3><p>iphone + android. team memory, on purpose.</p>
+    </li>
+    <li class="capsule ghost">
+      <div class="case"><img src="assets/art/capsule.svg" width="180" height="400" alt=""><img class="inside" src="assets/art/flip-1.svg" width="160" height="160" alt=""><span class="tag hand blue">later</span></div>
+      <h3 class="hand">build 3</h3><p>learns you. fewer confirmations. siri.</p>
+    </li>
+    <li class="capsule yours">
+      <div class="case"><img src="assets/art/capsule-empty.svg" width="180" height="400" alt=""><span class="infinity hand red" aria-hidden="true">∞</span></div>
+      <h3 class="hand red">your mark</h3><p>fork it and it shows up here.</p>
+    </li>
+  </ol>
+  <div class="marks">
+    <h3 class="hand muted">marks from forks:</h3>
+    <ol data-slot="marks">
+      <li class="mark"><span class="tape t1"></span><img src="assets/art/flip-2.svg" width="160" height="160" alt=""><p class="hand">mark 1 · @you?</p></li>
+    </ol>
+  </div>
+</section>
+
+<section id="p8" class="page fork" aria-labelledby="p8-title">
+  <p class="folio">p. 8</p>
+  <h2 id="p8-title" class="hand">your <span class="underline">turn.</span></h2>
+  <div class="strips">
+    <p class="strip"><code>brew install yashMangal19/tap/jarvis</code><button type="button" class="copy hand red" data-copy="brew install yashMangal19/tap/jarvis" aria-label="copy the brew install line">copy</button></p>
+    <p class="strip"><code>git clone github.com/yashMangal19/jarvis</code><button type="button" class="copy hand red" data-copy="git clone github.com/yashMangal19/jarvis" aria-label="copy the git clone line">copy</button></p>
+    <a class="guide hand red" href="guide.html">full guide →</a>
+  </div>
+  <p class="fork-row"><a class="fork-btn hand" href="https://github.com/yashMangal19/jarvis/fork">fork it on github →</a><span>MIT. strip it, sell it, teach with it.</span></p>
+  <figure class="slot-yours">
+    <figcaption class="hand red">this slot is yours&nbsp;→</figcaption>
+    <img src="assets/art/flip-4.svg" width="160" height="160" alt="">
+  </figure>
+</section>
 </main>
+
+<footer class="foot">
+  <p>JARVIS · workshop notes · made in mumbai by <a href="https://github.com/yashMangal19">yash mangal</a> · first shown at swift mumbai, 17 oct 2026</p>
+  <a href="guide.html">full guide →</a>
+  <p>not affiliated with marvel or disney.</p>
+</footer>
 </body>
 </html>
