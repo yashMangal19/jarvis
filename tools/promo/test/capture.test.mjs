@@ -72,3 +72,21 @@ test('every text stays inside the 60 px frame margin, and inside its w, at its b
     await close();
   }
 });
+
+test('the capture server answers 404 for any path outside tools/promo', async () => {
+  const { url, close } = await openPromo();
+  try {
+    assert.equal((await fetch(`${url}/render/index.html`)).status, 200);
+    for (const escape of ['/..%2F..%2Fetc%2Fhosts', `/${'..%2F'.repeat(20)}etc%2Fhosts`]) {
+      assert.equal((await fetch(url + escape)).status, 404, escape);
+    }
+  } finally {
+    await close();
+  }
+});
+
+test('a non-finite --from or --to exits non-zero', async () => {
+  for (const args of [['--from', 'abc'], ['--to', 'Infinity'], ['--from', '']]) {
+    await assert.rejects(run(...args), err => err.code !== 0, args.join(' '));
+  }
+});

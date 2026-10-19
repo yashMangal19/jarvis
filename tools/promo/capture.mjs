@@ -11,12 +11,14 @@ const FPS = 30;
 const root = import.meta.dirname;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-// Bound to 127.0.0.1, so the page can fetch its storyboard and fonts. Nothing else is served to.
+// Serves tools/promo so the page can fetch its storyboard and fonts. Bound to 127.0.0.1, so only this
+// machine can connect; paths that resolve outside tools/promo answer 404.
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.ttf': 'font/ttf' };
 async function serve() {
   const server = createServer(async (req, res) => {
-    const file = path.join(root, decodeURIComponent(new URL(req.url, 'http://local').pathname));
     try {
+      const file = path.resolve(root, `.${decodeURIComponent(new URL(req.url, 'http://local').pathname)}`);
+      if (!file.startsWith(root + path.sep)) throw new Error('outside tools/promo');
       const body = await readFile(file);
       res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream' }).end(body);
     } catch {
@@ -63,10 +65,19 @@ if (import.meta.main) {
       chrome: { type: 'string', default: CHROME },
     },
   });
+  const seconds = flag => {
+    const n = opt[flag].trim() === '' ? NaN : Number(opt[flag]);
+    if (!Number.isFinite(n)) {
+      console.error(`--${flag} must be a finite number of seconds, got "${opt[flag]}"`);
+      process.exit(2);
+    }
+    return n;
+  };
+  const from = seconds('from'), to = opt.to === undefined ? undefined : seconds('to');
   const { page, duration, close } = await openPromo({ chrome: opt.chrome });
   try {
-    const first = Math.round(Number(opt.from) * FPS);
-    const last = Math.round(Number(opt.to ?? duration) * FPS);
+    const first = Math.round(from * FPS);
+    const last = Math.round((to ?? duration) * FPS);
     await mkdir(opt.out, { recursive: true });
     for (let i = first; i < last; i++) {
       await page.evaluate(t => window.render(t), i / FPS);
