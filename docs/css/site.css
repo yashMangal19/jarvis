@@ -66,7 +66,9 @@ ol { padding: 0; list-style: none; }
 /* ---- p. 1 hero ---- */
 .hero {
   display: grid; padding-top: 24px; column-gap: clamp(20px, 2.8vw, 40px);
-  grid-template-columns: minmax(0, 280fr) minmax(0, 240fr) minmax(0, 740fr);
+  /* Left columns keep the button and the build log on their natural widths down to ~1250px (min(px, vw)),
+     so the left column does not grow taller and push the gauge below the fold; the sheet gives way. */
+  grid-template-columns: minmax(min(250px, 20vw), 250fr) minmax(min(212px, 17vw), 212fr) minmax(0, 770fr);
   grid-template-areas: "title title sheet" "lede lede sheet" "cta log sheet" "launch launch sheet";
   grid-template-rows: auto auto auto 1fr;
 }
@@ -81,7 +83,7 @@ ol { padding: 0; list-style: none; }
   box-shadow: 3px 3px 0 -1px var(--paper), 3px 3px 0 1px var(--graphite);
 }
 .build-log {
-  grid-area: log; justify-self: start; margin-top: 18px; width: min(200px, 100%); padding: 16px 20px 20px;
+  grid-area: log; justify-self: start; width: min(200px, 100%); padding: 16px 20px 20px;
   background: #F2E7B4; transform: rotate(-5deg); box-shadow: 2px 6px 12px rgb(0 0 0 / .12);
   font-size: 13px; line-height: 1.7;
 }
@@ -90,13 +92,18 @@ ol { padding: 0; list-style: none; }
 /* The caption's "online!" hangs --overhang past the dial; the gap clears it, so the countdown starts after it. */
 .launch {
   --overhang: 20px;
-  grid-area: launch; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 24px calc(var(--overhang) + 16px); margin-top: 24px;
+  grid-area: launch; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 24px calc(var(--overhang) + 8px); margin-top: 12px;
 }
-.gauge { position: relative; width: clamp(200px, 17vw, 260px); flex: none; }
+.gauge { position: relative; width: clamp(200px, 16vw, 250px); flex: none; }
 .gauge figcaption { display: flex; justify-content: space-between; margin: -6px calc(-1 * var(--overhang)) 0 -40px; font-size: 17px; }
-.countdown { flex: 1 1 200px; }
+.countdown { flex: 1 1 170px; }
 .countdown .hand { font-size: 22px; font-weight: 400; }
-.countdown .clock { font-weight: 700; font-size: 52px; line-height: 1; }
+.countdown .clock { font-weight: 700; font-size: 52px; line-height: 1; white-space: nowrap; }
+/* The clock ticks in place: hours and minutes hold two figures, right-aligned so each unit stays on its
+   digit, so 10m → 9m moves no letter. Days (one figure in this countdown) keep no reserve, so the clock
+   still starts flush with its label. */
+.clock .slot { font-variant-numeric: tabular-nums; }
+.clock :is([data-slot=hours], [data-slot=minutes]) { min-width: 2ch; text-align: end; }
 .countdown .sep { display: none; }
 .when { display: block; }
 
@@ -130,13 +137,23 @@ ol { padding: 0; list-style: none; }
 .player .t1 { top: -14px; left: 4%; --r: 3deg; }
 .player .t2 { bottom: -14px; right: -5%; --r: -3deg; }
 .player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #1E2633; }
-/* Carries its own dark ground, so it reads on the dark video, the cream end-card poster and the cream
-   "promo lands soon" card alike. Placed in %, inside the card's drawn border and clear of the tapes and
-   the video controls, at every width. */
+/* Carries its own dark ground, so it reads on the dark video, the cream poster and the cream
+   "promo lands soon" card alike. Top-left, below the tape: that band is blank on both the poster
+   (its headline starts at ~28% down) and the card, and it stays clear of the control bar once
+   playback starts. */
 .player-label {
-  position: absolute; left: 7%; top: 18%; padding: 2px 8px; background: #1E2633; color: var(--chalk);
+  position: absolute; left: 7%; top: 14%; padding: 2px 8px; background: #1E2633; color: var(--chalk);
   font-size: 13px; letter-spacing: .15em; pointer-events: none;
 }
+/* One hand-drawn play button before the first play (player.js), in the poster's empty band below its
+   github strip; the native controls take over once playback starts. */
+.player .play {
+  position: absolute; left: 50%; top: 72%; translate: -50% -50%; width: clamp(48px, 11%, 104px); aspect-ratio: 1;
+}
+.player .play svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.player .play .ring { fill: var(--chalk); stroke: var(--graphite); stroke-width: 3; stroke-linecap: round; }
+.player .play .tri { fill: none; stroke: var(--red); stroke-width: 5; stroke-linejoin: round; }
+.player .play:focus-visible { outline: 2px dashed var(--red); outline-offset: 4px; }
 .frames { font-size: 26px; margin: 36px 0 0 30px; }
 .flip { grid-row: 3; grid-column: 2; align-self: center; position: relative; }
 .flip-cue { font-size: 32px; text-align: center; }
@@ -172,11 +189,11 @@ ol { padding: 0; list-style: none; }
 .stale { grid-area: notes; align-self: start; margin-top: calc(24px + 1.3em); font-size: 22px; line-height: 1.3; }
 .waves { grid-area: waves; display: grid; justify-content: start; margin-top: 36px; }
 .waves h3 { font-size: 26px; }
-/* D3/M3: boxes nearly edge to edge. A cell is box.svg's 46-unit canvas; box-tick.svg is drawn on a
-   60-unit canvas (the tick runs past the box), so it is scaled at the same units per pixel and its
-   tick overhangs the next cell: both boxes draw the same size. */
-.wave-row { display: flex; }
-.wave-row li { flex: 0 1 58px; min-width: 0; }
+/* D3/M3: boxes close together, each tick inside its own box. One scale rule: a cell is 46 units (box.svg's
+   canvas) and every box art is drawn at cell/46 px per unit. box-tick.svg keeps a 60-unit canvas (p. 4's
+   checkbox sizes it), but its ink ends inside the first 46 units, so the spare canvas is blank. */
+.wave-row { display: flex; gap: 4px; }
+.wave-row li { flex: 0 1 56px; min-width: 0; }
 .wave-row img { width: 100%; }
 .wave-row img[src$="box-tick.svg"] { width: calc(100% * 60 / 46); max-width: none; }
 .done { justify-self: end; margin-top: 18px; font-size: 26px; line-height: 1.1; height: 1.1em; }
@@ -263,7 +280,8 @@ ol { padding: 0; list-style: none; }
   .promo { grid-template-columns: minmax(0, 1fr); padding-top: 56px; }
   .promo h2 { font-size: 42px; }
   .frames { display: none; }
-  .player .t2 { right: -8px; }
+  .player .t2 { display: none; } /* M2: one tape, top-left; the bottom strip sat on the control bar */
+  .player-label { font-size: 11px; padding: 1px 6px; }
   .flip { grid-row: auto; grid-column: 1; margin-top: 48px; }
   .flip-cue { text-align: left; font-size: 28px; display: flex; align-items: center; gap: 8px; }
   .flip-cue img { margin: 0; }
