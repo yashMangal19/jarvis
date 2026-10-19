@@ -141,7 +141,10 @@ struct FileStamp: Hashable {
     let size: Int?
     let modified: Date?
 
+    /// Read from disk now: `URL` caches resource values per instance, and a stamp is the file as it is.
     init(_ url: URL) {
+        var url = url
+        url.removeAllCachedResourceValues()
         let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         path = url.standardizedFileURL.path
         size = values?.fileSize

@@ -336,6 +336,73 @@ import Testing
         #expect(try FileManager.default.contentsOfDirectory(atPath: paths.imports.path).filter { $0.hasSuffix(".m4a") }.isEmpty)
     }
 
+    // J-019: "undecodable" is a verdict on one version of a memo. However long its writer stalled, a memo
+    // given up on is imported once it changes, even after a relaunch; an unchanged one stays given up.
+    @Test func aMemoGivenUpOnIsImportedOnceItChangesEvenAfterARelaunch() async throws {
+        let whole = try Data(contentsOf: try memoM4A(in: fixtures))
+        let memo = recordings.appending(path: "20261017 101500-AB12CD34.m4a")
+        let first = FakeFolderWatcher()
+        let (before, _) = memoImporter(watcher: first, ledger: ImportLedger(paths: paths), retryDelay: 0.05)
+        try await startEmpty(before)
+        try whole.prefix(whole.count / 2).write(to: memo)
+        first.fire()
+        await memoWaitUntil { ImportLedger(paths: paths).isImported(memo) }  // given up, and on disk
+        await before.stop()
+
+        // The writer finishes long after; Jarvis relaunches.
+        let handle = try FileHandle(forWritingTo: memo)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: whole.dropFirst(whole.count / 2))
+        try handle.close()
+        let transcriber = ImportFakeTranscriber()
+        let (after, _) = memoImporter(transcriber: transcriber, ledger: ImportLedger(paths: paths), retryDelay: 0.05)
+        try await after.start()
+        await memoWaitUntil { transcriber.calls == 1 }
+        await after.stop()
+
+        #expect(transcriber.calls == 1)
+    }
+
+    @Test func theLedgerReadsItsOlderFormatAndKeepsAVerdictOnlyForTheSameVersion() throws {
+        try FileManager.default.createDirectory(at: paths.index, withIntermediateDirectories: true)
+        let old = recordings.appending(path: "old.m4a"), memo = recordings.appending(path: "memo.m4a")
+        try Data(#"{"baseline":true,"paths":["\#(old.standardizedFileURL.path)"]}"#.utf8)
+            .write(to: paths.index.appending(path: "imported.json"))
+        try FileManager.default.createDirectory(at: recordings, withIntermediateDirectories: true)
+        try Data("half".utf8).write(to: memo)
+
+        let ledger = ImportLedger(paths: paths)
+        #expect(ledger.hasBaseline && ledger.isImported(old))
+        try ledger.recordUndecodable(memo, as: FileStamp(memo))
+        #expect(ImportLedger(paths: paths).isImported(memo))  // the verdict survives a relaunch
+
+        try Data("half and the rest".utf8).write(to: memo)
+        #expect(!ImportLedger(paths: paths).isImported(memo))  // a new version is a candidate again
+        try ImportLedger(paths: paths).record(memo)
+        try Data("trimmed".utf8).write(to: memo)
+        #expect(ImportLedger(paths: paths).isImported(memo))  // imported stays imported, whatever changes
+    }
+
+    @Test func aMemoGivenUpOnAndUnchangedStaysGivenUpAfterARelaunch() async throws {
+        let memo = recordings.appending(path: "broken.m4a")
+        let first = FakeFolderWatcher()
+        let (before, _) = memoImporter(watcher: first, ledger: ImportLedger(paths: paths), retryDelay: 0.05)
+        try await startEmpty(before)
+        try Data("not audio".utf8).write(to: memo)
+        first.fire()
+        await memoWaitUntil { ImportLedger(paths: paths).isImported(memo) }
+        await before.stop()
+
+        let transcriber = ImportFakeTranscriber()
+        let (after, _) = memoImporter(transcriber: transcriber, ledger: ImportLedger(paths: paths), retryDelay: 0.05)
+        try await after.start()
+        await memoWaitUntil { after.scanIsIdle }
+        await after.stop()
+
+        #expect(transcriber.calls == 0)
+        #expect(!FileManager.default.fileExists(atPath: paths.imports.appending(path: "failed/broken.m4a").path))
+    }
+
     // J-011: two scans back to back (the first scan and a folder change at startup) see a memo still being
     // synced unchanged twice, a moment apart. That is no sign it is broken: it is kept until a later look.
     @Test func twoScansBackToBackNeverGiveUpOnAMemoStillBeingWritten() async throws {

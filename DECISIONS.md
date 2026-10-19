@@ -269,7 +269,7 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 
 ## Imports
 
-### DEC-43 · A still-syncing memo is given up only on a look at least `retryDelay` after the first (2026-10-19)
+### DEC-43 · A still-syncing memo is given up only on a look at least `retryDelay` after the first (2026-10-19) · *Superseded in part by DEC-48*
 - **Why:** J-010 found that at startup the first scan and a folder change can run back to back. A memo seen unchanged
   and undecodable twice, a moment apart, was dropped for good, which is data loss.
 - **Decided by:** Jarvis-Orc (J-011).
@@ -278,6 +278,20 @@ Status: **Active** unless marked. Dates are 2026-10-17 unless stated.
 - **Affects:** `Import/VoiceMemosImporter.swift`.
 - **Checked against:** DEC-19 (unchanged), DEC-23 (unchanged: audio is still deleted only after a successful
   transcription). The import gate repair's "unchanged and still broken" rule is kept, with the time gap added.
+
+### DEC-48 · "Undecodable" is a verdict on one version of a memo, never on its path (2026-10-19)
+- **Why:** D12 review (J-018) of J-011. The ledger was keyed by path only, so a memo given up on mid-sync was lost
+  for good. A quiet-gap rule only moved the threshold (a writer stalled more than 5 s still lost the memo).
+- **Decided by:** Jarvis-Orc (J-019).
+- **What:** `index/imported.json` keeps imported and baseline memos by path, for good (DEC-19: never re-import a
+  trimmed memo). An undecodable memo is recorded with its size and modification date, and any later version is a
+  candidate again at the next scan or launch, so no stall can lose it. `FileStamp` reads from disk, never from a
+  URL's cached values. Older ledgers read as before.
+- **Supersedes in part:** DEC-43. Its gap now only decides how long a still-changing memo keeps being retried
+  (promptness); it no longer protects the data.
+- **Not covered here:** a recording partly transcribed when Jarvis quits still restarts from the beginning
+  (`ImportCoordinator.resumeAt` is in memory). That is the README known limit, unchanged.
+- **Checked against:** DEC-19, DEC-23 (audio still deleted only after a full transcription), DEC-43.
 
 ### DEC-44 · Real-device and on-device-model tests are opt-in; run once by hand before a tag (2026-10-19)
 - **Decided by:** Jarvis-Orc (J-011, from J-010).

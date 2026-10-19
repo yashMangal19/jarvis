@@ -97,8 +97,8 @@ public final class VoiceMemosImporter: ObservableObject {
         return newMemos(in: folder).count
     }
 
-    /// Records `original` once it is done with (imported, or found undecodable); leaves it for a later
-    /// scan when nothing of it was stored.
+    /// Records `original` once it is done with: imported (for good), or undecodable (for this version only,
+    /// DEC-48). Leaves it for a later scan when nothing of it was stored.
     private func importCopy(of original: URL) async {
         let fileManager = FileManager.default
         let copy = imports.appending(path: original.lastPathComponent)
@@ -118,11 +118,11 @@ public final class VoiceMemosImporter: ObservableObject {
             // The original stays in Voice Memos, so Jarvis's failed copy is not kept, wherever it is.
             try? fileManager.removeItem(at: movedTo ?? copy)
             // An export or sync writes a memo in place, and an MP4/QuickTime file does not decode until its
-            // index is written last, so one still being written looks broken. It is given up on only when
-            // a scan at least `retryDelay` after the first finds it unchanged and still broken. Two scans back to
-            // back (the first scan and a folder change at startup) are a moment apart, not a sign (J-011).
-            // Ceiling: a writer stalled longer than `retryDelay` still loses the memo.
-            let givenUp = lock.withLock { () -> Bool in
+            // index is written last, so one still being written looks broken. The verdict is on this version
+            // only (DEC-48): if the memo changes later, it is a candidate again, so no stall can lose it. Until
+            // then, a memo still changing keeps being retried; it is set aside once a scan at least `retryDelay`
+            // after the first finds it unchanged. That gap is for promptness, not correctness (J-011).
+            let settled = lock.withLock { () -> Bool in
                 let now = Date()
                 if let seen = undecodable[original], seen.stamp == stamp {
                     return now.timeIntervalSince(seen.since) >= retryDelay
@@ -130,7 +130,12 @@ public final class VoiceMemosImporter: ObservableObject {
                 undecodable[original] = (stamp, now)
                 return false
             }
-            guard givenUp else { return }
+            guard settled else { return }
+            do { try ledger.recordUndecodable(original, as: stamp) } catch {
+                Log.imports.error("Voice Memos ledger not written, held in memory: \(error.logKind, privacy: .public) \(String(describing: error), privacy: .private)")
+            }
+            Log.imports.notice("A Voice Memo doesn't decode yet; it is tried again when it changes")
+            return
         } catch {
             if fileManager.fileExists(atPath: copy.path) {
                 try? fileManager.removeItem(at: copy) // nothing stored: the original is tried again
