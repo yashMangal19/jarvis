@@ -6,6 +6,7 @@
     "smoke": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1"
+    "@playwright/test": "^1.64.1",
+    "gsap": "3.15.0"
   }
 }
