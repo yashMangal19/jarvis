@@ -63,6 +63,11 @@ test("p. 1: the gauge and the countdown sit above the fold", async ({ page }, in
     const box = await p1(page).locator(sel).boundingBox();
     expect(box.y + box.height, sel).toBeLessThanOrEqual(900);
   }
+  // D1 draws the gauge ≈265px wide; the fold must not shrink it below 240px where the height allows.
+  expect((await p1(page).locator(".gauge").boundingBox()).width).toBeGreaterThanOrEqual(240);
+  const countdown = await p1(page).locator(".countdown").boundingBox();
+  const gauge = await p1(page).locator(".gauge").boundingBox();
+  expect(countdown.x, "the countdown stays beside the gauge").toBeGreaterThan(gauge.x + gauge.width);
 });
 
 test("p. 3: every commit age reads on one line", async ({ page }) => {
@@ -112,31 +117,40 @@ test("p. 1: on the phone, one tape top-left, one bottom-right, and the button ri
   expect(cta.y - countdown.bottom).toBeLessThanOrEqual(40);
 });
 
-// The red tick's own extent, read from the drawing, in page pixels.
-const tickRight = (img) => img.evaluate(async (el) => {
+// The red tick's extent against its own box's ink, both read from the drawing, in page pixels.
+const tickVsBox = (img) => img.evaluate(async (el) => {
   const svg = new DOMParser().parseFromString(await (await fetch(el.src)).text(), "image/svg+xml").documentElement;
   const host = document.body.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "svg"));
   host.append(...svg.childNodes);
-  const red = [...host.querySelectorAll("path")].find((p) => p.getAttribute("stroke") === "#C8302A");
-  const bb = red.getBBox();
-  const right = bb.x + bb.width + Number(red.getAttribute("stroke-width")) / 2;
+  const ink = (p) => { const b = p.getBBox(); const w = Number(p.getAttribute("stroke-width")) / 2; return { right: b.x + b.width + w, bottom: b.y + b.height + w, top: b.y - w }; };
+  const paths = [...host.querySelectorAll("path")];
+  const tick = ink(paths.find((p) => p.getAttribute("stroke") === "#C8302A"));
+  const box = paths.filter((p) => p.getAttribute("stroke") !== "#C8302A").map(ink);
   host.remove();
-  const r = el.getBoundingClientRect();
-  return r.left + right * (r.width / svg.viewBox.baseVal.width);
+  const r = el.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+  const px = (u) => u * (r.width / vb.width);
+  return { tickRight: px(tick.right), tickBottom: px(tick.bottom), tickTop: px(tick.top),
+    boxRight: px(Math.max(...box.map((b) => b.right))), boxBottom: px(Math.max(...box.map((b) => b.bottom))) };
 });
 
-test("p. 3: wave boxes are at least 48px and no tick crosses into the next box", async ({ page }, info) => {
+test("p. 3: every red tick stays inside its own box", async ({ page }) => {
+  await open(page);
+  const ticked = page.locator('#p3 [data-slot=wave-boxes] img[src$="box-tick.svg"]');
+  expect(await ticked.count()).toBeGreaterThan(0);
+  for (const img of await ticked.all()) {
+    const m = await tickVsBox(img);
+    expect(m.tickRight, "tick right edge vs its box's right edge").toBeLessThanOrEqual(m.boxRight);
+    expect(m.tickBottom, "tick foot vs its box's bottom edge").toBeLessThanOrEqual(m.boxBottom);
+    expect(m.tickTop, "tick tip vs its box's top").toBeGreaterThanOrEqual(0);
+  }
+});
+
+test("p. 3: wave boxes are at least 48px, with a small gap between them", async ({ page }, info) => {
   desktopOnly(info);
   await open(page);
-  const imgs = await page.locator("#p3 [data-slot=wave-boxes] img").all();
   const cells = [];
-  for (const img of imgs) cells.push(await img.locator("xpath=..").boundingBox());
-  for (const [i, img] of imgs.entries()) {
-    expect(cells[i].width, `cell ${i}`).toBeGreaterThanOrEqual(48);
-    if (i + 1 < imgs.length && (await img.getAttribute("src")).endsWith("box-tick.svg")) {
-      expect(await tickRight(img), `tick ${i}`).toBeLessThanOrEqual(cells[i + 1].x);
-    }
-  }
+  for (const img of await page.locator("#p3 [data-slot=wave-boxes] img").all()) cells.push(await img.locator("xpath=..").boundingBox());
+  for (const [i, c] of cells.entries()) expect(c.width, `cell ${i}`).toBeGreaterThanOrEqual(48);
   expect(cells[1].x - (cells[0].x + cells[0].width), "a small gap between boxes").toBeGreaterThan(0);
 });
 
@@ -173,7 +187,9 @@ test("header: the phone menu links are not underlined", async ({ page }, info) =
   for (const a of await page.locator(".nav-phone nav a").all()) await expect(a).toHaveCSS("text-decoration-line", "none");
 });
 
-test("p. 2: 'no sound' stays clear of the poster's headline and stamp", async ({ page }) => {
+// The old placement (18% down) cleared the headline at 1440 and only collided on the phone, so this is a phone check.
+test("p. 2: on the phone 'no sound' stays clear of the poster's headline and stamp", async ({ page }, info) => {
+  phoneOnly(info);
   await open(page);
   const player = await page.locator("#p2 .player video").boundingBox();
   const label = await page.locator("#p2 .player-label").boundingBox();
@@ -252,4 +268,19 @@ test.describe("reduced motion", () => {
     expect(await page.locator("#p2 video").evaluate((v) => v.paused && v.currentTime === 0)).toBe(true);
     await expect(page.getByRole("button", { name: "play the promo" })).toBeVisible();
   });
+});
+
+test("p. 2: a play() that fails leaves the frame as it is, with no unhandled rejection", async ({ page }, info) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = () => Promise.reject(new DOMException("blocked", "NotAllowedError"));
+  });
+  await open(page);
+  const play = page.getByRole("button", { name: "play the promo" });
+  await play.click();
+  await page.waitForTimeout(300);
+  expect(errors).toEqual([]);
+  await expect(play).toBeVisible();
+  await expect(page.locator("#p2 video")).not.toHaveAttribute("controls");
 });

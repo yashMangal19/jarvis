@@ -95,11 +95,13 @@ ol { padding: 0; list-style: none; }
   --overhang: 20px;
   grid-area: launch; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 24px calc(var(--overhang) + 8px); margin-top: 12px;
 }
-.gauge { position: relative; width: clamp(200px, 16vw, 250px); flex: none; }
+/* D1's gauge is ≈265px. Width follows the window's height as well as its width (27vh), so the clock and the
+   date stay above the fold on a short screen and the gauge is as large as the height allows (243px at 1440×900). */
+.gauge { position: relative; width: clamp(200px, min(18vw, 27vh), 260px); flex: none; }
 .gauge figcaption { display: flex; justify-content: space-between; margin: -6px calc(-1 * var(--overhang)) 0 -40px; font-size: 17px; }
 .countdown { flex: 1 1 170px; }
 .countdown .hand { font-size: 22px; font-weight: 400; }
-.countdown .clock { font-weight: 700; font-size: 52px; line-height: 1; white-space: nowrap; }
+.countdown .clock { font-weight: 700; font-size: 48px; line-height: 1; white-space: nowrap; }
 /* The clock ticks in place: hours and minutes hold two figures, right-aligned so each unit stays on its
    digit, so 10m → 9m moves no letter. Days (one figure in this countdown) keep no reserve, so the clock
    still starts flush with its label. */
@@ -201,7 +203,7 @@ ol { padding: 0; list-style: none; }
 .waves h3 { font-size: 26px; }
 /* D3/M3: boxes close together, each tick inside its own box. One scale rule: a cell is 46 units (box.svg's
    canvas) and every box art is drawn at cell/46 px per unit. box-tick.svg keeps a 60-unit canvas (p. 4's
-   checkbox sizes it), but its ink ends inside the first 46 units, so the spare canvas is blank. */
+   checkbox sizes it); its tick is drawn inside the box, so the spare canvas is blank. */
 .wave-row { display: flex; gap: 4px; }
 .wave-row li { flex: 0 1 56px; min-width: 0; }
 .wave-row img { width: 100%; }
