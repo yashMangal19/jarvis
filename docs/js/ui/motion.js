@@ -10,7 +10,7 @@ const load = (file, integrity) => new Promise((resolve, reject) => {
 });
 
 function flip(cards) {
-  // Inline because site.css is out of this module's reach: a turned card lifts off the stack.
+  // Injected because the blueprint's file list for this ticket has no stylesheet: a turned card lifts off the stack.
   const style = document.createElement("style");
   style.textContent = ".cards li { transition: translate .2s ease-out; } .cards li.is-turned { translate: 0 -20px; }";
   document.head.append(style);
@@ -25,8 +25,9 @@ function flip(cards) {
 
 function flyIn(plates) {
   // Each plate starts further out along the line from the core, then settles into place.
-  const core = plates[0].parentElement.getBoundingClientRect();
+  // Core and plate are measured in the same frame, so the scroll since load cancels out.
   const away = (el, axis) => {
+    const core = el.parentElement.getBoundingClientRect();
     const b = el.getBoundingClientRect();
     return axis === "x" ? (b.left + b.width / 2 - core.left - core.width / 2) * 0.8
       : (b.top + b.height / 2 - core.top - core.height / 2) * 0.8;
