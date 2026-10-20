@@ -1,17 +1,17 @@
 // Visual QA 4 (qa/visual-qa-4.md), S-1..S-8: geometry checks, each red before its fix. They measure boxes, lines and
 // stroke, never pixels, and run at the widths where the bugs were found (961-1150) plus the widths that must not regress.
-import { test, expect } from "./test.mjs";
+import { test, expect } from "./fixture.mjs";
 import { readFileSync } from "node:fs";
 import { NOW } from "../test/fixtures/clock.mjs";
 
 const fixture = (name) => readFileSync(new URL(`../test/fixtures/status/${name}.json`, import.meta.url), "utf8");
-const serve = (page) => page.route("https://raw.githubusercontent.com/**", (route) =>
-  route.fulfill({ status: 200, body: fixture("fresh"), headers: { "access-control-allow-origin": "*" } }));
+const serve = (page, status = "fresh") => page.route("https://raw.githubusercontent.com/**", (route) =>
+  route.fulfill({ status: 200, body: fixture(status), headers: { "access-control-allow-origin": "*" } }));
 
 // Paused before goto, then fastForward: the page's own timers run once and nothing ticks behind the measurement.
-async function open(page, width, height = 900) {
+async function open(page, width, height = 900, status) {
   await page.setViewportSize({ width, height });
-  await serve(page);
+  await serve(page, status);
   await page.clock.install({ time: NOW.getTime() - 1000 });
   await page.clock.pauseAt(NOW);
   await page.goto("/");
@@ -100,11 +100,14 @@ for (const width of [1440, 1280, 1150, 1100, 1024, 961, 768]) {
   });
 }
 
-// S-3: each strip's copy button stays on the strip's row.
+// S-3: each strip's copy button stays on the strip's row. Shipped, so the brew strip shows too.
 for (const width of [...BAND, 1280, 1440]) {
   test(`S-3 p. 8: both copy buttons sit beside their strip at ${width}`, async ({ page }) => {
-    await open(page, width);
-    for (const strip of await page.locator("#p8 .strip").all()) {
+    await open(page, width, 900, "shipped-early");
+    const strips = await page.locator("#p8 .strip").all();
+    expect(strips.length).toBe(2);
+    for (const strip of strips) {
+      await expect(strip).toBeVisible();
       const code = await box(strip.locator("code")), copy = await box(strip.locator(".copy"));
       expect(copy.left).toBeGreaterThanOrEqual(code.right);
       expect(copy.top).toBeLessThan(code.bottom);

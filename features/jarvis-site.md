@@ -42,7 +42,7 @@ Outside this repo: the README promo block (GIF, site link and brew line) is comm
 
 - `docs/`: `index.html` rewritten, plus `css/`, `js/`, `assets/` (art, busy, texture) and `media/`.
 - `tools/site/`: `status/` (job and plist), `test/` (node:test with fixtures), `smoke/` (10 Playwright
-  specs, `serve.mjs`, and the `test.mjs` CDN fixture), and the README.
+  specs, `serve.mjs`, and the `fixture.mjs` CDN fixture), and the README.
 - `tools/promo/`: `render/`, `storyboard/`, `capture.mjs`, `encode.mjs` and `test/`.
 
 ## Implementation flow
@@ -79,11 +79,11 @@ the hall, with an "@you?" card always last. Promo: beats.json → render(t) → 
 | 5 | T-4 returns strings | Returns `[{label}]` objects (the ticket won). UI-4 added name and handle to the data. | Yes: grill-log |
 | 6 | T-5 fetches `main` and the feature branch | Fetches every origin branch with `--prune`, so a deleted branch can't block `shipped: true`. Cases with `moment: ticket` are excluded from QA counts. | Yes: grill-log, T-5 report |
 | 7 | T-14: brew strip always on p. 8 | Hidden until `release.shipped`, because the tap installs from the v0.1.0 tarball. p. 8 is shorter until release. | Yes: grill-log, T-14 report |
-| 8 | T-15: `clearProps: "all"`; the placeholder hides on `loadedmetadata` | A comma list (`all` wiped `--x`/`--y`). `motion.js` injects the turned-card style. The placeholder is an `<img>` over the video. A `smoke/test.mjs` fixture blocks cdnjs in every spec. | Yes: grill-log, T-15 report |
+| 8 | T-15: `clearProps: "all"`; the placeholder hides on `loadedmetadata` | A comma list (`all` wiped `--x`/`--y`). `motion.js` injects the turned-card style. The placeholder is an `<img>` over the video. A smoke fixture (now `smoke/fixture.mjs`) blocks cdnjs in every spec. | Yes: grill-log, T-15 report |
 | 9 | T-8: one phone breakpoint at 600 px | Fluid layout: p. 1–3 stack at ≤960 px, and p. 4 stacks at ≤1100 px (UI-2). | Yes: T-8 review F-1, UI-2 report |
 | 10 | T-11 uses `a-gauge.svg` | Replaced by `a-gauge-dial.svg` (no drawn needle). `#p1 .countdown` reserves 240 px. | Yes: grill-log, T-11 report |
 | 11 | T-9: phone hall follows M7's swipe row | 2×2 grid. | Yes: grill-log, T-9 report |
-| 12 | T-7 ships the art the pages use | `b-exploded.svg`, `circle.svg` and `waves.svg` are referenced nowhere. `arrow-curve.svg` is unused too, and UI-6 left it in place. | Partly: `waves.svg` (T-7 report) and `arrow-curve.svg` (UI-6 report). `b-exploded` and `circle` are unexplained. |
+| 12 | T-7 ships the art the pages use | `b-exploded.svg`, `circle.svg` and `waves.svg` are referenced nowhere. `arrow-curve.svg` is unused too, and UI-6 left it in place. All four were deleted in the cleanup PR. | Partly: `waves.svg` (T-7 report) and `arrow-curve.svg` (UI-6 report). `b-exploded` and `circle` are unexplained. |
 | 13 | One commit per ticket | `55f73bc` (UI-4) also holds UI-1's CSS hunks. `3650710` (UI-3) holds part of UI-2's p. 4 work. History was not rewritten. | Yes: grill-log, UI-1 and UI-4 reports |
 
 Accepted trade-offs, from visual QA. Don't re-litigate these:
@@ -122,12 +122,8 @@ have no per-ticket cases.
 
 ## Remaining cleanup
 
-- Delete the unused art: `docs/assets/art/{arrow-curve,b-exploded,circle,waves}.svg` (~72 KB, counted
-  by the page-weight test).
 - Full-parallel Playwright runs flake when the host is busy. Use `--workers=4`, and check that
   `lsof -ti tcp:4173` is empty first: `reuseExistingServer` will serve another checkout's `docs/`.
-- `node --test` in `tools/site` also picks up `smoke/test.mjs` (Node's default `**/test.mjs` glob). It
-  fails with `ERR_MODULE_NOT_FOUND` unless `npm ci` has run. Rename it, or pass an explicit test glob.
 - The brew line in the README block (`7a116c0`) doesn't work until v0.1.0 is tagged and the tap
   formula is published. The site hides its own brew strip until then; the README can't.
 - After shipping, the agent unloads, but the copy in `~/Library/LaunchAgents` reloads it at the next
