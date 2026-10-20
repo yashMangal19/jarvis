@@ -1,4 +1,4 @@
-import { test, expect } from "./test.mjs";
+import { test, expect } from "./fixture.mjs";
 import { readFileSync } from "node:fs";
 
 // Serve the fresh status fixture so this smoke never hits the network (the shared test owns the CDN).

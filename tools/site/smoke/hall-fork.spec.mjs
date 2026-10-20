@@ -1,4 +1,4 @@
-import { test, expect } from "./test.mjs";
+import { test, expect } from "./fixture.mjs";
 import { readFileSync } from "node:fs";
 
 const fixture = (path) => readFileSync(new URL(`../test/fixtures/${path}`, import.meta.url), "utf8");

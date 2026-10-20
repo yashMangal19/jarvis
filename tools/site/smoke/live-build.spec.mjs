@@ -1,4 +1,4 @@
-import { test, expect } from "./test.mjs";
+import { test, expect } from "./fixture.mjs";
 import { readFileSync } from "node:fs";
 import { NOW } from "../test/fixtures/clock.mjs";
 
