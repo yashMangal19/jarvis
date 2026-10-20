@@ -1,5 +1,13 @@
 # Jarvis for Mac
 
+[![Jarvis in ten seconds](https://yashmangal19.github.io/jarvis/media/promo.gif)](https://yashmangal19.github.io/jarvis/)
+
+Site: <https://yashmangal19.github.io/jarvis/>
+
+```sh
+brew install yashMangal19/tap/jarvis
+```
+
 A small menu-bar app that listens, remembers and acts, so you don't have to hold everything in your head.
 It records you (and, if you want, your calls and the room), turns speech into text on your Mac, writes a
 short note every hour, lets you search your notes, and acts on "Jarvis, …" after it has read back its
