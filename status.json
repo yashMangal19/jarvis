@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "generated_at": "2026-10-20T02:54:10.890Z",
+  "generated_at": "2026-10-20T09:54:34.848Z",
   "build": {
     "waves_done": 10,
     "waves_total": 10,
@@ -16,6 +16,16 @@
   },
   "commits": [
     {
+      "sha": "0d2d7c5",
+      "message": "Merge PR #3: jarvis-site feature doc",
+      "at": "2026-10-20T14:39:44+05:30"
+    },
+    {
+      "sha": "c1e0d47",
+      "message": "Docs: jarvis-site feature doc (architecture, blueprint deviations, QA coverage, cleanup)",
+      "at": "2026-10-20T08:32:23+05:30"
+    },
+    {
       "sha": "7a116c0",
       "message": "T-19: promo block at the top of the README: GIF, site link, brew line",
       "at": "2026-10-20T07:57:04+05:30"
@@ -29,16 +39,6 @@
       "sha": "2531dda",
       "message": "UI-6 review F-10, F-11, F-13, F-14: no 960-961px gap, named strip slack; hero late-status test held, not timed",
       "at": "2026-10-20T00:21:10+05:30"
-    },
-    {
-      "sha": "c508d60",
-      "message": "UI-6 review F-1..F-9: one arrow weight everywhere, measured from pixels; scope the 961-1100 shrink",
-      "at": "2026-10-19T23:58:40+05:30"
-    },
-    {
-      "sha": "0c5c6a5",
-      "message": "UI-6 polish S-1..S-8: shared size rules for 961-1150px, geometry checks for each",
-      "at": "2026-10-19T23:39:25+05:30"
     }
   ],
   "release": {
