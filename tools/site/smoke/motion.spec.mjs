@@ -9,6 +9,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 const soon = (page) => page.locator('#p2 [data-slot="player"]').getByRole("img", { name: "promo lands soon" });
+// docs/media/ now holds the real promo, so "no promo yet" is a 404 the test serves itself.
+const noPromo = (page) => page.route("**/media/promo.mp4", (route) => route.fulfill({ status: 404 }));
 
 test("by default a spec never reaches the CDN: the GSAP request fails locally", async ({ page }) => {
   const failed = [];
@@ -56,6 +58,7 @@ test.describe("with GSAP served from the pinned local copy", () => {
 test("under reduced motion the page never asks the CDN for anything", async ({ page }) => {
   const asked = [];
   page.on("request", (r) => { if (r.url().startsWith("https://cdnjs.cloudflare.com/")) asked.push(r.url()); });
+  await noPromo(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/", { waitUntil: "load" });
   await page.locator("#p4").scrollIntoViewIfNeeded();
@@ -64,6 +67,7 @@ test("under reduced motion the page never asks the CDN for anything", async ({ p
 });
 
 test("with no promo yet, the player shows the promo lands soon card", async ({ page }) => {
+  await noPromo(page);
   await page.goto("/");
   await expect(soon(page)).toBeVisible();
 });

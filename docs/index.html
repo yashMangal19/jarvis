@@ -72,13 +72,15 @@
     <span class="tape t1"></span><span class="tape t2"></span><span class="tape t3"></span>
     <p class="title-block">JARVIS · SUIT ASSY<br>SHEET 1 OF 8 &nbsp; REV. b1<br>DRAWN: y.m. &nbsp; 17·10·26</p>
     <div class="plates">
-      <img src="assets/art/a-plates.svg" width="760" height="760" alt="Jarvis drawn as five plates around a core: ears, transcriber, hands, notes and memory, with the notes plate popped out and circled in red.">
+      <img src="assets/art/a-plates-bare.svg" width="760" height="760" alt="Jarvis drawn as five plates around a core: ears, transcriber, hands, notes and memory, with the notes plate popped out and circled in red.">
+      <span class="pop"></span>
+      <span class="ring" data-slot="ring" style="--rx: 26.9%; --ry: 75.7%"></span>
       <span class="label hand" style="--x: 47%; --y: 2%">ears</span>
       <span class="label hand" style="--x: 76%; --y: 30%">transcriber</span>
       <span class="label hand" style="--x: 72%; --y: 80%">hands</span>
-      <span class="label hand" style="--x: 2%; --y: 63%">notes</span>
+      <span class="label hand" style="--x: 1%; --y: 59%">notes</span>
       <span class="label hand" style="--x: 1%; --y: 27%">memory</span>
-      <span class="label hand dim" style="--x: 45%; --y: 50%">core</span>
+      <span class="label hand dim" style="--x: 46%; --y: 58%">core</span>
     </div>
     <figcaption id="sheet-caption" class="callout hand">← pop this one out. swap claude for ollama, your notes stay on your mac.</figcaption>
   </figure>
@@ -96,7 +98,7 @@
   </figure>
   <p class="frames hand red">made frame by frame. no stock footage.</p>
   <div class="flip" data-slot="flip">
-    <p class="flip-cue hand">or flip it yourself <img class="arrow-d" src="assets/art/arrow-d.svg" width="40" height="80" alt=""><img class="arrow-r" src="assets/art/arrow-r.svg" width="40" height="20" alt=""></p>
+    <p class="flip-cue hand">or flip it yourself <span class="arrow-d pen pen-d" aria-hidden="true"></span><span class="arrow-r pen pen-r" aria-hidden="true"></span></p>
     <ol class="cards" aria-label="flip-book, six cards">
       <li><img src="assets/art/flip-0.svg" width="160" height="160" alt=""></li>
       <li><img src="assets/art/flip-1.svg" width="160" height="160" alt=""></li>
@@ -134,7 +136,7 @@
     </div>
 
     <div class="stats">
-      <p class="stat"><span class="big hand slot w4" data-slot="tests-green"></span><span class="hand">tests green</span></p>
+      <p class="stat"><span class="big hand slot w4" data-slot="tests-green"></span><span class="hand">tests green<img class="tick" src="assets/art/box-tick.svg" width="46" height="46" alt=""></span></p>
       <p class="stat"><span class="big hand"><span class="slot w2" data-slot="hand-checks-pass"></span>/<span data-slot="hand-checks-total">88</span></span><span class="hand">final hand checks</span></p>
     </div>
 
@@ -159,14 +161,16 @@
   <figure class="sheet suit-sheet">
     <span class="tape t1"></span><span class="tape t3"></span>
     <div class="plates">
-      <img src="assets/art/a-plates.svg" width="760" height="760" alt="">
-      <button type="button" class="plate hand" data-slot="plate" value="ears" aria-expanded="false" aria-controls="plate-card" style="--x: 47%; --y: 0%">ears</button>
-      <button type="button" class="plate hand" data-slot="plate" value="transcriber" aria-expanded="false" aria-controls="plate-card" style="--x: 74%; --y: 28%">transcriber</button>
-      <button type="button" class="plate hand" data-slot="plate" value="notes" aria-expanded="false" aria-controls="plate-card" style="--x: 68%; --y: 80%">notes</button>
-      <button type="button" class="plate hand" data-slot="plate" value="memory" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 26%">memory</button>
-      <button type="button" class="plate hand" data-slot="plate" value="hands" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 62%">hands</button>
+      <img src="assets/art/a-plates-bare.svg" width="760" height="760" alt="">
+      <span class="pop"></span>
+      <span class="ring" data-slot="ring"></span>
+      <button type="button" class="plate hand" data-slot="plate" value="ears" aria-expanded="false" aria-controls="plate-card" style="--x: 47%; --y: 0%; --ox: 67.6%; --oy: -3%">ears</button>
+      <button type="button" class="plate hand" data-slot="plate" value="transcriber" aria-expanded="false" aria-controls="plate-card" style="--x: 74%; --y: 28%; --ox: 75%; --oy: 15%; --oty: -100%">transcriber</button>
+      <button type="button" class="plate hand" data-slot="plate" value="notes" aria-expanded="false" aria-controls="plate-card" style="--x: 68%; --y: 80%; --ox: 47.5%; --oy: 91.2%">notes</button>
+      <button type="button" class="plate hand" data-slot="plate" value="memory" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 26%; --ox: 1.3%; --oy: 15.1%; --oty: -100%">memory</button>
+      <button type="button" class="plate hand" data-slot="plate" value="hands" aria-expanded="false" aria-controls="plate-card" style="--x: 0%; --y: 62%; --ox: 6.4%; --oy: 91.2%">hands</button>
     </div>
-    <figcaption class="hint hand">click a plate to pop it out</figcaption>
+    <figcaption class="hint hand"><span class="on-mouse">click</span><span class="on-touch">tap</span> a plate to pop it out</figcaption>
   </figure>
   <div class="card-col">
     <div id="plate-card" class="index-card" data-slot="plate-card">
@@ -208,21 +212,25 @@
         <img src="assets/art/wave.svg" width="700" height="120" alt="">
         <figcaption class="hand muted">2. writes it down</figcaption>
       </figure>
+      <span class="arrow to-wave pen pen-r" aria-hidden="true"></span>
       <p class="transcript" data-slot="transcript" hidden></p>
     </div>
     <div class="card-slot">
       <div class="read-back" data-slot="read-back" hidden>
         <span class="tape t1"></span>
+        <span class="arrow to-card pen pen-r" aria-hidden="true"></span>
         <h3>read-back</h3>
         <p data-slot="read-back-text"></p>
         <p class="answers"><button type="button" class="yes hand red" data-slot="yes">yes</button><button type="button" class="no hand" data-slot="no">no</button></p>
       </div>
       <div class="read-back answer" data-slot="answer" hidden>
         <span class="tape t1"></span>
+        <span class="arrow to-card pen pen-r" aria-hidden="true"></span>
         <h3>answer</h3>
         <p data-slot="answer-text"></p>
         <p class="source hand muted" data-slot="answer-source"></p>
       </div>
+      <p class="card-caption hand muted" aria-hidden="true">3. reads it back. you say yes.</p>
     </div>
     <p class="stamp" data-slot="stamp" hidden></p>
   </div>
@@ -271,7 +279,7 @@
   <div class="marks">
     <h3 class="hand muted">marks from forks:</h3>
     <ol data-slot="marks">
-      <li class="mark"><span class="tape t1"></span><img src="assets/art/flip-2.svg" width="160" height="160" alt=""><p class="hand">mark 1 · @you?</p></li>
+      <li class="mark"><span class="tape t1"></span><img src="assets/art/flip-2.svg" width="160" height="160" alt=""><p><span class="hand">mark 1</span> <span class="handle">@you?</span></p></li>
     </ol>
   </div>
 </section>

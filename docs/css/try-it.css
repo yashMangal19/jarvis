@@ -1,22 +1,57 @@
 /* p. 5 try it: the scripted demo's states. Layout cells are in site.css. */
+/* A step not shown yet keeps its real box (visibility, not display), so the cells size to content and a reveal moves nothing.
+   !important only to outrank site.css's global [hidden] { display: none !important }. */
+.try :is(.step, .transcript, .read-back, .stamp)[hidden] { display: block !important; visibility: hidden; opacity: 0; translate: 0 6px; }
 .slip[aria-pressed="true"] { background: var(--tape); }
-.read-back [data-slot="read-back-text"] { white-space: pre-line; }
+/* The marker hangs off the list item, not the button, and its alt text is empty: the slip's name stays its words. */
+.slips li { position: relative; }
+.slips li:has(> .slip[aria-pressed="true"])::after {
+  content: "← this one" / ""; position: absolute; left: calc(100% + 24px); top: 50%; translate: 0 -50%;
+  font: 700 clamp(22px, 2vw, 28px) var(--hand); color: var(--red); white-space: nowrap;
+}
+/* An arrow or the card caption shows with what it points at or captions. */
+.try :is(.wave[hidden] ~ .to-wave, [data-slot="read-back"][hidden] ~ .card-caption) { visibility: hidden; }
+.card-slot:has(> [data-slot="read-back"][hidden]):has(> [data-slot="answer"][hidden]) > .to-card { visibility: hidden; }
+/* 3lh: the longest scripted read-back (priya) is 3 lines, so swapping slips never resizes the card. */
+.read-back [data-slot="read-back-text"] { white-space: pre-line; min-height: 3lh; }
 .answers [aria-disabled="true"] { opacity: .45; cursor: default; }
 
 /* The live region takes the stamp's cell; the stamp moved inside it. Scoped to .try: p. 1 has its own stamp. */
-.try .result { grid-area: stamp; display: grid; justify-items: end; align-content: start; gap: 12px; min-height: 120px; margin-top: 32px; }
+.try .result { grid-area: stamp; display: grid; justify-items: end; align-content: start; gap: 12px; margin-top: 32px; }
 .try .stamp {
   display: block; min-height: 0; padding: 10px 28px; border: 4px solid var(--red); border-radius: 10px;
   color: var(--red); font: 700 clamp(28px, 2.6vw, 38px) var(--typed); letter-spacing: .12em; transform: rotate(6deg);
 }
-.try .result-line { font-size: clamp(22px, 2vw, 28px); }
-.try .result-line:empty { display: none; }
+/* "7 / pm" came from site.css's old .try .stamp { grid-area: stamp }, which put the stamp in an implicit second
+   column of this grid and squeezed the line; that rule is gone. pretty stays as the general no-orphan rule. */
+.try .result-line { min-height: 1lh; font-size: clamp(22px, 2vw, 28px); text-wrap: pretty; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .try .step, .try .transcript, .try .read-back, .try .stamp { animation: try-in .3s ease-out; }
+  .try :is(.step, .transcript, .read-back, .stamp) { transition: opacity .3s ease-out, translate .3s ease-out; }
 }
-@keyframes try-in { from { opacity: 0; translate: 0 6px; } }
+
+/* The transcript never ends on a lone word (R-7), at any width. */
+.try .transcript { text-wrap: balance; }
+
+/* One column (phone and tablet): the one rule for the stamp and result space, so no state shows a band over ~60px.
+   The stamp (22px type here) is a row pulled up onto the read-back card's bottom padding (M5), its layout box 16px
+   under the buttons so the 6deg tilt still leaves 8px; the result line is the row below it. Two rows cannot overlap at
+   any width. The space is split about evenly, 58px of the card's own paper under the buttons and 58px under the card,
+   so neither reads as a band. The pricing answer can never end in
+   yes or no, so while it shows the read-back's box and the result are dropped and the answer sits at its own size. */
+@media (max-width: 960px) {
+  .try [data-slot="read-back"] { padding-bottom: 58px; }
+  .try .result { margin-top: 0; gap: 14px; justify-items: end; }
+  .try .stamp { margin: -41px 8px 0 0; font-size: 22px; pointer-events: none; }
+  .try .result-line { font-size: 20px; line-height: 1.2; }
+  .try .promise { margin-top: 4px; }
+  .try:has([data-slot="answer"]:not([hidden])) .result { display: none; }
+  .card-slot:has(> [data-slot="answer"]:not([hidden])) > [data-slot="read-back"] { display: none !important; }
+}
 
 @media (max-width: 600px) {
-  .try .result { margin-top: 24px; }
+  .try .transcript { font-size: 13px; } /* M5 sets it smaller, on one line */
+  /* M5: under the slip, at its right end. Absolute in a gap every slip has, so moving it moves no slip. */
+  .slips ul { gap: 28px; }
+  .slips li:has(> .slip[aria-pressed="true"])::after { top: calc(100% + 2px); left: auto; right: 0; translate: none; line-height: 1; }
 }

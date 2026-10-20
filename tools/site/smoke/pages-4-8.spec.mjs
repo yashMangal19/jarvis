@@ -11,16 +11,20 @@ test.beforeEach(async ({ page }) => {
 const AREAS = "#p4, #p5, #p6, #p7, #p8, body > footer";
 
 test("p. 4–8 and the footer show their fixed copy", async ({ page }) => {
+  await page.route("https://api.github.com/**", (route) => route.abort()); // no forks answer: the default mark card
   await page.goto("/");
   for (const text of [
     "nothing leaves without your yes.",
     "cloud? only if you plug one in.",
     "git clone github.com/yashMangal19/jarvis",
     "not affiliated with marvel or disney.",
-    "mark 1 · @you?",
   ]) {
     await expect(page.getByText(text, { exact: false }).first()).toBeVisible();
   }
+  const card = page.locator("#p7 li.mark");
+  await expect(card).toHaveCount(1);
+  await expect(card.getByText("mark 1", { exact: true })).toBeVisible();
+  await expect(card.getByText("@you?", { exact: true })).toBeVisible();
   await expect(page.locator('a[href="guide.html"]:visible').first()).toBeVisible();
   // The brew line waits for the release to ship; the fresh feed has not shipped.
   await expect(page.getByText("brew install yashMangal19/tap/jarvis")).toBeHidden();

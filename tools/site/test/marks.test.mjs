@@ -44,3 +44,11 @@ test("never more than 6 cards, and @you? is always last", () => {
     assert.equal(out.filter((l) => l.endsWith("@you?")).length, 1, name);
   }
 });
+
+test("every mark also carries its name and handle apart, for the two-line card", () => {
+  assert.deepEqual(
+    marksFromForks(fixture("two")).map(({ name, handle }) => [name, handle]),
+    [["mark 1", "@fork-owner-1"], ["mark 2", "@fork-owner-2"], ["mark 3", "@you?"]],
+  );
+  assert.deepEqual(marksFromForks(null), [{ label: "mark 1 · @you?", name: "mark 1", handle: "@you?" }]);
+});

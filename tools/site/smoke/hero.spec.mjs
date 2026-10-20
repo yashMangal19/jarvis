@@ -150,8 +150,11 @@ test("the countdown digits are not in a live region; the stamp is hidden before 
 // Story 41 (CLS < 0.1): after the deadline a load renders late-unknown first (no status yet), then
 // late + reason + busy art when the status lands. Nothing below the launch block may move.
 async function statusArrivesLate(page) {
+  // Held until the first render is checked, not for a fixed time: a busy machine can take longer than any timer to paint.
+  let release;
+  const held = new Promise((r) => (release = r));
   await page.route(STATUS, async (route) => {
-    await new Promise((r) => setTimeout(r, 500));
+    await held;
     await route.fulfill({ status: 200, body: fixture("late-busy"), headers: { "access-control-allow-origin": "*" } })
       .catch(() => {}); // the page may already be gone
   });
@@ -161,6 +164,7 @@ async function statusArrivesLate(page) {
   await expect(slot(page, "launch-line")).toHaveText("running late · status offline");
   const below = page.locator("#p2");
   const before = await below.boundingBox();
+  release();
   await expect(slot(page, "busy-art")).toBeVisible();
   await expect(slot(page, "reason-line")).toBeVisible();
   expect((await below.boundingBox()).y).toBe(before.y);

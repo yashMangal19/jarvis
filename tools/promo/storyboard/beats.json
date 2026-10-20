@@ -1,0 +1,613 @@
+[
+ {
+  "key": "01",
+  "n": 1,
+  "time": "0:00\u20130:04",
+  "secs": 4,
+  "shot": "cover",
+  "caption": "your airpods. your mac. your claude.",
+  "action": "Sketchbook cover. Pencil draws AirPods, a MacBook and a small Claude spark, then hand-letters \"jarvis\".",
+  "texts": [
+   {
+    "t": "jarvis",
+    "x": 640,
+    "y": 190,
+    "size": 150,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "vol. 1 \u00b7 workshop notes",
+    "x": 650,
+    "y": 380,
+    "size": 30,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "02",
+  "n": 2,
+  "time": "0:04\u20130:09",
+  "secs": 5,
+  "shot": "the ears",
+  "caption": "always listening. audio never leaves your mac.",
+  "action": "An ink waveform runs from an AirPod into the Mac. The menu-bar icon turns on. A tiny padlock is drawn on the Mac.",
+  "texts": [
+   {
+    "t": "on",
+    "x": 1590,
+    "y": 270,
+    "size": 34,
+    "font": "Caveat",
+    "color": "#C8302A",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "03",
+  "n": 3,
+  "time": "0:09\u20130:14",
+  "secs": 5,
+  "shot": "the transcriber",
+  "caption": "speech becomes text, thirty seconds at a time.",
+  "action": "Speech turns into typed lines on ruled paper, one strip at a time: \"14:02 \u00b7 me \u00b7 \u2026\" / \"14:02 \u00b7 others \u00b7 \u2026\".",
+  "texts": [
+   {
+    "t": "14:02 \u00b7 me \u00b7 can we move the review to friday?",
+    "x": 610,
+    "y": 190,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "14:02 \u00b7 others \u00b7 friday works. after lunch?",
+    "x": 610,
+    "y": 318,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "14:03 \u00b7 me \u00b7 yes. i'll send the deck tonight.",
+    "x": 610,
+    "y": 446,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "14:03 \u00b7 others \u00b7 \u2026",
+    "x": 610,
+    "y": 574,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#8A867C",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "04",
+  "n": 4,
+  "time": "0:14\u20130:19",
+  "secs": 5,
+  "shot": "the note writer",
+  "caption": "every hour, a note. every week, a summary.",
+  "action": "A page tears off as an hourly note (3 bullets). Pages stack into a day, and days clip into a week.",
+  "texts": [
+   {
+    "t": "14:00 \u2013 15:00",
+    "x": 300,
+    "y": 250,
+    "size": 44,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "\u2022 review moved to fri",
+    "x": 300,
+    "y": 340,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "\u2022 send deck tonight",
+    "x": 300,
+    "y": 410,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "\u2022 priya owes the numbers",
+    "x": 300,
+    "y": 480,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "a day",
+    "x": 980,
+    "y": 700,
+    "size": 44,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "a week",
+    "x": 1490,
+    "y": 700,
+    "size": 44,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "05",
+  "n": 5,
+  "time": "0:19\u20130:25",
+  "secs": 6,
+  "shot": "memory",
+  "caption": "ask it what you said last week.",
+  "action": "A slip reads \"what did i promise priya on friday?\". The answer is written below, with two note tabs circled as sources.",
+  "texts": [
+   {
+    "t": "what did i promise priya on friday?",
+    "x": 480,
+    "y": 190,
+    "size": 64,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "you said you'd send her the q3 numbers",
+    "x": 480,
+    "y": 400,
+    "size": 50,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "by monday, and review her draft.",
+    "x": 480,
+    "y": 460,
+    "size": 50,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "fri 14:00",
+    "x": 515,
+    "y": 698,
+    "size": 30,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "fri 16:00",
+    "x": 705,
+    "y": 698,
+    "size": 30,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "6a",
+  "n": 6,
+  "time": "0:25\u20130:28.5",
+  "secs": 3.5,
+  "shot": "the hands: ask",
+  "caption": "say \"jarvis\". give it a job.",
+  "action": "A speech bubble: \"jarvis, tell the team the build is green.\" A chime mark appears.",
+  "texts": [
+   {
+    "t": "\"jarvis, tell the team",
+    "x": 450,
+    "y": 320,
+    "size": 84,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "the build is green.\"",
+    "x": 450,
+    "y": 430,
+    "size": 84,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "6b",
+  "n": 6,
+  "time": "0:28.5\u20130:32",
+  "secs": 3.5,
+  "shot": "the hands: read-back",
+  "caption": "it reads it back. you say yes.",
+  "action": "A draft card: \"post in #team: the build is green.\" A spoken-wave doodle. \"yes\" is circled in red, then a SENT stamp.",
+  "texts": [
+   {
+    "t": "draft",
+    "x": 360,
+    "y": 230,
+    "size": 36,
+    "font": "Courier Prime",
+    "color": "#8A867C",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "post in #team:",
+    "x": 360,
+    "y": 300,
+    "size": 64,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "the build is green.",
+    "x": 360,
+    "y": 400,
+    "size": 64,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "yes",
+    "x": 500,
+    "y": 770,
+    "size": 90,
+    "font": "Caveat",
+    "color": "#C8302A",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "no",
+    "x": 800,
+    "y": 770,
+    "size": 90,
+    "font": "Caveat",
+    "color": "#8A867C",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "SENT",
+    "x": 1410,
+    "y": 580,
+    "size": 110,
+    "font": "Courier Prime",
+    "color": "#C8302A",
+    "rot": -12,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "07",
+  "n": 7,
+  "time": "0:32\u20130:35",
+  "secs": 3,
+  "shot": "forget",
+  "caption": "\"forget the last hour.\" gone.",
+  "action": "A row of hour blocks. Red marker crosses one out and the page under it goes blank.",
+  "texts": [
+   {
+    "t": "10:00",
+    "x": 220,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "11:00",
+    "x": 416,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "12:00",
+    "x": 612,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "13:00",
+    "x": 808,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "14:00",
+    "x": 1004,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "15:00",
+    "x": 1200,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "16:00",
+    "x": 1396,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "17:00",
+    "x": 1592,
+    "y": 216,
+    "size": 34,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "(nothing here)",
+    "x": 760,
+    "y": 640,
+    "size": 44,
+    "font": "Caveat",
+    "color": "#8A867C",
+    "rot": 0,
+    "w": null,
+    "after": "marker"
+   }
+  ]
+ },
+ {
+  "key": "08",
+  "n": 8,
+  "time": "0:35\u20130:41",
+  "secs": 6,
+  "shot": "lego plates",
+  "caption": "every piece swaps. strip it. build yours.",
+  "action": "Five plates around the core: ears, transcriber, note writer, memory, hands. The transcriber ejects and an index card shows whisper \u2192 apple speech, then it snaps back. The note writer swaps claude \u2192 ollama. Status: \"notes now stay on your mac.\"",
+  "texts": [
+   {
+    "t": "ears",
+    "x": 730,
+    "y": 120,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "transcriber",
+    "x": 960,
+    "y": 168,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#C8302A",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "note writer",
+    "x": 920,
+    "y": 740,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "memory",
+    "x": 420,
+    "y": 760,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "hands",
+    "x": 360,
+    "y": 330,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "transcriber",
+    "x": 1200,
+    "y": 190,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "whisper  \u2192  apple speech",
+    "x": 1200,
+    "y": 280,
+    "size": 48,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "note writer",
+    "x": 1200,
+    "y": 590,
+    "size": 40,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "claude  \u2192  ollama",
+    "x": 1200,
+    "y": 660,
+    "size": 48,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "notes now stay on your mac.",
+    "x": 1160,
+    "y": 820,
+    "size": 44,
+    "font": "Courier Prime",
+    "color": "#C8302A",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ },
+ {
+  "key": "09",
+  "n": 9,
+  "time": "0:41\u20130:45",
+  "secs": 4,
+  "shot": "end card",
+  "caption": null,
+  "action": "\"build your own suit.\" in big hand lettering, the GitHub URL on masking tape, and \"mit licence\" stamped. Tiny footer: \"not affiliated with marvel or disney\".",
+  "texts": [
+   {
+    "t": "build your own suit.",
+    "x": 300,
+    "y": 260,
+    "size": 170,
+    "font": "Caveat",
+    "color": "#1F3F73",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "github.com/yashMangal19/jarvis",
+    "x": 610,
+    "y": 568,
+    "size": 46,
+    "font": "Courier Prime",
+    "color": "#2E2D2B",
+    "rot": 0,
+    "w": null
+   },
+   {
+    "t": "mit",
+    "x": 1470,
+    "y": 240,
+    "size": 64,
+    "font": "Courier Prime",
+    "color": "#C8302A",
+    "rot": -12,
+    "w": null
+   },
+   {
+    "t": "licence",
+    "x": 1440,
+    "y": 310,
+    "size": 40,
+    "font": "Courier Prime",
+    "color": "#C8302A",
+    "rot": -12,
+    "w": null
+   },
+   {
+    "t": "not affiliated with marvel or disney",
+    "x": 720,
+    "y": 940,
+    "size": 26,
+    "font": "Courier Prime",
+    "color": "#8A867C",
+    "rot": 0,
+    "w": null
+   }
+  ]
+ }
+]

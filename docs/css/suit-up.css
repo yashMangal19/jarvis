@@ -1,20 +1,65 @@
-/* p. 4: a popped plate lifts out and is ringed in red marker; ticking an engine snaps it back. */
-.suit .plate { border: 3px solid transparent; border-radius: 50%; transition: transform .25s ease-out, border-color .25s, color .25s; }
-.suit .plate.popped { transform: translate(-6px, 8px) scale(1.12); border-color: var(--red); color: var(--red); }
+/* p. 4: opening a plate pulls its drawing out (plate-pop.svg turned to it) and rings it; the label turns red. */
+/* Each label sits beside its own plate (as in D4). The ring and the pulled-out plate cover that spot, so the open
+   label glides to its --ox/--oy: just outside its own ring (--oty: -100% hangs it above the spot instead of below).
+   `translate` is separate from `transform`, which the fly-in animates. */
+.suit .plate { translate: 0 0; transition: color .25s, left .25s, top .25s, translate .25s; }
+.suit .plate[aria-expanded="true"] { color: var(--red-on-blueprint); left: var(--ox, var(--x)); top: var(--oy, var(--y)); translate: 0 var(--oty, 0); }
+.suit .plates { --ring-color: var(--red-on-blueprint); }
+.suit .plates :is(.pop, .ring) { opacity: 0; transition: opacity .25s; }
+.suit .plates:has(.plate[aria-expanded="true"]) :is(.pop, .ring) { opacity: 1; }
+/* --turn carries the pulled-out plate round the core; --rx/--ry centre the ring on it (share of the art). */
+.suit .plates:has(.plate[value="ears"][aria-expanded="true"]) { --turn: 144deg; --rx: 47.3%; --ry: 12.5%; }
+.suit .plates:has(.plate[value="transcriber"][aria-expanded="true"]) { --turn: -144deg; --rx: 80.5%; --ry: 36.5%; --ring-turn: 90deg; }
+.suit .plates:has(.plate[value="notes"][aria-expanded="true"]) { --turn: -72deg; --rx: 68%; --ry: 75.6%; }
+.suit .plates:has(.plate[value="memory"][aria-expanded="true"]) { --turn: 72deg; --rx: 14.1%; --ry: 36.7%; --ring-turn: 90deg; }
+.suit .plates:has(.plate[value="hands"][aria-expanded="true"]) { --turn: 0deg; --rx: 26.9%; --ry: 75.7%; }
 
-/* The index card: plate name on the red rule, then one radio row per engine. */
-.index-card legend {
-  margin-bottom: 28px; padding: 0; font-family: var(--typed); font-size: 16px; font-weight: 700;
-  letter-spacing: .3em; text-transform: uppercase;
+/* The hint names the gesture the visitor has. */
+.suit .on-touch { display: none; }
+@media (pointer: coarse) {
+  .suit .on-mouse { display: none; }
+  .suit .on-touch { display: inline; }
 }
+
+/* The index card: plate name and its tagline above the red rule, then one drawn-box row per engine. */
+.index-card legend {
+  float: left; margin: 0 24px 0 0; padding: 0; font-family: var(--typed); font-size: 16px; font-weight: 700;
+  line-height: 30px; letter-spacing: .3em; text-transform: uppercase;
+}
+/* overflow: hidden keeps a long tagline in its own column beside the floated legend instead of wrapping under it. */
+.index-card .tagline { overflow: hidden; margin: 0; text-wrap: balance; font-size: clamp(20px, 1.8vw, 24px); font-weight: 400; line-height: 30px; color: #5d5a52; }
+.index-card .option { clear: both; margin-bottom: 10px; }
+/* The red rule is the first row's top edge: it sits under the header however many lines the tagline takes. */
+.index-card .tagline + .option { padding-top: 26px; border-top: 2px solid rgb(200 48 42 / .55); }
 .index-card label {
-  display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; column-gap: 20px;
-  min-height: 46px; margin-bottom: 18px; font-family: var(--hand); font-size: clamp(24px, 2.2vw, 30px); font-weight: 700;
+  display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; column-gap: 12px;
+  min-height: 44px; font-family: var(--hand); font-size: clamp(26px, 2.2vw, 30px); font-weight: 700; line-height: 1.1;
   cursor: pointer;
 }
-.index-card label input { width: 26px; height: 26px; margin: 0; accent-color: var(--red); cursor: pointer; }
+/* The radio stays a real radio (keyboard, screen reader); appearance: none lets it wear the drawn box. */
+.index-card label input {
+  appearance: none; width: 52px; height: 40px; margin: 0; /* the tick's drawing ends 36px down */
+  background: url("../assets/art/box.svg") 0 0 / 40px 40px no-repeat; cursor: pointer;
+}
+.index-card label input:checked { background-image: url("../assets/art/box-tick.svg"); background-size: 52px 49px; }
+.index-card label input:focus-visible { outline: 2px dashed var(--red); outline-offset: 2px; }
 .index-card label:has(input:checked) { color: var(--red); }
+/* The long tagline needs ~400px of card; below that the card shows the short one (M4's wording). Measured on the
+   card, not the screen: the card is 263px wide at 1024 and 415px at 1440. */
+.index-card { container: card / inline-size; }
+.index-card .tagline .short { display: none; }
+@container card (max-width: 404px) {
+  .index-card .tagline .long:has(+ .short) { display: none; }
+  .index-card .tagline .short { display: inline; }
+}
+.index-card .note { display: block; margin: -4px 0 0 64px; font-size: 15px; line-height: 1.4; letter-spacing: .04em; color: #4a4741; }
+
+@media (max-width: 600px) {
+  .index-card legend { margin-right: 16px; letter-spacing: .2em; }
+  .index-card .tagline { font-size: 19px; line-height: 30px; }
+  .index-card .note { font-size: 13px; letter-spacing: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .suit .plate { transition: none; }
+  .suit .plate, .suit .plates :is(.pop, .ring) { transition: none; }
 }
