@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "generated_at": "2026-10-20T12:54:50.859Z",
+  "generated_at": "2026-10-20T13:13:21.353Z",
   "build": {
     "waves_done": 10,
     "waves_total": 10,
@@ -48,7 +48,7 @@
   },
   "launch": {
     "deadline": "2026-10-19T21:00:00+05:30",
-    "note_kind": null,
+    "note_kind": "busy",
     "note": null
   }
 }
