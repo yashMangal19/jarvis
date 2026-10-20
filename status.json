@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "generated_at": "2026-10-20T01:54:05.913Z",
+  "generated_at": "2026-10-20T02:54:10.890Z",
   "build": {
     "waves_done": 10,
     "waves_total": 10,
@@ -16,29 +16,29 @@
   },
   "commits": [
     {
-      "sha": "2fce2db",
-      "message": "Guide: you can interrupt Jarvis with a control, yes/no or stop (DEC-55)",
-      "at": "2026-10-19T18:33:43+05:30"
+      "sha": "7a116c0",
+      "message": "T-19: promo block at the top of the README: GIF, site link, brew line",
+      "at": "2026-10-20T07:57:04+05:30"
     },
     {
-      "sha": "306665e",
-      "message": "J-027 (3/3): barge-in — the wake word stays on while Jarvis speaks; only controls interrupt",
-      "at": "2026-10-19T18:33:00+05:30"
+      "sha": "e28d472",
+      "message": "Merge PR #2: Jarvis promo media + site UI fixes",
+      "at": "2026-10-20T07:55:54+05:30"
     },
     {
-      "sha": "31170d5",
-      "message": "J-027 (2/3): bias recognition toward the wake word and the controls",
-      "at": "2026-10-19T18:25:46+05:30"
+      "sha": "2531dda",
+      "message": "UI-6 review F-10, F-11, F-13, F-14: no 960-961px gap, named strip slack; hero late-status test held, not timed",
+      "at": "2026-10-20T00:21:10+05:30"
     },
     {
-      "sha": "5937c9b",
-      "message": "J-027 (1/3): one CommandInterpreter decides what was meant; nothing reaches Claude by default",
-      "at": "2026-10-19T18:21:52+05:30"
+      "sha": "c508d60",
+      "message": "UI-6 review F-1..F-9: one arrow weight everywhere, measured from pixels; scope the 961-1100 shrink",
+      "at": "2026-10-19T23:58:40+05:30"
     },
     {
-      "sha": "c7bbe0a",
-      "message": "J-026: pin every model download to one revision and verify its sha256, failing closed",
-      "at": "2026-10-19T18:14:22+05:30"
+      "sha": "0c5c6a5",
+      "message": "UI-6 polish S-1..S-8: shared size rules for 961-1150px, geometry checks for each",
+      "at": "2026-10-19T23:39:25+05:30"
     }
   ],
   "release": {
